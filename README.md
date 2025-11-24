@@ -1,38 +1,67 @@
-# Zebrafish Hindbrain Functional Connectomics
+Zebrafish Hindbrain Functional Connectomics
 
-This repository hosts collaborative analyses on the structure–function relationships in the zebrafish hindbrain, integrating anatomical connectivity, morphology-based predictions, and network modeling.
+Understanding how neuronal structure gives rise to function is a central challenge in neuroscience.
+This repository brings together complementary approaches to study the zebrafish hindbrain — a model system for sensory processing and motor control — by integrating high-resolution anatomical data with physiological and computational analyses.
 
----
+The project combines:
+	•	Morphological reconstruction of individual neurons and their projections,
+	•	Synaptic connectivity analysis across identified neuronal populations, and
+	•	Network-level modeling constrained by experimentally derived connectomes.
 
-## 📂 Repository Structure
+Through these efforts, we aim to uncover the structural and computational principles that govern sensorimotor transformations in the hindbrain and link them to behaviorally relevant neural dynamics.
 
-### 1. Connectivity analysis
-Contains scripts and notebooks for analyzing synaptic connectivity, neuron–neuron relationships, and connectivity matrices.
+Each component of the repository corresponds to a specific stage in this integrative workflow:
+	1.	Uploading and organizing neuronal morphologies and metadata
+	2.	Registering data to a standardized zebrafish reference brain
+	3.	Performing connectivity analyses and visualization
+	4.	Predicting functional neuron types based on morphology
+	5.	Simulating circuit dynamics under connectome-based constraints
 
-**Folder:** `Connectivity_analysis/`  
-**Environment file:** `env.yaml`
+The code, environments, and documentation are designed to support reproducible and modular collaboration across teams working on different aspects of the connectome-to-function pipeline.
 
----
+⸻
 
-### 2. Morphology-based prediction of neuronal functional types
-Includes models and data linking morphological features to functional classifications (e.g., integrator, dynamic threshold, motor command).
+Repository Structure
 
-**Folder:** `Morphology_based_prediction_of_neuronal_functional_types/`  
-**Environment file:** `env.yaml`
+1. Uploading Neuronal Morphologies and Metadata
 
----
+Tools and scripts for preparing, validating, and uploading reconstructed neuronal morphologies along with associated metadata to shared databases or archives.
 
-### 3. Connectome-constrained network modeling
-Implements computational models that simulate or predict network dynamics under realistic connectome constraints.
+Folder: Uploading_neuronal_morphologies/
+Environment file: env.yaml
 
-**Folder:** `Connectome_constrained_network_modeling/`  
-**Environment file:** `env.yaml`
+⸻
 
----
+2. Reference Brain Registration
 
-## ⚙️ Setup
-Each subproject includes an independent conda environment file (`env.yaml`).  
-To create an environment:
-```bash
-conda env create -f env.yaml
-conda activate <env_name>
+Pipelines for aligning neuronal morphologies, imaging data, and other spatial datasets to a common zebrafish reference brain coordinate framework.
+
+Folder: Reference_brain_registration/
+Environment file: env.yaml
+
+⸻
+
+3. Connectivity Analysis
+
+Code for analyzing synaptic connectivity, generating adjacency and weight matrices, and visualizing network organization at different scales.
+
+Folder: Connectivity_analysis/
+Environment file: env.yaml
+
+⸻
+
+4. Morphology-Based Prediction of Neuronal Functional Types
+
+Scripts and models for predicting neuronal functional identities from morphological features, such as soma position, dendritic structure, and axonal projection patterns.
+
+Folder: Morphology_based_prediction_of_neuronal_functional_types/
+Environment file: env.yaml
+
+⸻
+
+5. Connectome-Constrained Network Modeling
+
+Computational models that simulate or predict neural dynamics using empirically derived connectivity constraints and experimentally validated cell-type rules.
+
+Folder: Connectome_constrained_network_modeling/
+Environment file: env.yaml
