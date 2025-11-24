@@ -4,6 +4,7 @@ This repository hosts collaborative analyses on the structure–function relatio
 
 ---
 
+
 ## Repository Structure
 
 ### 1. Uploading neuronal morphologies and metadata
