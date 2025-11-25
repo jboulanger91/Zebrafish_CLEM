@@ -37,7 +37,7 @@ Run the full pipeline from the command line:
 
 ```bash
 python3 clem_zfish1_neuroglancer_pipeline.py \
-    --excel-file /path/to/rgc_axons_output_020525.csv \
+    --excel-file /path/to/reconstructed_neurons.csv \
     --root-path /path/to/traced_axons_neurons/ \
     --manual-synapses-path /path/to/manual_synapses/ \
     --hdf5-path /path/to/fish1.5_functional_data.h5 \
@@ -45,6 +45,7 @@ python3 clem_zfish1_neuroglancer_pipeline.py \
 ```
 
 Replace the paths with values appropriate for your system.
+
 The functional data h5 file can be downloaded here: https://zenodo.org/records/16893093 
 
 ---

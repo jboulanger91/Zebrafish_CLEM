@@ -689,64 +689,120 @@ def write_synapse_file(
 # Functional imaging dynamics
 # ------------------------------------------------------------------------
 
-def process_functional_data(df: pd.DataFrame, idx: int, segment_id: str) -> None:
+def process_functional_data(
+    df: pd.DataFrame,
+    idx: int,
+    segment_id: str,
+    make_plots: bool = False,
+) -> None:
     """
     Extract and save functional imaging dynamics for functionally imaged neurons.
 
     For neurons with a `functional_id` different from "not functionally imaged",
     this function:
-    - loads the corresponding ΔF/F activity from the HDF5 dataset,
-    - writes a per-neuron HDF5 file containing single-trial and averaged traces,
-    - and (optionally) computes smoothed versions for plotting.
+
+    - loads the corresponding ΔF/F activity from the global HDF5 dataset
+      (specified via `init_helpers`),
+    - writes a per-neuron HDF5 file containing single-trial and averaged traces
+      for leftward and rightward motion stimuli,
+    - optionally generates a PDF with smoothed average and trial traces.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Table containing neuron/axon entries and metadata.
+        Table containing neuron/axon entries and metadata. Column 1 is assumed
+        to contain the `functional_id`.
     idx : int
         Row index corresponding to the neuron.
     segment_id : str
-        Segment identifier used to name the per-neuron folder and files.
+        Segment identifier used to name the per-neuron folder and files
+        (e.g. "clem_zfish1_cell_<id>" or "clem_zfish1_axon_<id>").
+    make_plots : bool, optional
+        If True, generate a PDF with smoothed average and trial traces for
+        left and right stimuli. By default, no plots are created.
     """
     if HDF5_PATH is None or ROOT_PATH is None:
-        raise RuntimeError("Helper module not initialized: `HDF5_PATH` or `ROOT_PATH` is None. "
-                           "Call `init_helpers(...)` from the main script first.")
+        raise RuntimeError(
+            "Helper module not initialized: `HDF5_PATH` or `ROOT_PATH` is None. "
+            "Call `init_helpers(...)` from the main script first."
+        )
 
     functional_id = str(df.iloc[idx, 1])
     if functional_id == "not functionally imaged":
+        # Nothing to do for non-imaged neurons
         return
 
+    # Load data from the global functional HDF5
     with h5py.File(HDF5_PATH, "r") as hdf_file:
-        neuron_group = hdf_file[f"neuron_{functional_id}"]
+        neuron_group_name = f"neuron_{functional_id}"
+        if neuron_group_name not in hdf_file:
+            raise KeyError(
+                f"Group '{neuron_group_name}' not found in HDF5 file {HDF5_PATH}."
+            )
+        neuron_group = hdf_file[neuron_group_name]
 
-        # Get average activity for left and right stimuli
+        # Average activity (1D traces) for left and right stimuli
         avg_activity_left = neuron_group["average_activity_left"][()]
         avg_activity_right = neuron_group["average_activity_right"][()]
 
-        # Get individual trial data for left and right stimuli
+        # Individual trial data (2D: n_trials x n_timepoints) for left/right
         trials_left = neuron_group["neuronal_activity_trials_left"][()]
         trials_right = neuron_group["neuronal_activity_trials_right"][()]
 
-        # Create a new HDF5 and save
-        destination_hdf5_path = ROOT_PATH / segment_id / f"{segment_id}_dynamics.hdf5"
-        with h5py.File(destination_hdf5_path, "w") as f:
-            f.create_dataset("dF_F/single_trial_rdms_left", data=trials_left)
-            f.create_dataset("dF_F/single_trial_rdms_right", data=trials_right)
-            f.create_dataset(
-                "dF_F/average_rdms_left_dF_F_calculated_on_single_trials",
-                data=avg_activity_left,
-            )
-            f.create_dataset(
-                "dF_F/average_rdms_right_dF_F_calculated_on_single_trials",
-                data=avg_activity_right,
-            )
+    # Create per-neuron HDF5 file with dynamics
+    dest_path = ROOT_PATH / segment_id / f"{segment_id}_dynamics.hdf5"
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Optional: smoothing and plotting (currently disabled)
-        smooth_avg_activity_left = savgol_filter(avg_activity_left, 20, 3)
-        smooth_avg_activity_right = savgol_filter(avg_activity_right, 20, 3)
+    with h5py.File(dest_path, "w") as f:
+        # Store the trial-resolved data
+        f.create_dataset("dF_F/single_trial_rdms_left", data=trials_left)
+        f.create_dataset("dF_F/single_trial_rdms_right", data=trials_right)
+
+        # Store the average traces
+        f.create_dataset(
+            "dF_F/average_rdms_left_dF_F_calculated_on_single_trials",
+            data=avg_activity_left,
+        )
+        f.create_dataset(
+            "dF_F/average_rdms_right_dF_F_calculated_on_single_trials",
+            data=avg_activity_right,
+        )
+
+    # Optional plotting for QC
+    if make_plots:
+        import matplotlib.pyplot as plt  # local import to keep dependency optional
+
+        # Smooth signals with a Savitzky–Golay filter
+        smooth_avg_left = savgol_filter(avg_activity_left, 20, 3)
+        smooth_avg_right = savgol_filter(avg_activity_right, 20, 3)
         smooth_trials_left = savgol_filter(trials_left, 20, 3, axis=1)
         smooth_trials_right = savgol_filter(trials_right, 20, 3, axis=1)
 
-        # dt = 0.5  # seconds
-        # time_axis = np.arange(len(avg_activity_left)) * dt
-        # (plotting code omitted/commented for reproducibility and speed)
+        # Time axis (assuming 0.5 s per frame, as in your original code)
+        dt = 0.5
+        time_axis = np.arange(avg_activity_left.shape[0]) * dt
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+        # Plot individual trials (thin gray/black)
+        for trial in smooth_trials_left:
+            ax.plot(time_axis, trial, alpha=0.3, linewidth=0.7, linestyle="-")
+        for trial in smooth_trials_right:
+            ax.plot(time_axis, trial, alpha=0.3, linewidth=0.7, linestyle="--")
+
+        # Plot smoothed averages (thicker lines)
+        ax.plot(time_axis, smooth_avg_left, linewidth=2.0, label="Left (avg)")
+        ax.plot(time_axis, smooth_avg_right, linewidth=2.0, linestyle="--", label="Right (avg)")
+
+        # Optional stimulus epoch shading (e.g. 20–60 s)
+        ax.axvspan(20, 60, alpha=0.1)
+
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("ΔF/F")
+        ax.set_title(f"Activity dynamics for neuron {functional_id}")
+        ax.legend(frameon=False)
+
+        pdf_path = ROOT_PATH / segment_id / f"{segment_id}_dynamics.pdf"
+        fig.tight_layout()
+        fig.savefig(pdf_path)
+        plt.close(fig)

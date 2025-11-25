@@ -57,10 +57,10 @@ Command-line usage
 After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipeline as:
 
     python3 clem_zfish1_neuroglancer_pipeline.py \
-        --excel-file /path/to/rgc_axons_output_020525.csv \
+        --excel-file /path/to/reconstructed_neurons.csv \
         --root-path /path/to/traced_axons_neurons/ \
         --manual-synapses-path /path/to/manual_synapses/ \
-        --hdf5-path /path/to/all_cells.h5 \
+        --hdf5-path /path/to/fish1.5_functional_data.h5 \
         --size-cutoff 44
 
 Required inputs include:
@@ -79,21 +79,15 @@ __date__ = "2025-11-25"
 
 
 import argparse
-import datetime
-from datetime import date
 import logging
-import os
 from pathlib import Path
 
 import cloudvolume as cv
-import h5py
-import matplotlib.pyplot as plt
 import navis
-import numpy as np
 import pandas as pd
 from caveclient import CAVEclient
-from scipy.signal import savgol_filter
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from clem_zfish1_neuroglancer_helper import (
@@ -153,7 +147,7 @@ def parse_args() -> argparse.Namespace:
         "--excel-file",
         type=Path,
         required=True,
-        help="CSV file listing neurons/axons and their segment IDs, see provided example",
+        help="CSV file listing neurons/axons and their segment IDs, see provided example.",
     )
     parser.add_argument(
         "--root-path",
@@ -165,7 +159,7 @@ def parse_args() -> argparse.Namespace:
         "--manual-synapses-path",
         type=Path,
         required=True,
-        help="Directory containing manual synapse CSV files.",
+        help="Directory containing manual synapse CSV/XLSX files.",
     )
     parser.add_argument(
         "--hdf5-path",
@@ -213,6 +207,19 @@ def main() -> None:
 
     synapse_table = client.info.get_datastack_info()["synapse_table"]
     logger.info("Using synapse table: %s", synapse_table)
+
+    # ------------------------------------------------------------------
+    # Initialize helper module with shared objects and paths
+    # ------------------------------------------------------------------
+    logger.info("Initializing helper module state.")
+    init_helpers(
+        volume=vol,
+        cave_client=client,
+        manual_synapses_path=MANUAL_SYNAPSES_PATH,
+        root_path=ROOT_PATH,
+        hdf5_path=HDF5_PATH,
+        size_cutoff=SIZE_CUT_OFF,
+    )
 
     # ------------------------------------------------------------------
     # 1. Check problematic axons and dendrites
