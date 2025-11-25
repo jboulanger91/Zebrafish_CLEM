@@ -60,68 +60,34 @@ conda activate pull_from_neuroglancer
 ---
 
 ## Pipeline Diagram
-
-```
-                +-----------------------------+
-                |     Input neuron table      |
-                |    (CSV with segment IDs)   |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |   Initialize CloudVolume &   |
-                |         CAVEclient           |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |   Retrieve neuron segments   |
-                |  (nucleus, soma, axon, dend) |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |    Download mesh files      |
-                |        (.obj format)        |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |  Query pre/post synapses    |
-                |    from materialized table   |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                | Merge predicted synapses     |
-                |  with manual annotations     |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |     Export synapse tables    |
-                | (NG resolution, CSV files)   |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |   Build metadata file per    |
-                |             neuron           |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                | Extract ΔF/F dynamics (opt.) |
-                |    for functionally imaged   |
-                |             neurons          |
-                +--------------+--------------+
-                               |
-                               v
-                +-----------------------------+
-                |     Final per-neuron folder  |
-                | (metadata, meshes, synapses, |
-                |       functional data)       |
-                +-----------------------------+
+[Input CSV] 
+     |
+     v
+[Init CloudVolume + CAVEclient]
+     |
+     v
+[Retrieve neuron segments]
+     |
+     v
+[Download meshes (.obj)]
+     |
+     v
+[Query pre/post synapses]
+     |
+     v
+[Merge predicted + manual synapses]
+     |
+     v
+[Export synapse tables]
+     |
+     v
+[Write metadata file]
+     |
+     v
+[Extract ΔF/F (optional)]
+     |
+     v
+[Final per-neuron folder]
 ```
 
 ---
