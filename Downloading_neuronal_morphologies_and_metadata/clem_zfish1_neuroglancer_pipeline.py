@@ -56,7 +56,7 @@ Command-line usage
 ------------------
 After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipeline as:
 
-    python clem_zfish1_neuroglancer_pipeline.py \
+    python3 clem_zfish1_neuroglancer_pipeline.py \
         --excel-file /path/to/rgc_axons_output_020525.csv \
         --root-path /path/to/traced_axons_neurons/ \
         --manual-synapses-path /path/to/manual_synapses/ \
@@ -94,8 +94,14 @@ import pandas as pd
 from caveclient import CAVEclient
 from scipy.signal import savgol_filter
 import warnings
-
 warnings.filterwarnings("ignore")
+
+from clem_zfish1_neuroglancer_helper import (
+    init_helpers,
+    check_problematic_synapses,
+    generate_metadata_files,
+)
+
 
 # ------------------------------------------------------------------------
 # Dataset-level constants (these are fine to keep hard-coded)

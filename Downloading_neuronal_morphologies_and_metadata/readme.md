@@ -36,11 +36,11 @@ All output is organized into per-neuron directories under the folder provided vi
 Run the full pipeline from the command line:
 
 ```bash
-python clem_zfish1_neuroglancer_pipeline.py \
+python3 clem_zfish1_neuroglancer_pipeline.py \
     --excel-file /path/to/rgc_axons_output_020525.csv \
     --root-path /path/to/traced_axons_neurons/ \
     --manual-synapses-path /path/to/manual_synapses/ \
-    --hdf5-path /path/to/all_cells.h5 \
+    --hdf5-path /path/to/fish1.5_functinal_data.h5 (can be found here: https://zenodo.org/records/16893093) \
     --size-cutoff 44
 ```
 
