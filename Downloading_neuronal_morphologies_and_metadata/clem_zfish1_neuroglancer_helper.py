@@ -693,7 +693,7 @@ def process_functional_data(
     df: pd.DataFrame,
     idx: int,
     segment_id: str,
-    make_plots: bool = False,
+    make_plots: bool = True,
 ) -> None:
     """
     Extract and save functional imaging dynamics for functionally imaged neurons.

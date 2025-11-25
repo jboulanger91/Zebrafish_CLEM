@@ -1,0 +1,21 @@
+name: clem_zfish1_neuroglancer
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - pandas
+  - h5py
+  - matplotlib
+  - pip
+  - ipykernel
+  - jupyterlab
+
+  - pip:
+      - navis
+      - cloudvolume
+      - caveclient
+      
