@@ -60,6 +60,7 @@ conda activate pull_from_neuroglancer
 ---
 
 ## Pipeline Diagram
+```
 [Input CSV] 
      |
      v
