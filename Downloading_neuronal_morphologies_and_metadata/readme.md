@@ -22,7 +22,7 @@ CAVE_setup.ipynb
 
 - Retrieve nucleus, soma, axon, and dendrite meshes using CloudVolume  
 - Query pre- and postsynaptic synapses via CAVEclient  
-- Merge predicted and manually annotated synapses  
+- Merge automatically predicted and manually annotated synapses  
 - Generate per-neuron metadata files  
 - Export mesh components (.obj) and synapse tables  
 - Optionally extract ΔF/F functional dynamics for imaged neurons  
@@ -48,9 +48,9 @@ Replace the paths with values appropriate for your system.
 
 The functional data h5 file can be downloaded here: https://zenodo.org/records/16893093 
 
-The full csv file with all the neurons and axons reconstructed in this study are found ...
+The full csv file with all the neurons and axons reconstructed in this study is all_reconstructed_neurons.csv
 
-The example csv to test the code and upload manual examples are provided direclty in the Github folder 
+The example csv to test the code : example_neuron.csv and upload manual examples are provided direclty in the Github folder under /manual_synapses_exampled
 
 ---
 

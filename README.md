@@ -10,8 +10,8 @@ This repository hosts collaborative analyses on the structure–function relatio
 ### 1. Downloading neuronal morphologies and metadata
 Contains tools and scripts for uploading reconstructed neuronal morphologies and associated metadata. 
 
-**Folder:** `Uploading_neuronal_morphologies_and_metadata/`  
-**Environment file:** `env.yaml`
+**Folder:** `Downloading_neuronal_morphologies_and_metadata/`  
+**Environment file:** `env_clem_zfish1_neuroglancer.yaml`
 
 ---
 
