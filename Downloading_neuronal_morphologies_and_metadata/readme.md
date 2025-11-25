@@ -48,6 +48,10 @@ Replace the paths with values appropriate for your system.
 
 The functional data h5 file can be downloaded here: https://zenodo.org/records/16893093 
 
+The full csv file with all the neurons and axons reconstructed in this study are found ...
+
+The example csv to test the code and upload manual examples are provided direclty in the Github folder 
+
 ---
 
 ## Environment Setup
