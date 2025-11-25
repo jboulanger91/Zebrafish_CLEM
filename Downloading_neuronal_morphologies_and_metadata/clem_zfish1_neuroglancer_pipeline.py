@@ -48,9 +48,10 @@ Dependencies
 
 Environment setup
 -----------------
-Create the recommended environment using:
+Create and activatz the recommended environment using:
 
-    conda env create --file pull_from_neuroglancer.yaml
+    conda env create -f env_clem_zfish1_neuroglancer.yaml
+    conda activate clem_zfish1_neuroglancer
 
 Command-line usage
 ------------------

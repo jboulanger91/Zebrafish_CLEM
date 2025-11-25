@@ -55,8 +55,8 @@ The functional data h5 file can be downloaded here: https://zenodo.org/records/1
 The recommended environment for running this script can be created via:
 
 ```bash
-conda env create --file pull_from_neuroglancer.yaml
-conda activate pull_from_neuroglancer
+conda env create -f env_clem_zfish1_neuroglancer.yaml
+conda activate clem_zfish1_neuroglancer
 ```
 
 ---
