@@ -7,8 +7,8 @@ This repository hosts collaborative analyses on the structure–function relatio
 
 ## Repository Structure
 
-### 1. Uploading neuronal morphologies and metadata
-Contains tools and scripts for preparing, validating, and uploading reconstructed neuronal morphologies and associated metadata. 
+### 1. Downloading neuronal morphologies and metadata
+Contains tools and scripts for uploading reconstructed neuronal morphologies and associated metadata. 
 
 **Folder:** `Uploading_neuronal_morphologies_and_metadata/`  
 **Environment file:** `env.yaml`
@@ -16,7 +16,7 @@ Contains tools and scripts for preparing, validating, and uploading reconstructe
 ---
 
 ### 2. Reference brain registration
-Includes pipelines for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
+Pipeline for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
 
 **Folder:** `Reference_brain_registration/`  
 **Environment file:** `env.yaml`
