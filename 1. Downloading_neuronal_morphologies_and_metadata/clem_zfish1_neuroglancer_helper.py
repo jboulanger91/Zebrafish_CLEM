@@ -185,7 +185,7 @@ def check_problematic_synapses(
             )
         except Exception:
             problematic_axons.append(axon_id)
-            print(f"Problematic axon: {axon_id}")
+            print(f"Outdated axon ID: {axon_id}")
 
         dendrites_id = str(df.iloc[idx, 8])
         if dendrites_id != "0":  # In case we are only downloading an axon
@@ -197,7 +197,7 @@ def check_problematic_synapses(
                 )
             except Exception:
                 problematic_dendrites.append(dendrites_id)
-                print(f"Problematic dendrite: {dendrites_id}")
+                print(f"Outdated dendrite ID: {dendrites_id}")
 
     return problematic_axons, problematic_dendrites
 
@@ -647,6 +647,14 @@ def write_synapse_file(
     presynaptic_data_str = split_data[0].replace("'", "")
     postsynaptic_data_str = split_data[1].replace("'", "")
 
+    def convert_to_int_safe_from_float(value):
+        try:
+            if value is None:
+                return None
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
     for i, data_str in enumerate([presynaptic_data_str, postsynaptic_data_str]):
         start_index = data_str.find("[")
         end_index = data_str.find("]")
@@ -667,23 +675,60 @@ def write_synapse_file(
                         "y": int(values[2]),
                         "z": int(values[3]),
                         "synapse_id": convert_to_int_safe(values[4]),
-                        "size": convert_to_int_safe(values[5]),
+                        # NOTE: use float-safe conversion here instead of int-only
+                        "size": convert_to_int_safe_from_float(values[5]),
                         "prediction_status": values[6],
                         "validation_status": values[7],
                         "date": date_val,
                     }
                 )
-
         df_out = pd.DataFrame(table_data)
+
+        # ---- NEW: set column headers depending on file type ----
+        if i == 0:
+            # presynaptic file: partner is postsynaptic
+            df_out.columns = [
+                "postsynaptic ID",   # first column
+                "x (8 nm)",
+                "y (8 nm)",
+                "z (30 nm)",
+                "synapse_id",
+                "size",
+                "prediction_status",
+                "validation_status",
+                "date",
+            ]
+        else:
+            # postsynaptic file: partner is presynaptic
+            df_out.columns = [
+                "presynaptic_ID",    # first column
+                "x (8 nm)",
+                "y (8 nm)",
+                "z (30 nm)",
+                "synapse_id",
+                "size",
+                "prediction_status",
+                "validation_status",
+                "date",
+            ]
+        # --------------------------------------------------------
 
         synapse_file_path = Path(synapse_file_path)
         new_stem = synapse_file_path.stem.replace("_synapses", "")
         new_synapse_file_path = synapse_file_path.with_name(new_stem + synapse_file_path.suffix)
-        suffix = "_ng_res_presynapses.csv" if i == 0 else "_ng_res_postsynapses.csv"
+
+        # ---- NEW: remove 'ng_res' from the filenames ----
+        suffix = "_presynapses.csv" if i == 0 else "_postsynapses.csv"
+        # -------------------------------------------------
         output_file = new_synapse_file_path.with_name(new_synapse_file_path.stem + suffix)
 
-        df_out.to_csv(output_file, index=False, sep=" ", header=None, float_format="%.8f")
-
+        df_out.to_csv(
+            output_file,
+            index=False,
+            sep=" ",     # keep space-separated
+            header=True, # now write the header line
+            float_format="%.8f",
+        )
 
 # ------------------------------------------------------------------------
 # Functional imaging dynamics
