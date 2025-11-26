@@ -21,9 +21,9 @@ CAVE_setup.ipynb
 ## Overview of Functionality
 
 - Retrieve nucleus, soma, axon, and dendrite meshes using CloudVolume  
-- Query pre- and postsynaptic synapses via CAVEclient  
-- Merge automatically predicted and manually annotated synapses  
-- Generate per-neuron metadata files   
+- Query pre- and postsynaptic synapses via CAVEclient 
+- Merge automatically predicted and manually annotated synapses and generates pre- and postsynaptic synapses .csv files
+- Generate per-neuron metadata files 
 - Optionally extract ΔF/F functional dynamics for imaged neurons  
 
 All output is organized into per-neuron directories under the folder provided via `--root-path`.
