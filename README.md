@@ -4,7 +4,6 @@ This repository hosts collaborative analyses on the structure–function relatio
 
 ---
 
-
 ## Repository Structure
 
 ### 1. Downloading neuronal morphologies and metadata
@@ -15,19 +14,20 @@ Contains tools and scripts for uploading reconstructed neuronal morphologies and
 
 ---
 
-### 2. Reference brain registration
+### 2. Connectivity analysis
+Contains scripts for analyzing synaptic connectivity and generating connectivity matrices.
+
+**Folder:** `Connectivity_analysis/`  
+**Environment file:** `env.yaml`
+
+---
+
+### 3. Reference brain registration
 Pipeline for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
 
 **Folder:** `Reference_brain_registration/`  
 **Environment file:** `env.yaml`
 
----
-
-### 3. Connectivity analysis
-Contains scripts for analyzing synaptic connectivity and generating connectivity matrices.
-
-**Folder:** `Connectivity_analysis/`  
-**Environment file:** `env.yaml`
 
 ---
 
@@ -46,11 +46,3 @@ Implements computational models that simulate or predict network dynamics under 
 **Environment file:** `env.yaml`
 
 ---
-
-## Setup
-Each subproject includes an independent conda environment file (`env.yaml`).  
-To create an environment:
-```bash
-conda env create -f env.yaml
-conda activate <env_name>
-```
