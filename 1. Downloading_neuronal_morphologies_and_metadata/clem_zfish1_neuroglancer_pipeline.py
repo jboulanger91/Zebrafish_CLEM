@@ -28,7 +28,7 @@ Main functionality
 
 - **Synapse export:**  
   Query pre- and postsynaptic synapses, merge automatic and manual annotations, apply
-  size-based filtering, and export NG-resolution synapse tables.
+  size-based filtering, and export synapse tables (resolution is 4*4*30 nm/pixel to comply with Neuroglancer).
 
 - **Optional functional dynamics:**  
   For functionally imaged neurons, extract ΔF/F activity from the HDF5 dataset, save it in
@@ -225,10 +225,10 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 1. Check problematic axons and dendrites
     # ------------------------------------------------------------------
-    logger.info("Checking for problematic axons and dendrites...")
+    logger.info("Checking for outdated axons and dendrites IDs...")
     problematic_axons, problematic_dendrites = check_problematic_synapses(df, synapse_table)
     logger.info(
-        "Found %d problematic axons and %d problematic dendrites.",
+        "Found %d outdated axons and %d problematic dendrites.",
         len(problematic_axons),
         len(problematic_dendrites),
     )
