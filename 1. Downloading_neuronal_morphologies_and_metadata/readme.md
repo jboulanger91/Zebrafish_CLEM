@@ -58,7 +58,7 @@ python3 clem_zfish1_neuroglancer_pipeline.py \
 
 The CLEM zfish1 Neuroglancer pipeline relies on three main types of input:
 
-1. A CSV file listing nuclei/soma/axons/dendrits segment IDs, you can use the whole dataset (all_reconstructed_neurons.csv) or the example file (example_neuron.csv) provided in the repository
+1. A CSV file listing nuclei/soma/axons/dendrits segment IDs, you can use the whole dataset (all_reconstructed_neurons.csv) or the example file (example_neuron.csv) provided in the repository. 
 2. An HDF5 file containing functional imaging data (optional). The functional ΔF/F data used in this study is provided as an HDF5 file: 
 - **File name:** `fish1.5_functional_data.h5`  
 - **Download:** [Zenodo record 16893093](https://zenodo.org/records/16893093)

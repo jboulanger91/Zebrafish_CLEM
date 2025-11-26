@@ -704,8 +704,8 @@ def process_functional_data(
     - loads the corresponding ΔF/F activity from the global HDF5 dataset
       (specified via `init_helpers`),
     - writes a per-neuron HDF5 file containing single-trial and averaged traces
-      for leftward and rightward motion stimuli,
-    - optionally generates a PDF with smoothed average and trial traces.
+      for leftward and rightward random-dot and sine-wave motion stimuli,
+    - optionally generates a PDF with trial and mean traces for random-dot stimuli.
 
     Parameters
     ----------
@@ -718,8 +718,8 @@ def process_functional_data(
         Segment identifier used to name the per-neuron folder and files
         (e.g. "clem_zfish1_cell_<id>" or "clem_zfish1_axon_<id>").
     make_plots : bool, optional
-        If True, generate a PDF with smoothed average and trial traces for
-        left and right stimuli. By default, no plots are created.
+        If True, generate a PDF with trial and mean traces for left and right
+        random-dot stimuli. By default, plots are created.
     """
     if HDF5_PATH is None or ROOT_PATH is None:
         raise RuntimeError(
@@ -732,77 +732,89 @@ def process_functional_data(
         # Nothing to do for non-imaged neurons
         return
 
+    neuron_group_name = f"neuron_{functional_id}"
+
+    # ------------------------------------------------------------------
     # Load data from the global functional HDF5
+    # ------------------------------------------------------------------
     with h5py.File(HDF5_PATH, "r") as hdf_file:
-        neuron_group_name = f"neuron_{functional_id}"
         if neuron_group_name not in hdf_file:
             raise KeyError(
                 f"Group '{neuron_group_name}' not found in HDF5 file {HDF5_PATH}."
             )
         neuron_group = hdf_file[neuron_group_name]
 
-        # Average activity (1D traces) for left and right stimuli
-        avg_activity_left = neuron_group["average_activity_left"][()]
-        avg_activity_right = neuron_group["average_activity_right"][()]
+        # Trial-resolved ΔF/F data
+        left_dots = neuron_group["dff_trials_left_dots"][()]
+        right_dots = neuron_group["dff_trials_right_dots"][()]
+        left_sine = neuron_group["dff_trials_left_sine"][()]
+        right_sine = neuron_group["dff_trials_right_sine"][()]
 
-        # Individual trial data (2D: n_trials x n_timepoints) for left/right
-        trials_left = neuron_group["neuronal_activity_trials_left"][()]
-        trials_right = neuron_group["neuronal_activity_trials_right"][()]
+    # Compute mean traces across trials (time along axis=1)
+    mean_left_dots = np.nanmean(left_dots, axis=0)
+    mean_right_dots = np.nanmean(right_dots, axis=0)
+    mean_left_sine = np.nanmean(left_sine, axis=0)
+    mean_right_sine = np.nanmean(right_sine, axis=0)
 
+    # ------------------------------------------------------------------
     # Create per-neuron HDF5 file with dynamics
+    # ------------------------------------------------------------------
     dest_path = ROOT_PATH / segment_id / f"{segment_id}_dynamics.hdf5"
     dest_path.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(dest_path, "w") as f:
-        # Store the trial-resolved data
-        f.create_dataset("dF_F/single_trial_rdms_left", data=trials_left)
-        f.create_dataset("dF_F/single_trial_rdms_right", data=trials_right)
+        grp = f.create_group("dF_F")
 
-        # Store the average traces
-        f.create_dataset(
-            "dF_F/average_rdms_left_dF_F_calculated_on_single_trials",
-            data=avg_activity_left,
-        )
-        f.create_dataset(
-            "dF_F/average_rdms_right_dF_F_calculated_on_single_trials",
-            data=avg_activity_right,
-        )
+        # Store trial-resolved data
+        grp.create_dataset("dff_trials_left_dots", data=left_dots)
+        grp.create_dataset("dff_trials_right_dots", data=right_dots)
+        grp.create_dataset("dff_trials_left_sine", data=left_sine)
+        grp.create_dataset("dff_trials_right_sine", data=right_sine)
 
-    # Optional plotting for QC
+        # Store mean traces
+        grp.create_dataset("mean_left_dots", data=mean_left_dots)
+        grp.create_dataset("mean_right_dots", data=mean_right_dots)
+        grp.create_dataset("mean_left_sine", data=mean_left_sine)
+        grp.create_dataset("mean_right_sine", data=mean_right_sine)
+
+    # ------------------------------------------------------------------
+    # Optional plotting (Random Dot stimuli only)
+    # ------------------------------------------------------------------
     if make_plots:
         import matplotlib.pyplot as plt  # local import to keep dependency optional
 
-        # Smooth signals with a Savitzky–Golay filter
-        smooth_avg_left = savgol_filter(avg_activity_left, 20, 3)
-        smooth_avg_right = savgol_filter(avg_activity_right, 20, 3)
-        smooth_trials_left = savgol_filter(trials_left, 20, 3, axis=1)
-        smooth_trials_right = savgol_filter(trials_right, 20, 3, axis=1)
+        # Time axis (frames -> seconds)
+        dt = 0.5  # adjust if your frame rate is different
+        n_timepoints = left_dots.shape[1]
+        time_axis = np.arange(n_timepoints) * dt
 
-        # Time axis (assuming 0.5 s per frame, as in your original code)
-        dt = 0.5
-        time_axis = np.arange(avg_activity_left.shape[0]) * dt
+        fig, ax = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 
-        fig, ax = plt.subplots(figsize=(6, 4))
+        # Leftward motion (dots)
+        for trial in left_dots:
+            ax[0].plot(time_axis, trial, color="orange", alpha=0.4, linewidth=1)
+        ax[0].plot(time_axis, mean_left_dots, color="darkorange", linewidth=2)
+        ax[0].axvspan(20, 60, color="gray", alpha=0.2, label="Stimulus ON")
+        ax[0].set_title("Leftward Motion (Dots)")
+        ax[0].set_xlabel("Time (s)")
+        ax[0].set_ylabel("ΔF/F (%)")
+        ax[0].legend(loc="upper left", frameon=False, fontsize=12)
 
-        # Plot individual trials (thin gray/black)
-        for trial in smooth_trials_left:
-            ax.plot(time_axis, trial, alpha=0.3, linewidth=0.7, linestyle="-")
-        for trial in smooth_trials_right:
-            ax.plot(time_axis, trial, alpha=0.3, linewidth=0.7, linestyle="--")
+        # Rightward motion (dots)
+        for trial in right_dots:
+            ax[1].plot(time_axis, trial, color="blue", alpha=0.2, linewidth=1)
+        ax[1].plot(time_axis, mean_right_dots, color="darkblue", linewidth=2)
+        ax[1].axvspan(20, 60, color="gray", alpha=0.2)
+        ax[1].set_title("Rightward Motion (Dots)")
+        ax[1].set_xlabel("Time (s)")
 
-        # Plot smoothed averages (thicker lines)
-        ax.plot(time_axis, smooth_avg_left, linewidth=2.0, label="Left (avg)")
-        ax.plot(time_axis, smooth_avg_right, linewidth=2.0, linestyle="--", label="Right (avg)")
+        # Square aspect ratio
+        for axis in ax:
+            axis.set_box_aspect(1)
 
-        # Optional stimulus epoch shading (e.g. 20–60 s)
-        ax.axvspan(20, 60, alpha=0.1)
-
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("ΔF/F")
-        ax.set_title(f"Activity dynamics for neuron {functional_id}")
-        ax.legend(frameon=False)
+        plt.suptitle(f"Neuron {functional_id} – Random Dot Stimuli")
+        plt.tight_layout()
 
         pdf_path = ROOT_PATH / segment_id / f"{segment_id}_dynamics.pdf"
-        fig.tight_layout()
-        fig.savefig(pdf_path)
+        plt.savefig(pdf_path)
         plt.close(fig)

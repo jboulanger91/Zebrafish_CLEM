@@ -2,4 +2,4 @@
 fish1.5_functional_data.h5
 
 # Ignore a specific folder
-#data/tmp/
+traced_axons_neurons/
