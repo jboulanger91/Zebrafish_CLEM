@@ -1,8 +1,6 @@
 # Zebrafish Hindbrain Functional Connectomics
 
-<p align="center">
-  <img src="home_image.png" width="450">
-</p>
+![Description of the image](home_img.png)
 
 **Figure X.** Short descriptive caption about what the image shows.
 
