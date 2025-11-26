@@ -68,7 +68,7 @@ All filesystem paths in the example commands should be replaced with locations a
 
 ---
 
-### Output data
+## Output data
 
 You can regenerate the whole dataset using the provided csv file: all_reconstructed_neurons.csv or download it here: 
 

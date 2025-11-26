@@ -1,5 +1,11 @@
 # Zebrafish Hindbrain Functional Connectomics
 
+<p align="center">
+  <img src="home_image.png" width="450">
+</p>
+
+**Figure X.** Short descriptive caption about what the image shows.
+
 This repository hosts collaborative analyses on the structure–function relationships in the zebrafish hindbrain, integrating anatomical connectivity, morphology-based predictions, and network modeling.
 
 ---
