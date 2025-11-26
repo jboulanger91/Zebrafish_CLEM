@@ -46,12 +46,12 @@ conda activate clem_zfish1_neuroglancer
 Run the full pipeline from the command line:
 
 ```bash
-python3 clem_zfish1_neuroglancer_pipeline.py \
-    --excel-file /path/to/reconstructed_neurons.csv \
-    --root-path /path/to/traced_axons_neurons/ \
-    --manual-synapses-path /path/to/manual_synapses/ \
-    --hdf5-path /path/to/fish1.5_functional_data.h5 \
-    --size-cutoff 44
+  python3 clem_zfish1_neuroglancer_pipeline.py \
+        --excel-file example_neuron.csv \
+        --root-path traced_axons_neurons/ \
+        --manual-synapses-path manual_synapses_example\
+        --hdf5-path fish1.5_functional_data.h5 \
+        --size-cutoff 44
 ```
 
 ## Input Data and Example Files
