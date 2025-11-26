@@ -61,7 +61,7 @@ After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipe
         --excel-file example_neuron.csv \
         --root-path traced_axons_neurons/ \
         --manual-synapses-path manual_synapses_example\
-        --hdf5-path fish1.5_functional_data.h5 \
+        --hdf5-path clem_zfish1_functional_data.h5 \
         --size-cutoff 44
 
 Required inputs include:
