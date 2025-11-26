@@ -10,7 +10,7 @@ clem_zfish1_neuroglancer_pipeline.py
 
 and relies on CloudVolume, Neuroglancer, CAVEclient, and the processed functional imaging dataset.
 
-Before running this pipeline, CAVE credentials must be configured using the accompanying notebook:
+Before running this pipeline, CAVE credentials must be configured using the accompanying notebook in this folder:
 
 ```
 CAVE_setup.ipynb
@@ -23,8 +23,7 @@ CAVE_setup.ipynb
 - Retrieve nucleus, soma, axon, and dendrite meshes using CloudVolume  
 - Query pre- and postsynaptic synapses via CAVEclient  
 - Merge automatically predicted and manually annotated synapses  
-- Generate per-neuron metadata files  
-- Export mesh components (.obj) and synapse tables  
+- Generate per-neuron metadata files   
 - Optionally extract ΔF/F functional dynamics for imaged neurons  
 
 All output is organized into per-neuron directories under the folder provided via `--root-path`.
@@ -44,13 +43,31 @@ python3 clem_zfish1_neuroglancer_pipeline.py \
     --size-cutoff 44
 ```
 
-Replace the paths with values appropriate for your system.
+## Input Data and Example Files
 
-The functional data h5 file can be downloaded here: https://zenodo.org/records/16893093 
+The CLEM Zfish1 Neuroglancer pipeline relies on three main types of input:
 
-The full csv file with all the neurons and axons reconstructed in this study is all_reconstructed_neurons.csv
+1. A CSV file listing nuclei/soma/axons/dendrits segment IDs, you can use the whole dataset (all_reconstructed_neurons.csv) or the exmaple file (example_neuron.csv)
+2. An HDF5 file containing functional imaging data (optional)  
+3. (Optional) Manual synapse annotation files 
 
-The example csv to test the code : example_neuron.csv and upload manual examples are provided direclty in the Github folder under /manual_synapses_exampled
+All filesystem paths in the example commands should be replaced with locations appropriate for your system.
+
+---
+
+### 1. Functional imaging data (HDF5)
+
+The functional ΔF/F data used in this study is provided as an HDF5 file:
+
+- **File name:** `all_cells.h5`  
+- **Download:** [Zenodo record 16893093](https://zenodo.org/records/16893093)
+
+### 2. Neuronal morphology, metadata and connectivity 
+
+You can regenerate the whole dataset using the provided csv file: all_reconstructed_neurons.csv or download it here: 
+
+- **File name:** `all_cells.h5`  
+- **Download:** [Zenodo record 16893093](https://zenodo.org/records/16893093)
 
 ---
 
@@ -64,43 +81,3 @@ conda activate clem_zfish1_neuroglancer
 ```
 
 ---
-
-## Pipeline Diagram
-```
-[Input CSV] 
-     |
-     v
-[Init CloudVolume + CAVEclient]
-     |
-     v
-[Retrieve neuron segments]
-     |
-     v
-[Download meshes (.obj)]
-     |
-     v
-[Query pre/post synapses]
-     |
-     v
-[Merge predicted + manual synapses]
-     |
-     v
-[Export synapse tables]
-     |
-     v
-[Write metadata file]
-     |
-     v
-[Extract ΔF/F (optional)]
-     |
-     v
-[Final per-neuron folder]
-```
-
----
-
-## Notes
-
-- Access to the datastack requires a valid CloudVolume token and configured CAVE credentials.  
-- This script is part of the zebrafish hindbrain functional connectomics analysis pipeline.  
-- All outputs adhere to the directory structure defined by `--root-path`.
