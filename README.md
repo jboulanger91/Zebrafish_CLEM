@@ -40,28 +40,19 @@ Pipeline for registering neuronal morphologies to a standardized zebrafish refer
 ### 3. Connectivity Matrix Generation
 
 Pipeline for computing and visualizing directional connectivity matrices from the **clem_zfish1** connectome.  
-This step summarizes synaptic connectivity across functional neuron classes using the per-neuron synapse tables generated in Part 1.
+Neurons need to be registered to the reference brain for hemisphere asignment. 
 
 **Includes:**
-- Extraction of synaptic inputs and outputs from NG-resolution synapse tables (8×8×30 nm)  
+- Import of Neuroglancer-resolution synapse tables
 - Automatic hemisphere classification from mapped meshes (if missing)  
-- Grouping neurons into functional categories:  
-  * ipsilateral_motion_integrator  
-  * contralateral_motion_integrator  
-  * motion_onset  
-  * slow_motion_integrator  
-  * myelinated  
-  * axon_rostral / axon_caudal  
+- Grouping neurons into functional and morphological categories decribed in the manuscript. 
 - Construction of two matrix types:  
   * **Pooled matrix** (across hemispheres)  
   * **Left/right-split matrix** with optional inhibitory/excitatory signed representation  
-- Generation of publication-quality matrix plots (heatmap or scatter) with functional-type sidebars
+- Generation of matrix plots (heatmap or scatter) with functional-type sidebars
 
 **Outputs:**
-- Directional connectivity matrices (pre → post synapses)  
-- Pooled and L/R-split connectivity matrix PDFs  
-- Optional inhibitory/excitatory signed scatter matrices  
-- Summary statistics per functional category
+- Directional connectivity matrices (pre → post synapses) or pooled or Left/Right-split connectivity matrix PDFs  
 
 **Main script:** `02a_make_connectivity_matrices.py`  
 **Helper module:** `clem_zfish1_connectivity_helper.py`  
