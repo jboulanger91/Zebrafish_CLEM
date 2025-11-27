@@ -1153,7 +1153,7 @@ def plot_connectivity_matrix(
             "#7CFF5A",  # weak excitatory (light green)
             "#007A00",  # strong excitatory (dark green)
         ]
-        
+
         cmap = mcolors.ListedColormap(colors, name="Inhibitory-Excitatory")
         bounds = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5]
         norm = mcolors.BoundaryNorm(bounds, cmap.N)

@@ -58,9 +58,9 @@ Command-line usage
 After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipeline as:
 
   python3 clem_zfish1_neuroglancer_pipeline.py \
-        --excel-file example_neuron.csv \
+        --excel-file all_reconstructed_neurons.csv \
         --root-path traced_axons_neurons/ \
-        --manual-synapses-path manual_synapses_example\
+        --manual-synapses-path manual_synapses\
         --hdf5-path clem_zfish1_functional_data.h5 \
         --size-cutoff 44
 
@@ -93,7 +93,7 @@ warnings.filterwarnings("ignore")
 
 from clem_zfish1_neuroglancer_helper import (
     init_helpers,
-    check_problematic_synapses,
+    check_problematic_segments,
     generate_metadata_files,
 )
 
@@ -225,13 +225,43 @@ def main() -> None:
     # ------------------------------------------------------------------
     # 1. Check problematic axons and dendrites
     # ------------------------------------------------------------------
-    logger.info("Checking for outdated axons and dendrites IDs...")
-    problematic_axons, problematic_dendrites = check_problematic_synapses(df, synapse_table)
+    logger.info("Checking for outdated or problematic axon/dendrite IDs...\n")
+
+    problematic_axons, problematic_dendrites = check_problematic_segments(df, synapse_table)
+
+    # Pretty-print results
+    logger.info("------------------------------------------------------------")
+    logger.info(" PROBLEMATIC AXONS")
+    logger.info("------------------------------------------------------------")
+    if problematic_axons:
+        for ax in problematic_axons:
+            logger.info(f"  - {ax}")
+    else:
+        logger.info("  None found.")
+
+    logger.info("------------------------------------------------------------")
+    logger.info(" PROBLEMATIC DENDRITES")
+    logger.info("------------------------------------------------------------")
+    if problematic_dendrites:
+        for den in problematic_dendrites:
+            logger.info(f"  - {den}")
+    else:
+        logger.info("  None found.")
+
+    logger.info("------------------------------------------------------------")
     logger.info(
-        "Found %d outdated axons and %d problematic dendrites.",
-        len(problematic_axons),
-        len(problematic_dendrites),
+        "Summary: %d problematic axons, %d problematic dendrites.",
+        len(problematic_axons), len(problematic_dendrites)
     )
+    logger.info("------------------------------------------------------------\n")
+
+    # Pause for user confirmation
+    try:
+        input("Press ENTER to continue with metadata + mesh generation, "
+            "or Ctrl+C to abort...")
+    except KeyboardInterrupt:
+        logger.warning("Pipeline aborted by user.")
+        return
 
     # ------------------------------------------------------------------
     # 2. Generate metadata, meshes, synapse files, and functional data

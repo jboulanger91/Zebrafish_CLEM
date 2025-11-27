@@ -39,12 +39,9 @@ Pipeline for registering neuronal morphologies to a standardized zebrafish refer
 
 ### 3. Connectivity Matrix Generation
 
-Pipeline for computing and visualizing directional connectivity matrices from the **clem_zfish1** connectome.  
-Neurons need to be registered to the reference brain for hemisphere asignment. 
-
-**Includes:**
+Pipeline for computing and visualizing directional connectivity matrices from the **clem_zfish1** connectome.  This includes
 - Import of Neuroglancer-resolution synapse tables
-- Automatic hemisphere classification from mapped meshes (if missing)  
+- Automatic hemisphere classification from mapped meshes (neurons need to be registered to the reference brain)   
 - Grouping neurons into functional and morphological categories decribed in the manuscript. 
 - Construction of two matrix types:  
   * **Pooled matrix** (across hemispheres)  
@@ -54,7 +51,7 @@ Neurons need to be registered to the reference brain for hemisphere asignment.
 **Outputs:**
 - Directional connectivity matrices (pre → post synapses) or pooled or Left/Right-split connectivity matrix PDFs  
 
-**Main script:** `02a_make_connectivity_matrices.py`  
+**Main script:** `make_connectivity_matrices.py`  
 **Helper module:** `clem_zfish1_connectivity_helper.py`  
 **Environment file:** `env_clem_zfish1_connectivity.yaml`
 

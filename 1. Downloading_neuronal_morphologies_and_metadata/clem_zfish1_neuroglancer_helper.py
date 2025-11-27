@@ -24,6 +24,7 @@ from datetime import date
 import os
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
+import logging
 
 import cloudvolume as cv
 import h5py
@@ -144,60 +145,123 @@ def convert_to_int_safe(value: Any, default: int = 0) -> int:
 # Problematic synapse detection
 # ------------------------------------------------------------------------
 
-def check_problematic_synapses(
+def check_problematic_segments(
     df: pd.DataFrame,
     synapse_table: str,
 ) -> Tuple[List[str], List[str]]:
     """
-    Check which axons and dendrites cause errors when querying the synapse table.
+    Check which axon and dendrite segment IDs are NOT latest in the chunkedgraph.
+
+    A segment is considered "problematic" here if
+    `client.chunkedgraph.is_latest_roots(..., timestamp=mat_time)` returns False
+    or if the check raises an error (e.g. invalid / deleted root).
 
     Parameters
     ----------
     df : pandas.DataFrame
         Table containing neuron/axon entries and segment IDs.
-        Assumes axon IDs are in column 7 and dendrite IDs are in column 8.
+        Assumes:
+        - axon IDs     are in column 7
+        - dendrite IDs are in column 8
     synapse_table : str
         Name of the synapse table in the materialized database.
+        (Kept for API compatibility; not used directly in this function.)
 
     Returns
     -------
     problematic_axons : list of str
-        Axon IDs for which synapse queries fail.
+        Axon IDs that are not latest or could not be checked.
     problematic_dendrites : list of str
-        Dendrite IDs for which synapse queries fail.
+        Dendrite IDs that are not latest or could not be checked.
     """
     if client is None:
-        raise RuntimeError("Helper module not initialized: `client` is None. "
-                           "Call `init_helpers(...)` from the main script first.")
+        raise RuntimeError(
+            "Helper module not initialized: `client` is None. "
+            "Call `init_helpers(...)` from the main script first."
+        )
+
+    logger = logging.getLogger(__name__)
+
+    # Timestamp used for "latest" checks
+    mat_time = client.materialize.get_timestamp()
 
     problematic_axons: List[str] = []
     problematic_dendrites: List[str] = []
 
     num_cells = len(df)
-    for idx in range(num_cells):
-        print(f"Processed cells: {idx}")
-        axon_id = str(df.iloc[idx, 7])
-        try:
-            client.materialize.live_query(
-                synapse_table,
-                datetime.datetime.now(datetime.timezone.utc),
-                filter_equal_dict={"pre_pt_root_id": int(axon_id)},
-            )
-        except Exception:
-            problematic_axons.append(axon_id)
-            print(f"Outdated axon ID: {axon_id}")
+    logger.info(
+        "Checking %d rows for outdated axon/dendrite root IDs (synapse table: %s)...",
+        num_cells,
+        synapse_table,
+    )
 
-        dendrites_id = str(df.iloc[idx, 8])
-        if dendrites_id != "0":  # In case we are only downloading an axon
+    for idx in range(num_cells):
+        print(f"Checking row {idx+1}/{num_cells}", end="\r")
+
+        # ------------------------
+        # AXON CHECK
+        # ------------------------
+        axon_id_raw = df.iloc[idx, 7]
+        axon_id_str = str(axon_id_raw)
+
+        if axon_id_str not in ("0", "nan", "NaN", "None") and axon_id_str.strip() != "":
             try:
-                client.materialize.live_query(
-                    synapse_table,
-                    datetime.datetime.now(datetime.timezone.utc),
-                    filter_equal_dict={"post_pt_root_id": int(dendrites_id)},
+                axon_root = int(axon_id_str)
+                status = client.chunkedgraph.is_latest_roots(
+                    [axon_root], timestamp=mat_time
                 )
-            except Exception:
-                problematic_dendrites.append(dendrites_id)
-                print(f"Outdated dendrite ID: {dendrites_id}")
+                is_latest = bool(status[0])
+
+                if not is_latest:
+                    problematic_axons.append(axon_id_str)
+                    logger.warning(
+                        "Outdated / non-latest axon root ID detected: %s", axon_id_str
+                    )
+
+            except Exception as e:
+                problematic_axons.append(axon_id_str)
+                logger.error(
+                    "Error checking latest-root status for axon ID %s: %s",
+                    axon_id_str,
+                    e,
+                )
+
+        # ------------------------
+        # DENDRITE CHECK
+        # ------------------------
+        dend_id_raw = df.iloc[idx, 8]
+        dend_id_str = str(dend_id_raw)
+
+        # Skip if "0" (axon-only row) or empty
+        if dend_id_str not in ("0", "nan", "NaN", "None") and dend_id_str.strip() != "":
+            try:
+                dend_root = int(dend_id_str)
+                status = client.chunkedgraph.is_latest_roots(
+                    [dend_root], timestamp=mat_time
+                )
+                is_latest = bool(status[0])
+
+                if not is_latest:
+                    problematic_dendrites.append(dend_id_str)
+                    logger.warning(
+                        "Outdated / non-latest dendrite root ID detected: %s",
+                        dend_id_str,
+                    )
+
+            except Exception as e:
+                problematic_dendrites.append(dend_id_str)
+                logger.error(
+                    "Error checking latest-root status for dendrite ID %s: %s",
+                    dend_id_str,
+                    e,
+                )
+
+    logger.info(
+        "Finished checking latest-root status. "
+        "Problematic axons: %d, problematic dendrites: %d",
+        len(problematic_axons),
+        len(problematic_dendrites),
+    )
 
     return problematic_axons, problematic_dendrites
 

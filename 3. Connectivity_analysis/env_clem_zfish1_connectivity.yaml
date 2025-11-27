@@ -1,0 +1,22 @@
+name: clem_zfish1_connectivity
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Core Python
+  - python=3.12
+
+  # Scientific stack
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - openpyxl  # Excel support
+
+  # Mesh + neuron toolkit
+  - pip
+  - pip:
+      - navis          # required for reading meshes and neuron structures
+      - trimesh        # navis dependency for mesh handling
+      - networkx       # navis dependency for graph structures

@@ -13,6 +13,7 @@ dependencies:
   - pip
   - ipykernel
   - jupyterlab
+  - openpyxl
 
   - pip:
       - navis

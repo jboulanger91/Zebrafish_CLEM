@@ -34,12 +34,12 @@ mesh files using `determine_hemisphere` from the helper module.
 
 Typical usage
 -------------
-python3 02a_make_connectivity_matrices.py \
-    --metadata-csv all_cells_111224_with_hemisphere.csv \
-    --root-folder traced_neurons/all_cells_111224 \
-    --output-folder connectomes/connectivity_matrices \
+python3 make_connectivity_matrices.py \
+    --metadata-csv all_reconstructed_neurons.csv \
+    --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/hb_connectome/hindbrain_structure_function/clem_zfish1/traced_neurons/all_cells_111224" \
+    --output-folder /connectivity_matrices \
     --plot-type scatter \
-    --suffix lda_022825
+    --suffix native_112725
 
 All paths should be adapted to your local setup.
 """
