@@ -37,29 +37,35 @@ Pipeline for registering neuronal morphologies to a standardized zebrafish refer
 
 ---
 
-### 3. Connectivity analysis
+### 3. Connectivity Matrix Generation
 
-Tools for quantifying and visualizing connectomes derived from the traced neurons:
+Pipeline for computing and visualizing directional connectivity matrices from the **clem_zfish1** connectome.  
+This step summarizes synaptic connectivity across functional neuron classes using the per-neuron synapse tables generated in Part 1.
 
-- Classify neurons by hemisphere (ipsilateral / contralateral) using mapped neurons to the reference brain 
-- Build directional connectivity matrices between functional neuron classes  
-- Compute connectivity probabilities (cells and synapses, same- vs different-side)  
-- Plot compact neural-network diagrams summarizing connectivity patterns  
-- Generate mesh-based visualizations of input/output connectomes  
-- Plot activity traces for functionally imaged neurons and their partners  
+**Includes:**
+- Extraction of synaptic inputs and outputs from NG-resolution synapse tables (8×8×30 nm)  
+- Automatic hemisphere classification from mapped meshes (if missing)  
+- Grouping neurons into functional categories:  
+  * ipsilateral_motion_integrator  
+  * contralateral_motion_integrator  
+  * motion_onset  
+  * slow_motion_integrator  
+  * myelinated  
+  * axon_rostral / axon_caudal  
+- Construction of two matrix types:  
+  * **Pooled matrix** (across hemispheres)  
+  * **Left/right-split matrix** with optional inhibitory/excitatory signed representation  
+- Generation of publication-quality matrix plots (heatmap or scatter) with functional-type sidebars
 
-Outputs include:
+**Outputs:**
+- Directional connectivity matrices (pre → post synapses)  
+- Pooled and L/R-split connectivity matrix PDFs  
+- Optional inhibitory/excitatory signed scatter matrices  
+- Summary statistics per functional category
 
-- CSVs with updated metadata (e.g. hemisphere, LDA predictions)  
-- Connectivity matrices and summary tables  
-- PDF figures (neural network diagrams, mesh renderings, activity plots)
-
-**Main scripts (examples):**
-
-- `connectivity_analysis.py` (hemispheres, connectomes, matrices, plots)  
-- `connectome_helpers_current.py` (helper functions for connectivity and plotting)
-
-**Environment file:** `env.yaml`
+**Main script:** `02a_make_connectivity_matrices.py`  
+**Helper module:** `clem_zfish1_connectivity_helper.py`  
+**Environment file:** `env_clem_zfish1_connectivity.yaml`
 
 ---
 
