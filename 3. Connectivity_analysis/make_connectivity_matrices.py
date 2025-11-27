@@ -37,7 +37,9 @@ Typical usage
 python3 02a_make_connectivity_matrices.py \
     --metadata-csv all_cells_111224_with_hemisphere.csv \
     --root-folder traced_neurons/all_cells_111224 \
-    --output-folder connectomes/connectivity_matrices
+    --output-folder connectomes/connectivity_matrices \
+    --plot-type scatter \
+    --suffix lda_022825
 
 All paths should be adapted to your local setup.
 """
@@ -86,6 +88,8 @@ def parse_args() -> argparse.Namespace:
         - root_folder
         - output_folder
         - recompute_hemisphere
+        - plot_type
+        - suffix
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -123,6 +127,21 @@ def parse_args() -> argparse.Namespace:
             "the metadata already contains a 'hemisphere' column."
         ),
     )
+    parser.add_argument(
+        "--plot-type",
+        choices=["heatmap", "scatter"],
+        default="heatmap",
+        help="Plot style for both matrices ('heatmap' or 'scatter').",
+    )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default="",
+        help=(
+            "Optional suffix appended to output PDF filenames "
+            "(e.g., 'lda_022825'). Do not include the file extension."
+        ),
+    )
 
     return parser.parse_args()
 
@@ -138,6 +157,9 @@ def main() -> None:
     4. Creates functional groups (pooled and L/R split).
     5. Builds connectivity matrices using NG synapse tables.
     6. Plots and saves the resulting matrices as PDFs.
+
+    The plot type (heatmap vs scatter) and an optional filename suffix can
+    be configured via command-line arguments.
     """
     setup_logging()
     logger = logging.getLogger(__name__)
@@ -147,6 +169,13 @@ def main() -> None:
     root_folder: Path = args.root_folder
     output_folder: Path = args.output_folder
     recompute_hemisphere: bool = args.recompute_hemisphere
+    plot_type: str = args.plot_type
+    suffix: str = args.suffix.strip()
+
+    if suffix:
+        suffix_str = f"_{suffix}"
+    else:
+        suffix_str = ""
 
     logger.info("Loading metadata from %s", metadata_csv)
     all_cells = load_and_clean_data(metadata_csv)
@@ -208,16 +237,17 @@ def main() -> None:
         "axon_caudal",
     ]
 
-    logger.info("Plotting pooled connectivity matrix...")
+    pooled_title = f"pooled_connectivity_matrix{suffix_str}"
+    logger.info("Plotting pooled connectivity matrix (%s)...", plot_type)
     plot_connectivity_matrix(
         filtered_matrix,
         filtered_types,
         output_path=output_folder,
         category_order=category_order_pooled,
         df=all_cells,
-        title="pooled_connectivity_matrix",
+        title=pooled_title,
         display_type="normal",
-        plot_type="heatmap",
+        plot_type=plot_type,
         color_cell_type_dict=COLOR_CELL_TYPE_DICT,
     )
 
@@ -269,16 +299,20 @@ def main() -> None:
         "axon_caudal_right",
     ]
 
-    logger.info("Plotting L/R connectivity matrix (inhibitory/excitatory mode)...")
+    lr_title = f"lr_split_connectivity_matrix_inhibitory_excitatory{suffix_str}"
+    logger.info(
+        "Plotting L/R connectivity matrix in inhibitory/excitatory mode (%s)...",
+        plot_type,
+    )
     plot_connectivity_matrix(
         filtered_matrix_lr,
         filtered_types_lr,
         output_path=output_folder,
         category_order=category_order_lr,
         df=all_cells,
-        title="lr_split_connectivity_matrix_inhibitory_excitatory",
+        title=lr_title,
         display_type="Inhibitory_Excitatory",
-        plot_type="scatter",
+        plot_type=plot_type,
         color_cell_type_dict=COLOR_CELL_TYPE_DICT_LR,
     )
 

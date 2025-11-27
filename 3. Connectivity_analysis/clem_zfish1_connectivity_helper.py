@@ -1145,13 +1145,15 @@ def plot_connectivity_matrix(
 
     if display_type == "Inhibitory_Excitatory":
         matrix_with_nan = np.clip(matrix_with_nan, -2, 2)
+
         colors = [
-            "#D62839",  # strong inhibitory
-            "#F88F54",  # weak inhibitory
+            "#9B00AE",  # strong inhibitory (dark magenta)
+            "#FF4DFF",  # weak inhibitory (light magenta)
             "#FFFFFF",  # zero
-            "#9FD598",  # weak excitatory
-            "#227C71",  # strong excitatory
+            "#7CFF5A",  # weak excitatory (light green)
+            "#007A00",  # strong excitatory (dark green)
         ]
+        
         cmap = mcolors.ListedColormap(colors, name="Inhibitory-Excitatory")
         bounds = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5]
         norm = mcolors.BoundaryNorm(bounds, cmap.N)
