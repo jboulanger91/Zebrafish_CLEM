@@ -10,20 +10,19 @@ This repository hosts collaborative analyses on the structure–function relatio
 
 ### 1. Downloading neuronal morphologies and metadata
 
-Pipeline for reconstructing and organizing neuronal morphologies, synapse positions, and connected segments from the clem_zfish1 dataset.  
-This includes:
+Pipeline for reconstructing and organizing neuronal morphologies, synapse positions, and connected segments from the clem_zfish1 dataset. This includes:
 
 - Downloading and organizing meshes (nucleus, soma, axon, dendrites)  
 - Exporting NG-resolution synapse tables (8×8×30 nm)  
 - Generating per-neuron metadata (IDs, reconstruction status, functional labels if available)  
 - Optional extraction of ΔF/F dynamics for functionally imaged neurons  
 
-Typical outputs are per-neuron folders containing:
+Outputs are per-neuron folders containing:
 
 - `*_metadata.txt` (metadata)  
 - `*_axon.obj`, `*_dendrite.obj`, `*_soma.obj`, `*.obj` (meshes)  
 - `*_presynapses.csv`, `*_postsynapses.csv` (synapse tables)  
-- `*_dynamics.hdf5` (optional functional data)
+- , `*_dynamics.pdf`, `*_dynamics.hdf5` (optional functional data)
 
 **Main script:** `clem_zfish1_neuroglancer_pipeline.py`  
 **Helper module:** `clem_zfish1_neuroglancer_helper.py`  
@@ -42,7 +41,7 @@ Tools for quantifying and visualizing connectomes derived from the traced neuron
 - Generate mesh-based visualizations of input/output connectomes  
 - Plot activity traces for functionally imaged neurons and their partners  
 
-Typical outputs include:
+Outputs include:
 
 - CSVs with updated metadata (e.g. hemisphere, LDA predictions)  
 - Connectivity matrices and summary tables  
