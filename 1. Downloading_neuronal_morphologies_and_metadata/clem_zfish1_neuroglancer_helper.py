@@ -751,8 +751,8 @@ def write_synapse_file(
         # ---- NEW: set column headers depending on file type ----
         if i == 0:
             # presynaptic file: partner is postsynaptic
-            df_out.columns = [
-                "postsynaptic ID",   # first column
+            columns = [
+                "postsynaptic_ID",   # consistent naming, no space
                 "x (8 nm)",
                 "y (8 nm)",
                 "z (30 nm)",
@@ -764,8 +764,8 @@ def write_synapse_file(
             ]
         else:
             # postsynaptic file: partner is presynaptic
-            df_out.columns = [
-                "presynaptic_ID",    # first column
+            columns = [
+                "presynaptic_ID",
                 "x (8 nm)",
                 "y (8 nm)",
                 "z (30 nm)",
@@ -775,6 +775,13 @@ def write_synapse_file(
                 "validation_status",
                 "date",
             ]
+
+        if df_out.empty:
+            # Create an empty table with the correct columns
+            df_out = pd.DataFrame(columns=columns)
+        else:
+            # Just rename the existing columns
+            df_out.columns = columns
         # --------------------------------------------------------
 
         synapse_file_path = Path(synapse_file_path)
