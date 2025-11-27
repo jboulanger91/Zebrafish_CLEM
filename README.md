@@ -13,7 +13,7 @@ This repository hosts collaborative analyses on the structure–function relatio
 Pipeline for reconstructing and organizing neuronal morphologies, synapse positions, and connected segments from the clem_zfish1 dataset. This includes:
 
 - Downloading and organizing meshes (nucleus, soma, axon, dendrites)  
-- Exporting NG-resolution synapse tables (8×8×30 nm)  
+- Exporting Neuroglancer-resolution synapse tables (8×8×30 nm)  
 - Generating per-neuron metadata (IDs, reconstruction status, functional labels if available)  
 - Optional extraction of ΔF/F dynamics for functionally imaged neurons  
 
@@ -30,11 +30,18 @@ Outputs are per-neuron folders containing:
 
 ---
 
-### 2. Connectivity analysis
+### 2. Reference brain registration
+Pipeline for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
+ 
+**Environment file:** `env.yaml`
+
+---
+
+### 3. Connectivity analysis
 
 Tools for quantifying and visualizing connectomes derived from the traced neurons:
 
-- Classify neurons by hemisphere (ipsilateral / contralateral)  
+- Classify neurons by hemisphere (ipsilateral / contralateral) using mapped neurons to the reference brain 
 - Build directional connectivity matrices between functional neuron classes  
 - Compute connectivity probabilities (cells and synapses, same- vs different-side)  
 - Plot compact neural-network diagrams summarizing connectivity patterns  
@@ -52,13 +59,6 @@ Outputs include:
 - `connectivity_analysis.py` (hemispheres, connectomes, matrices, plots)  
 - `connectome_helpers_current.py` (helper functions for connectivity and plotting)
 
-**Environment file:** `env.yaml`
-
----
-
-### 3. Reference brain registration
-Pipeline for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
- 
 **Environment file:** `env.yaml`
 
 ---
