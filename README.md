@@ -14,7 +14,7 @@ Pipeline for reconstructing and organizing neuronal morphologies, synapse positi
 This includes:
 
 - Downloading and organizing meshes (nucleus, soma, axon, dendrites)  
-- Exporting NG-resolution synapse tables (4×4×30 nm)  
+- Exporting NG-resolution synapse tables (8×8×30 nm)  
 - Generating per-neuron metadata (IDs, reconstruction status, functional labels if available)  
 - Optional extraction of ΔF/F dynamics for functionally imaged neurons  
 
@@ -22,7 +22,7 @@ Typical outputs are per-neuron folders containing:
 
 - `*_metadata.txt` (metadata)  
 - `*_axon.obj`, `*_dendrite.obj`, `*_soma.obj`, `*.obj` (meshes)  
-- `*_ng_res_presynapses.csv`, `*_ng_res_postsynapses.csv` (synapse tables)  
+- `*_presynapses.csv`, `*_postsynapses.csv` (synapse tables)  
 - `*_dynamics.hdf5` (optional functional data)
 
 **Main script:** `clem_zfish1_neuroglancer_pipeline.py`  
