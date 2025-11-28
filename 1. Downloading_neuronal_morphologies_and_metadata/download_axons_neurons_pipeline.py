@@ -57,7 +57,7 @@ Command-line usage
 ------------------
 After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipeline as:
 
-  python3 upload_axons_neurons_pipeline.py \
+  python3 download_axons_neurons_pipeline.py \
         --csv-file all_reconstructed_neurons.csv \
         --root-path traced_axons_neurons/ \
         --manual-synapses-path manual_synapses\

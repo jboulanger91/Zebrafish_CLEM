@@ -1,11 +1,11 @@
-# clem_zfish1_neuroglancer_pipeline
+# 1. Downloading_neuronal_morphologies_and_metadata
 
 This folder contains the pipeline used to retrieve neuronal segments and synapses from the **clem_zfish1** zebrafish hindbrain connectome, generate per-neuron metadata, export mesh components, and optionally extract functional imaging dynamics.
 
 The pipeline is built around the script:
 
 ```
-clem_zfish1_neuroglancer_pipeline.py
+download_axons_neurons_pipeline.py
 ```
 
 and relies on CloudVolume, Neuroglancer, CAVEclient, and the processed functional imaging dataset.
@@ -46,8 +46,8 @@ conda activate clem_zfish1_neuroglancer
 Run the full pipeline from the command line:
 
 ```bash
-  python3 clem_zfish1_neuroglancer_pipeline.py \
-        --excel-file example_neuron.csv \
+  python3 download_axons_neurons_pipeline.py \
+        --csv-file example_neuron.csv \
         --root-path traced_axons_neurons/ \
         --manual-synapses-path manual_synapses_example\
         --hdf5-path clem_zfish1_functional_data.h5 \
