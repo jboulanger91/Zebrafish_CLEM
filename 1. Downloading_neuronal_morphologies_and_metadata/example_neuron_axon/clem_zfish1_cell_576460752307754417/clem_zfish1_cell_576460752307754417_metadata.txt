@@ -1,0 +1,15 @@
+type = "cell"
+cell_name = 576460752307754417
+nucleus_id = 576460752307754417
+soma_id = 576460752730712099
+axon_id = 576460752718175065
+dendrites_id = 576460752688634871
+functional_id = "not functionally imaged"
+cell_type_labels = ["nan", "inhibitory", "contralateral"]
+imaging_modality = "EM"
+date_of_tracing =  2024-04-16
+tracer_names = "Jonathan Boulanger-Weill"
+neuroglancer_link = "https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6571091356024832"
+connectivity = "9276 ouput, 9414 output, 6404 output"
+reconstruction_status = "axon complete, dendrites incomplete"
+comment = "contralateral output"

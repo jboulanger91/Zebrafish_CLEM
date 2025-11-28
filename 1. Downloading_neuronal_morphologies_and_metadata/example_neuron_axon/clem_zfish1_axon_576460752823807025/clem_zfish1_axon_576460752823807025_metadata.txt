@@ -1,0 +1,15 @@
+type = "axon"
+cell_name = "na"
+nucleus_id = "na"
+soma_id = "na"
+axon_id = 576460752823807025
+dendrites_id = "na"
+functional_id = "not functionally imaged"
+cell_type_labels = ["na", "na", "na"]
+imaging_modality = "EM"
+date_of_tracing =  2024-12-03
+tracer_names = "Jonathan Boulanger-Weill"
+neuroglancer_link = "https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/5651187702431744"
+connectivity = "2218 input"
+reconstruction_status = "nan"
+comment = "axon exits the volume rostrally"
