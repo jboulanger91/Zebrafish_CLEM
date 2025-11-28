@@ -1,0 +1,6 @@
+# Ignore these files
+1. Downloading_neuronal_morphologies_and_metadata/clem_zfish1_functional_data.h5
+2. Reference_brain_registration/ANTs_transforms/ANTs_dfield_inverse.nii.gz
+
+# Ignore these folders
+1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons/

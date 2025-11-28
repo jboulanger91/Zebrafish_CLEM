@@ -58,7 +58,7 @@ Command-line usage
 After configuring CAVE credentials using ``CAVE_setup.ipynb``, run the full pipeline as:
 
   python3 clem_zfish1_neuroglancer_pipeline.py \
-        --excel-file all_reconstructed_neurons.csv \
+        --csv-file all_reconstructed_neurons.csv \
         --root-path traced_axons_neurons/ \
         --manual-synapses-path manual_synapses\
         --hdf5-path clem_zfish1_functional_data.h5 \
@@ -110,7 +110,7 @@ DATASTACK_NAME = "lichtman_zebrafish_hindbrain"
 SERVER_ADDRESS = "https://proofreading.zetta.ai"
 
 # These will be set from CLI arguments in main()
-EXCEL_FILE_PATH: Path
+CSV_FILE_PATH: Path
 MANUAL_SYNAPSES_PATH: Path
 ROOT_PATH: Path
 HDF5_PATH: Path
@@ -145,7 +145,7 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "--excel-file",
+        "--csv-file",
         type=Path,
         required=True,
         help="CSV file listing neurons/axons and their segment IDs, see provided example.",
@@ -179,7 +179,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point for the clem_zfish1 Neuroglancer pipeline."""
-    global EXCEL_FILE_PATH, MANUAL_SYNAPSES_PATH, ROOT_PATH, HDF5_PATH, SIZE_CUT_OFF
+    global CSV_FILE_PATH, MANUAL_SYNAPSES_PATH, ROOT_PATH, HDF5_PATH, SIZE_CUT_OFF
     global vol, client, df, num_cells, synapse_table
 
     setup_logging()
@@ -188,7 +188,7 @@ def main() -> None:
     args = parse_args()
 
     # Set paths and parameters from CLI
-    EXCEL_FILE_PATH = args.excel_file
+    CSV_FILE_PATH = args.csv_file
     MANUAL_SYNAPSES_PATH = args.manual_synapses_path
     ROOT_PATH = args.root_path
     HDF5_PATH = args.hdf5_path
@@ -201,8 +201,8 @@ def main() -> None:
     vol = cv.CloudVolume(CLOUD_VOLUME_URL, use_https=True, progress=False)
     client = CAVEclient(datastack_name=DATASTACK_NAME, server_address=SERVER_ADDRESS)
 
-    logger.info("Loading cell table from %s", EXCEL_FILE_PATH)
-    df = pd.read_csv(EXCEL_FILE_PATH, dtype=str)
+    logger.info("Loading cell table from %s", CSV_FILE_PATH)
+    df = pd.read_csv(CSV_FILE_PATH, dtype=str)
     num_cells = len(df)
     logger.info("Loaded %d entries from cell table.", num_cells)
 
@@ -231,7 +231,7 @@ def main() -> None:
 
     # Pretty-print results
     logger.info("------------------------------------------------------------")
-    logger.info(" PROBLEMATIC AXONS")
+    logger.info(" OUTDATED AXONS")
     logger.info("------------------------------------------------------------")
     if problematic_axons:
         for ax in problematic_axons:
@@ -240,7 +240,7 @@ def main() -> None:
         logger.info("  None found.")
 
     logger.info("------------------------------------------------------------")
-    logger.info(" PROBLEMATIC DENDRITES")
+    logger.info(" OUTDATED DENDRITES")
     logger.info("------------------------------------------------------------")
     if problematic_dendrites:
         for den in problematic_dendrites:

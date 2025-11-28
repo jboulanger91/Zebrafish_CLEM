@@ -1,0 +1,44 @@
+name: clem_zfish1_global
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Core Python
+  - python=3.12
+  - pip
+  - setuptools
+  - wheel
+
+  # Numeric / scientific stack
+  - numpy
+  - scipy
+  - pandas
+  - numexpr
+  - h5py
+  - matplotlib
+  - scikit-image
+  - nibabel
+  - tifffile
+  - openpyxl
+
+  # Jupyter
+  - ipykernel
+  - jupyterlab
+
+  # Misc
+  - networkx
+  - tzdata
+
+  # Install everything that’s only on PyPI via pip
+  - pip:
+      # mesh + neuro tools
+      - navis
+      - skeletor
+      - trimesh
+      - pynrrd          # provides `import nrrd`
+      # I/O / config
+      - toml            # optional; 3.12 has builtin `tomllib` but this keeps old code happy
+      # neuroglancer / CAVE
+      - cloud-volume    # import name: cloudvolume
+      - caveclient
