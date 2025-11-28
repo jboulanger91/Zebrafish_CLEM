@@ -31,9 +31,28 @@ Outputs are per-neuron folders containing:
 ---
 
 ### 2. Reference brain registration
-Pipeline for registering neuronal morphologies to a standardized zebrafish reference brain coordinate framework.
- 
-**Environment file:** `env.yaml`
+
+Pipeline for mapping neuronal morphologies and synapse coordinates from the **clem_zfish1** dataset into a standardized zebrafish reference brain. This step applies ANTs deformation fields to warp neuron meshes and synapse locations into a shared anatomical space, then generates skeletonized neuron reconstructions.
+
+This includes:
+
+- Mapping soma, axon, and dendrite meshes into reference space  
+- Warping presynaptic and postsynaptic coordinates  
+- Generating mapped OBJ meshes and synapse OBJ spheres  
+- Skeletonizing neurons or axons using TEASAR  
+- Healing skeleton gaps and embedding synapse node labels  
+- Producing aligned SWC skeletons for further analysis  
+
+Outputs are per-neuron folders containing:
+
+- `*_axon_mapped.obj`, `*_dendrite_mapped.obj`, `*_soma_mapped.obj`, `*_mapped.obj` (mapped meshes)  
+- `*_presynapses_mapped.csv`, `*_postsynapses_mapped.csv` (mapped synapse tables)  
+- `*_presynapses_mapped.obj`, `*_postsynapses_mapped.obj` (synapse OBJ sphere files)  
+- `*_mapped.swc`, `*.swc` (skeletonized neurons with synapse annotations)  
+
+**Main script:** `02_map_and_skeletonize_cells.py`  
+**Helper module:** `ANTs_registration_helpers_jbw.py`  
+**Environment file:** `map_and_skeletonize.yaml`  
 
 ---
 
