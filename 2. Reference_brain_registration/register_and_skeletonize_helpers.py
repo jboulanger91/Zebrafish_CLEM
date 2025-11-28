@@ -6,7 +6,7 @@ Helpers for mapping clem_zfish1 neuron meshes & synapses with ANTs and skeletoni
 This module provides a minimal subset of the original ANTsRegistrationHelpers class,
 stripped down to only what is needed by:
 
-    02_map_and_skeletonize_cells.py
+    register_and_skeletonize.py
 
 Main responsibilities
 ---------------------
@@ -380,8 +380,8 @@ class ANTsRegistrationHelpers:
                 <cell_name>_soma.obj          (optional for axon-only)
                 <cell_name>_dendrite.obj      (optional for axon-only)
                 <cell_name>_axon.obj
-                <cell_name>_presynapses.csv   (optional)
-                <cell_name>_postsynapses.csv  (optional)
+                <cell_name>_presynapses.csv   (optional, with header)
+                <cell_name>_postsynapses.csv  (optional, with header)
 
         The method will:
             - map synapse CSVs into reference space,
@@ -401,7 +401,101 @@ class ANTsRegistrationHelpers:
             4 = presynapse
             5 = postsynapse
         """
+        import csv  # ensure available here
         root_path = Path(root_path)
+
+        # ------------------------------------------------------------------
+        # Small helpers for synapse I/O
+        # ------------------------------------------------------------------
+        def _detect_delimiter(path: Path, default: str = "\t") -> str:
+            with open(path, "r", newline="") as f:
+                sample = f.read(1024)
+                f.seek(0)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters="\t,; ")
+                    return dialect.delimiter
+                except csv.Error:
+                    return default
+
+        def _load_original_synapses(path: Path, synapse_type: str) -> pd.DataFrame:
+            """
+            Load original synapse CSV with header and nm-resolution columns.
+
+            Returns a DataFrame with columns:
+                partner_id, x_nm, y_nm, z_nm, radius_um
+
+            - partner_id: postsynaptic_ID or presynaptic_ID, depending on file
+            - x_nm, y_nm, z_nm: nm coordinates (from x_nm_res / y_nm_res / z_nm_res)
+            - radius_um: currently a constant (0.5 µm) for all synapses
+            """
+            if not path.exists():
+                return pd.DataFrame(
+                    columns=["partner_id", "x_nm", "y_nm", "z_nm", "radius_um"]
+                )
+
+            delim = _detect_delimiter(path)
+            df_raw = pd.read_csv(path, sep=delim)
+
+            # Partner ID column: choose by name, fall back to first
+            if "postsynaptic_ID" in df_raw.columns:
+                partner_col = "postsynaptic_ID"
+            elif "presynaptic_ID" in df_raw.columns:
+                partner_col = "presynaptic_ID"
+            else:
+                partner_col = df_raw.columns[0]
+
+            # Prefer nm-resolution columns if present
+            if {"x_nm_res", "y_nm_res", "z_nm_res"}.issubset(df_raw.columns):
+                x_nm = pd.to_numeric(df_raw["x_nm_res"], errors="coerce")
+                y_nm = pd.to_numeric(df_raw["y_nm_res"], errors="coerce")
+                z_nm = pd.to_numeric(df_raw["z_nm_res"], errors="coerce")
+            else:
+                # Fallback: use columns 1–3 (e.g. x (8 nm), y (8 nm), z (30 nm))
+                if df_raw.shape[1] < 4:
+                    raise ValueError(
+                        f"{path} has fewer than 4 columns; cannot identify positions."
+                    )
+                x_nm = pd.to_numeric(df_raw.iloc[:, 1], errors="coerce")
+                y_nm = pd.to_numeric(df_raw.iloc[:, 2], errors="coerce")
+                z_nm = pd.to_numeric(df_raw.iloc[:, 3], errors="coerce")
+
+            # For now use a fixed radius in µm; you can refine this later if needed
+            radius_um = pd.Series(0.5, index=df_raw.index, dtype=float)
+
+            df_out = pd.DataFrame(
+                {
+                    "partner_id": df_raw[partner_col].astype(str),
+                    "x_nm": x_nm,
+                    "y_nm": y_nm,
+                    "z_nm": z_nm,
+                    "radius_um": radius_um,
+                }
+            )
+            # Drop rows with NaN coords
+            df_out = df_out.dropna(subset=["x_nm", "y_nm", "z_nm"])
+            return df_out
+
+        def _load_mapped_synapses_simple(path: Path) -> pd.DataFrame:
+            """
+            Load mapped synapse CSV written by this function.
+
+            Format (no header, space-separated):
+                partner_id  x  y  z  radius
+
+            All coordinates are in µm.
+            """
+            if not path.exists():
+                return pd.DataFrame(
+                    columns=["partner_id", "x", "y", "z", "radius"]
+                )
+            df = pd.read_csv(
+                path,
+                sep=r"\s+",
+                header=None,
+                names=["partner_id", "x", "y", "z", "radius"],
+                engine="python",
+            )
+            return df
 
         # ------------------------------------------------------------------
         # Load metadata
@@ -423,26 +517,17 @@ class ANTsRegistrationHelpers:
             if src_csv.exists():
                 print(f"Mapping {synapse_type_str} for {cell_name}")
 
-                # Expected column layout:
-                # partner_cell_id, x, y, z, radius
-                df = pd.read_csv(
-                    src_csv,
-                    comment="#",
-                    sep=" ",
-                    header=None,
-                    names=["partner_cell_id", "x", "y", "z", "radius"],
-                )
+                # Load original (nm) synapse coordinates
+                df_orig = _load_original_synapses(src_csv, synapse_type_str)
 
-                if len(df) > 0:
-                    # Scale radius consistently with x dimension
-                    df.loc[:, "radius"] = df["radius"] * input_scale_x
-
-                    points = np.array(df[["x", "y", "z"]], dtype=np.float64).reshape(
-                        -1, 3
-                    )
+                if len(df_orig) > 0:
+                    # Use nm coordinates as input to ANTs, with input_scale_* converting to µm
+                    points_nm = df_orig[["x_nm", "y_nm", "z_nm"]].to_numpy(
+                        dtype=float
+                    ).reshape(-1, 3)
 
                     points_transformed = self.ANTs_applytransform_to_points(
-                        points,
+                        points_nm,
                         transformation_prefix_path,
                         use_forward_transformation=use_forward_transformation,
                         ANTs_dim=3,
@@ -465,26 +550,33 @@ class ANTsRegistrationHelpers:
                         output_swap_xy=output_swap_xy,
                     )
 
+                    # points_transformed are in reference space (µm)
                     df_mapped = pd.DataFrame(
                         {
-                            "partner_cell_id": df["partner_cell_id"],
+                            "partner_id": df_orig["partner_id"],
                             "x": points_transformed[:, 0],
                             "y": points_transformed[:, 1],
                             "z": points_transformed[:, 2],
-                            "radius": df["radius"],
+                            "radius": df_orig["radius_um"],
                         }
                     )
                 else:
-                    df_mapped = df  # empty but written for consistency
+                    df_mapped = pd.DataFrame(
+                        columns=["partner_id", "x", "y", "z", "radius"]
+                    )
 
-                df_mapped.to_csv(
+                # Write mapped synapses as a simple 5-column file (no original 8/30 nm coords)
+                mapped_csv = (
                     root_path
                     / cell_name
                     / "mapped"
-                    / f"{cell_name}_{synapse_type_str}_mapped.csv",
+                    / f"{cell_name}_{synapse_type_str}_mapped.csv"
+                )
+                df_mapped.to_csv(
+                    mapped_csv,
                     index=False,
                     sep=" ",
-                    header=None,
+                    header=False,
                     float_format="%.8f",
                 )
 
@@ -493,41 +585,48 @@ class ANTsRegistrationHelpers:
                 suffix_str = "" if mapped_i == 0 else "_mapped"
                 folder_str = "" if mapped_i == 0 else "mapped"
 
-                syn_csv = (
-                    root_path
-                    / cell_name
-                    / folder_str
-                    / f"{cell_name}_{synapse_type_str}{suffix_str}.csv"
-                )
-                if syn_csv.exists():
-                    df = pd.read_csv(
-                        syn_csv,
-                        comment="#",
-                        sep=" ",
-                        header=None,
-                        names=["partner_cell_id", "x", "y", "z", "radius"],
+                if mapped_i == 0:
+                    syn_csv = root_path / cell_name / f"{cell_name}_{synapse_type_str}.csv"
+                    df_sphere = _load_original_synapses(syn_csv, synapse_type_str)
+                    # For original OBJ, use µm coordinates by converting nm → µm
+                    df_sphere = df_sphere.assign(
+                        x=df_sphere["x_nm"] * input_scale_x,
+                        y=df_sphere["y_nm"] * input_scale_y,
+                        z=df_sphere["z_nm"] * input_scale_z,
+                        radius=df_sphere["radius_um"],
                     )
+                else:
+                    syn_csv = (
+                        root_path
+                        / cell_name
+                        / "mapped"
+                        / f"{cell_name}_{synapse_type_str}_mapped.csv"
+                    )
+                    df_sphere = _load_mapped_synapses_simple(syn_csv)
 
-                    spheres = []
-                    for _, row in df.iterrows():
-                        sphere = tm.creation.icosphere(
-                            radius=row["radius"], subdivisions=2
-                        )
-                        sphere.apply_translation((row["x"], row["y"], row["z"]))
-                        spheres.append(sphere)
+                if len(df_sphere) == 0:
+                    continue
 
-                    if spheres:
-                        scene = tm.Scene(spheres)
-                        out_obj = (
-                            root_path
-                            / cell_name
-                            / folder_str
-                            / f"{cell_name}_{synapse_type_str}{suffix_str}.obj"
-                        )
-                        scene.export(out_obj)
+                spheres = []
+                for _, row in df_sphere.iterrows():
+                    sphere = tm.creation.icosphere(
+                        radius=row["radius"], subdivisions=2
+                    )
+                    sphere.apply_translation((row["x"], row["y"], row["z"]))
+                    spheres.append(sphere)
+
+                if spheres:
+                    scene = tm.Scene(spheres)
+                    out_obj = (
+                        root_path
+                        / cell_name
+                        / folder_str
+                        / f"{cell_name}_{synapse_type_str}{suffix_str}.obj"
+                    )
+                    scene.export(out_obj)
 
         # ------------------------------------------------------------------
-        # Step 2: Map soma / dendrite / axon meshes
+        # Step 2: Map soma / dendrite / axon meshes  (unchanged)
         # ------------------------------------------------------------------
         meshes_original: dict[str, tm.Trimesh] = {}
         meshes_mapped: dict[str, tm.Trimesh] = {}
@@ -601,12 +700,9 @@ class ANTsRegistrationHelpers:
                 folder_str = "mapped"
                 meshes = meshes_mapped
 
+            # ----------------- (from here down, logic mostly unchanged) -----------------
             # Case 1: full neuron (soma + dendrite + axon)
-            if (
-                "soma" in meshes
-                and "dendrite" in meshes
-                and "axon" in meshes
-            ):
+            if "soma" in meshes and "dendrite" in meshes and "axon" in meshes:
                 print(f"Making SWC (full cell) for {cell_name}{suffix_str}")
 
                 # Save merged whole-neuron OBJ (original and mapped)
@@ -770,33 +866,29 @@ class ANTsRegistrationHelpers:
                 post_synapses: list[list[int]] = []
 
                 # Attach presynapses
-                pres_csv = (
-                    root_path
-                    / cell_name
-                    / folder_str
-                    / f"{cell_name}_presynapses{suffix_str}.csv"
-                )
-                if pres_csv.exists():
-                    print("Presynapses found:", pres_csv)
-                    df_pres = pd.read_csv(
-                        pres_csv,
-                        comment="#",
-                        sep=" ",
-                        header=None,
-                        names=[
-                            "postsynaptic_cell_id",
-                            "x",
-                            "y",
-                            "z",
-                            "radius",
-                        ],
+                if mapped_i == 0:
+                    pres_df = _load_original_synapses(
+                        root_path
+                        / cell_name
+                        / f"{cell_name}_presynapses.csv",
+                        "presynapses",
                     )
-                    if mapped_i == 0:
-                        df_pres["x"] *= input_scale_x
-                        df_pres["y"] *= input_scale_y
-                        df_pres["z"] *= input_scale_z
+                    pres_df = pres_df.assign(
+                        x=pres_df["x_nm"] * input_scale_x,
+                        y=pres_df["y_nm"] * input_scale_y,
+                        z=pres_df["z_nm"] * input_scale_z,
+                    )
+                else:
+                    pres_df = _load_mapped_synapses_simple(
+                        root_path
+                        / cell_name
+                        / "mapped"
+                        / f"{cell_name}_presynapses_mapped.csv"
+                    )
 
-                    for _, row in df_pres.iterrows():
+                if len(pres_df) > 0:
+                    print("Presynapses found for SWC labelling")
+                    for _, row in pres_df.iterrows():
                         dist = np.sqrt(
                             (df_swc["x"] - row["x"]) ** 2
                             + (df_swc["y"] - row["y"]) ** 2
@@ -808,7 +900,7 @@ class ANTsRegistrationHelpers:
                             df_swc.loc[i_min, "label"] = 4  # presynapse
                             pre_synapses.append(
                                 [
-                                    int(row["postsynaptic_cell_id"]),
+                                    int(row["partner_id"]),
                                     int(df_swc.loc[i_min, "node_id"]),
                                 ]
                             )
@@ -816,41 +908,35 @@ class ANTsRegistrationHelpers:
                             print(
                                 "Postsynaptic cell not connected to SWC. "
                                 "Presynapse too far away:",
-                                int(row["postsynaptic_cell_id"]),
+                                int(row["partner_id"]),
                                 dist[i_min],
                             )
-                            pre_synapses.append(
-                                [int(row["postsynaptic_cell_id"]), -1]
-                            )
+                            pre_synapses.append([int(row["partner_id"]), -1])
 
                 # Attach postsynapses
-                post_csv = (
-                    root_path
-                    / cell_name
-                    / folder_str
-                    / f"{cell_name}_postsynapses{suffix_str}.csv"
-                )
-                if post_csv.exists():
-                    print("Postsynapses found:", post_csv)
-                    df_post = pd.read_csv(
-                        post_csv,
-                        comment="#",
-                        sep=" ",
-                        header=None,
-                        names=[
-                            "presynaptic_cell_id",
-                            "x",
-                            "y",
-                            "z",
-                            "radius",
-                        ],
+                if mapped_i == 0:
+                    post_df = _load_original_synapses(
+                        root_path
+                        / cell_name
+                        / f"{cell_name}_postsynapses.csv",
+                        "postsynapses",
                     )
-                    if mapped_i == 0:
-                        df_post["x"] *= input_scale_x
-                        df_post["y"] *= input_scale_y
-                        df_post["z"] *= input_scale_z
+                    post_df = post_df.assign(
+                        x=post_df["x_nm"] * input_scale_x,
+                        y=post_df["y_nm"] * input_scale_y,
+                        z=post_df["z_nm"] * input_scale_z,
+                    )
+                else:
+                    post_df = _load_mapped_synapses_simple(
+                        root_path
+                        / cell_name
+                        / "mapped"
+                        / f"{cell_name}_postsynapses_mapped.csv"
+                    )
 
-                    for _, row in df_post.iterrows():
+                if len(post_df) > 0:
+                    print("Postsynapses found for SWC labelling")
+                    for _, row in post_df.iterrows():
                         dist = np.sqrt(
                             (df_swc["x"] - row["x"]) ** 2
                             + (df_swc["y"] - row["y"]) ** 2
@@ -862,7 +948,7 @@ class ANTsRegistrationHelpers:
                             df_swc.loc[i_min, "label"] = 5  # postsynapse
                             post_synapses.append(
                                 [
-                                    int(row["presynaptic_cell_id"]),
+                                    int(row["partner_id"]),
                                     int(df_swc.loc[i_min, "node_id"]),
                                 ]
                             )
@@ -870,19 +956,13 @@ class ANTsRegistrationHelpers:
                             print(
                                 "Presynaptic cell not connected to SWC. "
                                 "Postsynapse too far away:",
-                                int(row["presynaptic_cell_id"]),
+                                int(row["partner_id"]),
                                 dist[i_min],
                             )
-                            post_synapses.append(
-                                [int(row["presynaptic_cell_id"]), -1]
-                            )
+                            post_synapses.append([int(row["partner_id"]), -1])
 
             # Case 2: axon-only mapping
-            elif (
-                "axon" in meshes
-                and "soma" not in meshes
-                and "dendrite" not in meshes
-            ):
+            elif "axon" in meshes and "soma" not in meshes and "dendrite" not in meshes:
                 print(f"Making SWC (axon-only) for {cell_name}{suffix_str}")
 
                 skel = sk.skeletonize.by_teasar(
@@ -926,33 +1006,30 @@ class ANTsRegistrationHelpers:
                 pre_synapses = []
                 post_synapses = []
 
-                pres_csv = (
-                    root_path
-                    / cell_name
-                    / folder_str
-                    / f"{cell_name}_presynapses{suffix_str}.csv"
-                )
-                if pres_csv.exists():
-                    print("Presynapses found:", pres_csv)
-                    df_pres = pd.read_csv(
-                        pres_csv,
-                        comment="#",
-                        sep=" ",
-                        header=None,
-                        names=[
-                            "postsynaptic_cell_id",
-                            "x",
-                            "y",
-                            "z",
-                            "radius",
-                        ],
+                # Presynapses
+                if mapped_i == 0:
+                    pres_df = _load_original_synapses(
+                        root_path
+                        / cell_name
+                        / f"{cell_name}_presynapses.csv",
+                        "presynapses",
                     )
-                    if mapped_i == 0:
-                        df_pres["x"] *= input_scale_x
-                        df_pres["y"] *= input_scale_y
-                        df_pres["z"] *= input_scale_z
+                    pres_df = pres_df.assign(
+                        x=pres_df["x_nm"] * input_scale_x,
+                        y=pres_df["y_nm"] * input_scale_y,
+                        z=pres_df["z_nm"] * input_scale_z,
+                    )
+                else:
+                    pres_df = _load_mapped_synapses_simple(
+                        root_path
+                        / cell_name
+                        / "mapped"
+                        / f"{cell_name}_presynapses_mapped.csv"
+                    )
 
-                    for _, row in df_pres.iterrows():
+                if len(pres_df) > 0:
+                    print("Presynapses found for SWC labelling (axon-only)")
+                    for _, row in pres_df.iterrows():
                         dist = np.sqrt(
                             (df_swc["x"] - row["x"]) ** 2
                             + (df_swc["y"] - row["y"]) ** 2
@@ -963,7 +1040,7 @@ class ANTsRegistrationHelpers:
                             df_swc.loc[i_min, "label"] = 4
                             pre_synapses.append(
                                 [
-                                    int(row["postsynaptic_cell_id"]),
+                                    int(row["partner_id"]),
                                     int(df_swc.loc[i_min, "node_id"]),
                                 ]
                             )
@@ -971,40 +1048,35 @@ class ANTsRegistrationHelpers:
                             print(
                                 "Postsynaptic cell not connected to SWC. "
                                 "Presynapse too far away:",
-                                int(row["postsynaptic_cell_id"]),
+                                int(row["partner_id"]),
                                 dist[i_min],
                             )
-                            pre_synapses.append(
-                                [int(row["postsynaptic_cell_id"]), -1]
-                            )
+                            pre_synapses.append([int(row["partner_id"]), -1])
 
-                post_csv = (
-                    root_path
-                    / cell_name
-                    / folder_str
-                    / f"{cell_name}_postsynapses{suffix_str}.csv"
-                )
-                if post_csv.exists():
-                    print("Postsynapses found:", post_csv)
-                    df_post = pd.read_csv(
-                        post_csv,
-                        comment="#",
-                        sep=" ",
-                        header=None,
-                        names=[
-                            "presynaptic_cell_id",
-                            "x",
-                            "y",
-                            "z",
-                            "radius",
-                        ],
+                # Postsynapses
+                if mapped_i == 0:
+                    post_df = _load_original_synapses(
+                        root_path
+                        / cell_name
+                        / f"{cell_name}_postsynapses.csv",
+                        "postsynapses",
                     )
-                    if mapped_i == 0:
-                        df_post["x"] *= input_scale_x
-                        df_post["y"] *= input_scale_y
-                        df_post["z"] *= input_scale_z
+                    post_df = post_df.assign(
+                        x=post_df["x_nm"] * input_scale_x,
+                        y=post_df["y_nm"] * input_scale_y,
+                        z=post_df["z_nm"] * input_scale_z,
+                    )
+                else:
+                    post_df = _load_mapped_synapses_simple(
+                        root_path
+                        / cell_name
+                        / "mapped"
+                        / f"{cell_name}_postsynapses_mapped.csv"
+                    )
 
-                    for _, row in df_post.iterrows():
+                if len(post_df) > 0:
+                    print("Postsynapses found for SWC labelling (axon-only)")
+                    for _, row in post_df.iterrows():
                         dist = np.sqrt(
                             (df_swc["x"] - row["x"]) ** 2
                             + (df_swc["y"] - row["y"]) ** 2
@@ -1015,7 +1087,7 @@ class ANTsRegistrationHelpers:
                             df_swc.loc[i_min, "label"] = 5
                             post_synapses.append(
                                 [
-                                    int(row["presynaptic_cell_id"]),
+                                    int(row["partner_id"]),
                                     int(df_swc.loc[i_min, "node_id"]),
                                 ]
                             )
@@ -1023,12 +1095,10 @@ class ANTsRegistrationHelpers:
                             print(
                                 "Presynaptic cell not connected to SWC. "
                                 "Postsynapse too far away:",
-                                int(row["presynaptic_cell_id"]),
+                                int(row["partner_id"]),
                                 dist[i_min],
                             )
-                            post_synapses.append(
-                                [int(row["presynaptic_cell_id"]), -1]
-                            )
+                            post_synapses.append([int(row["partner_id"]), -1])
 
             else:
                 # No valid combination of parts – nothing to skeletonize
@@ -1060,7 +1130,6 @@ class ANTsRegistrationHelpers:
             with open(out_swc, "w") as fp:
                 fp.write(header)
                 df_swc.to_csv(fp, index=False, sep=" ", header=None)
-
 
     def convert_synapse_file(
         self,

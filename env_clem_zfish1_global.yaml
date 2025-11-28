@@ -35,7 +35,7 @@ dependencies:
       # mesh + neuro tools
       - navis
       - skeletor
-      - trimesh
+      - trimesh==4.0.10
       - pynrrd          # provides `import nrrd`
       # I/O / config
       - toml            # optional; 3.12 has builtin `tomllib` but this keeps old code happy

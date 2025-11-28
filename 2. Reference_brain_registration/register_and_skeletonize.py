@@ -19,8 +19,8 @@ NOTE:
 Example usage
 -------------
 python3 register_and_skeletonize.py \
-    --cells-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/example_neuron_axon" \
-    --transform-prefix /ANTs_transforms \
+    --cells-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
+    --transform-prefix "ANTs_transforms/ANTs_dfield" \
     --ants-bin-path /Users/jonathanboulanger-weill/Packages/install/bin \
     --ants-threads 11
 
@@ -150,6 +150,7 @@ def main() -> None:
     for idx, cell_dir in enumerate(cell_dirs, start=1):
         cell_name = cell_dir.name
         logger.info("Processing %s (%d/%d)", cell_name, idx, len(cell_dirs))
+        print(f"\r→ Processing {idx}/{len(cell_dirs)}: {cell_name}...", end="", flush=True)
 
        # 1) Convert legacy synapse file (if present) to NG-resolution CSVs
         try:
@@ -167,20 +168,20 @@ def main() -> None:
             logger.error("Error in convert_synapse_file for %s: %s", cell_name, e)
             # Continue anyway: map_and_skeletonize_cell can still run if CSVs already exist
         # 2) Map meshes/synapses and skeletonize
-        #try:
-        #    ants_reg.map_and_skeletonize_cell(
-        #        root_path=cells_folder,
-        #        cell_name=cell_name,
-        #        transformation_prefix_path=transform_prefix,
-        #        input_limit_x=523_776,  # (1024 x pixels - 1) * 512 nm
-        #        input_limit_y=327_168,  # (640 y pixels - 1)  * 512 nm
-        #        input_limit_z=120_000,  # (251 planes - 1)    * 480 nm
-        #        input_scale_x=0.001,    # convert nm to µm for registration
-        #        input_scale_y=0.001,
-        #        input_scale_z=0.001,
-        #    )
-        #except Exception as e:
-        #    logger.error("Error in map_and_skeletonize_cell for %s: %s", cell_name, e)
+        try:
+            ants_reg.map_and_skeletonize_cell(
+                root_path=cells_folder,
+                cell_name=cell_name,
+                transformation_prefix_path=transform_prefix,
+                input_limit_x=523_776,  # (1024 x pixels - 1) * 512 nm
+                input_limit_y=327_168,  # (640 y pixels - 1)  * 512 nm
+                input_limit_z=120_000,  # (251 planes - 1)    * 480 nm
+                input_scale_x=0.001,    # convert nm to µm for registration
+                input_scale_y=0.001,
+                input_scale_z=0.001,
+            )
+        except Exception as e:
+            logger.error("Error in map_and_skeletonize_cell for %s: %s", cell_name, e)
 
     logger.info("Mapping and skeletonization completed for all cells in %s", cells_folder)
 
