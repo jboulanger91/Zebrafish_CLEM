@@ -50,8 +50,8 @@ Outputs are per-neuron folders containing:
 - `*_presynapses_mapped.obj`, `*_postsynapses_mapped.obj` (synapse OBJ sphere files)  
 - `*_mapped.swc`, `*.swc` (skeletonized neurons with synapse annotations)  
 
-**Main script:** `02_map_and_skeletonize_cells.py`  
-**Helper module:** `ANTs_registration_helpers_jbw.py`  
+**Main script:** `register_and_skeletonize.py`  
+**Helper module:** `register_and_skeletonize_cells_helpers.py`  
 **Environment file:** `map_and_skeletonize.yaml`  
 
 ---
