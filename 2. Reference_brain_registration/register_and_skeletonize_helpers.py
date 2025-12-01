@@ -14,7 +14,7 @@ Main responsibilities
   synapse coordinates) through a precomputed deformation field.
 - Map soma/axon/dendrite meshes into a reference brain.
 - Map synapse CSV files into the reference space.
-- Skeletonize merged axon+dendrite meshes using `skeletor` and `navis`.
+- Skeletonize meshes using `skeletor` and `navis`.
 - Embed pre- and postsynaptic sites into the resulting SWC skeletons.
 
 Requirements

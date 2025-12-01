@@ -17,7 +17,7 @@ Pipeline for reconstructing and organizing neuronal morphologies, synapse positi
 - Generating per-neuron metadata (IDs, reconstruction status, functional labels if available)  
 - Optional extraction of ΔF/F dynamics for functionally imaged neurons  
 
-Outputs are per-neuron folders containing:
+Outputs are per-neuron/axon folders containing:
 
 - `*_metadata.txt` (metadata)  
 - `*_axon.obj`, `*_dendrite.obj`, `*_soma.obj`, `*.obj` (meshes)  
