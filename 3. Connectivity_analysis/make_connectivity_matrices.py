@@ -233,7 +233,7 @@ def main() -> None:
         logger.info("Using existing 'hemisphere' column from metadata.")
         # Even if it exists already, ensure it's in the right position
         all_cells = _reorder_hemisphere_column(all_cells)
-        
+
     # ------------------------------------------------------------------
     # 1. Pooled connectivity matrix (no L/R split)
     # ------------------------------------------------------------------

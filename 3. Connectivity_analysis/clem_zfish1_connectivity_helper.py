@@ -501,7 +501,7 @@ def read_synapse_table(path: Path) -> pd.DataFrame:
     """
 
     # CRITICAL: synapse files are whitespace-separated, not comma-separated
-    df = pd.read_csv(path, sep=r"\s+", engine="python")
+    df = pd.read_csv(path, sep=" ")
 
     # Identify partner column
     if "postsynaptic_ID" in df.columns:
@@ -829,7 +829,7 @@ def generate_directional_connectivity_matrix_general(
     Generate a directional connectivity matrix for a set of functionally-labeled IDs.
 
     For each source ID, this function:
-    - reads its NG-res presynapse and postsynapse tables,
+    - reads its presynapse and postsynapse tables (with headers),
     - uses hemisphere-aware connectivity (via get_inputs_outputs_by_hemisphere_general),
     - counts unique synapses between pairs of IDs in `seg_ids`,
       separately for inputs and outputs, and combines them into a single matrix.
@@ -840,28 +840,16 @@ def generate_directional_connectivity_matrix_general(
     where entries represent the number of synapses (inputs+outputs) between them,
     with sign left untouched here; any inhibitory/excitatory flipping is done in
     the plotting function.
-
-    Parameters
-    ----------
-    root_folder : str or Path
-        Root folder containing per-neuron synapse tables.
-    seg_ids : iterable of str
-        IDs used as both row and column labels of the matrix.
-    df_w_hemisphere : pandas.DataFrame
-        Metadata with hemisphere information.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Square connectivity matrix indexed by seg_ids.
     """
     root_folder = Path(root_folder)
     seg_ids_str = [str(s) for s in seg_ids]
     connectivity_matrix = pd.DataFrame(0, index=seg_ids_str, columns=seg_ids_str)
 
+    # globally tracked non-zero synapses so we don't double-count
     stored_nonzero_synapse_ids: set[int] = set()
 
     for source_id in seg_ids_str:
+        # Hemisphere-aware grouping for this seed
         results = get_inputs_outputs_by_hemisphere_general(
             root_folder=root_folder,
             seed_cell_ids=[source_id],
@@ -869,41 +857,30 @@ def generate_directional_connectivity_matrix_general(
         )
 
         # --------------------- OUTPUTS (source -> target) ----------------
-        # Try cell presynapses, then axon
+        # Try cell presynapses first, then axon
         cell_name = f"clem_zfish1_cell_{source_id}"
-        cell_file_name = f"{cell_name}_ng_res_presynapses.csv"
+        cell_file_name = f"{cell_name}_presynapses.csv"
         cell_output_file_path = root_folder / cell_name / cell_file_name
 
         if cell_output_file_path.exists():
             output_file_path = cell_output_file_path
         else:
             axon_name = f"clem_zfish1_axon_{source_id}"
-            axon_file_name = f"{axon_name}_ng_res_presynapses.csv"
+            axon_file_name = f"{axon_name}_presynapses.csv"
             output_file_path = root_folder / axon_name / axon_file_name
 
         if not output_file_path.exists():
+            # No presynaptic table for this seed
             continue
 
-        outputs_data = pd.read_csv(
-            output_file_path,
-            comment="#",
-            sep=" ",
-            header=None,
-            names=[
-                "partner_cell_id",
-                "x",
-                "y",
-                "z",
-                "synapse_id",
-                "size",
-                "prediction_status",
-                "validation_status",
-                "date",
-            ],
-        )
+        # Use the header-aware helper
+        outputs_data = read_synapse_table(output_file_path)
         valid_outputs = outputs_data[
             outputs_data["validation_status"].astype(str).str.contains("valid", na=False)
-        ]
+        ].copy()
+
+        # Ensure we compare IDs as strings
+        valid_outputs["partner_cell_id"] = valid_outputs["partner_cell_id"].astype(str)
 
         for direction in ["same_side", "different_side"]:
             outputs = results["outputs"]["synapses"][direction]
@@ -912,6 +889,7 @@ def generate_directional_connectivity_matrix_general(
 
             try:
                 outputs = outputs.copy()
+                # nucleus_id in metadata is numeric; we keep seg_ids_str as strings
                 outputs["nucleus_id"] = outputs["nucleus_id"].astype(int)
                 seg_ids_int = [int(s) for s in seg_ids_str]
                 outputs = outputs[outputs["nucleus_id"].isin(seg_ids_int)]
@@ -920,7 +898,7 @@ def generate_directional_connectivity_matrix_general(
                 continue
 
             for _, output_row in outputs.iterrows():
-                target_dend = output_row["dendrite_id"]
+                target_dend = str(output_row["dendrite_id"])
                 matching = valid_outputs[
                     valid_outputs["partner_cell_id"] == target_dend
                 ]
@@ -929,7 +907,9 @@ def generate_directional_connectivity_matrix_general(
                 zero_synapse_count = synapse_ids.count(0)
                 nonzero_synapse_ids = [sid for sid in synapse_ids if sid != 0]
                 new_nonzero = [
-                    sid for sid in nonzero_synapse_ids if sid not in stored_nonzero_synapse_ids
+                    sid
+                    for sid in nonzero_synapse_ids
+                    if sid not in stored_nonzero_synapse_ids
                 ]
                 num_new = zero_synapse_count + len(new_nonzero)
 
@@ -943,31 +923,16 @@ def generate_directional_connectivity_matrix_general(
                     stored_nonzero_synapse_ids.update(new_nonzero)
 
         # ---------------------- INPUTS (target -> source) ----------------
-        input_file_name = f"{cell_name}_ng_res_postsynapses.csv"
+        input_file_name = f"{cell_name}_postsynapses.csv"
         input_file_path = root_folder / cell_name / input_file_name
         if not input_file_path.exists():
             continue
 
-        inputs_data = pd.read_csv(
-            input_file_path,
-            comment="#",
-            sep=" ",
-            header=None,
-            names=[
-                "partner_cell_id",
-                "x",
-                "y",
-                "z",
-                "synapse_id",
-                "size",
-                "prediction_status",
-                "validation_status",
-                "date",
-            ],
-        )
+        inputs_data = read_synapse_table(input_file_path)
         valid_inputs = inputs_data[
             inputs_data["validation_status"].astype(str).str.contains("valid", na=False)
-        ]
+        ].copy()
+        valid_inputs["partner_cell_id"] = valid_inputs["partner_cell_id"].astype(str)
 
         for direction in ["same_side", "different_side"]:
             inputs = results["inputs"]["synapses"][direction]
@@ -984,7 +949,7 @@ def generate_directional_connectivity_matrix_general(
                 continue
 
             for _, input_row in inputs.iterrows():
-                target_axon = input_row["axon_id"]
+                target_axon = str(input_row["axon_id"])
                 matching = valid_inputs[
                     valid_inputs["partner_cell_id"] == target_axon
                 ]
@@ -993,7 +958,9 @@ def generate_directional_connectivity_matrix_general(
                 zero_synapse_count = synapse_ids.count(0)
                 nonzero_synapse_ids = [sid for sid in synapse_ids if sid != 0]
                 new_nonzero = [
-                    sid for sid in nonzero_synapse_ids if sid not in stored_nonzero_synapse_ids
+                    sid
+                    for sid in nonzero_synapse_ids
+                    if sid not in stored_nonzero_synapse_ids
                 ]
                 num_new = zero_synapse_count + len(new_nonzero)
 
@@ -1022,33 +989,46 @@ def process_matrix(
     """
     Modify the matrix rows based on the 'neurotransmitter classifier' in df.
 
-    For each row index (functional ID), this function looks up the corresponding
-    row in `df` (matching 'nucleus_id') and:
+    For each row index (ID), this function looks up the corresponding
+    row in `df` using either 'nucleus_id' or 'axon_id' and:
 
     - if 'neurotransmitter classifier' == 'inhibitory', multiplies the row by -1
-    - if 'excitatory', leaves it unchanged
+    - if 'excitatory' or missing/unknown, leaves it unchanged
 
-    Parameters
-    ----------
-    matrix : pandas.DataFrame
-        Connectivity matrix (will be modified and returned).
-    df : pandas.DataFrame
-        Metadata with 'nucleus_id' and 'neurotransmitter classifier'.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Modified matrix.
+    Rows that cannot be matched to either nucleus_id or axon_id are skipped.
     """
+    df = df.copy()
+
+    # Create string versions for safe matching
+    if "nucleus_id" in df.columns:
+        df["nucleus_id_str"] = df["nucleus_id"].astype(str)
+    else:
+        df["nucleus_id_str"] = ""
+
+    if "axon_id" in df.columns:
+        df["axon_id_str"] = df["axon_id"].astype(str)
+    else:
+        df["axon_id_str"] = ""
+
     for idx in matrix.index:
-        df_row = df.loc[df["nucleus_id"] == idx]
+        # Try matching as nucleus_id first
+        df_row = df.loc[df["nucleus_id_str"] == str(idx)]
+
+        # If no match, try axon_id (for axon_rostral / axon_caudal rows)
         if df_row.empty:
-            raise ValueError(
-                f"Index '{idx}' in the matrix does not have a matching 'nucleus_id' in df."
-            )
-        classifier = df_row.iloc[0]["neurotransmitter classifier"]
+            df_row = df.loc[df["axon_id_str"] == str(idx)]
+
+        # If still no match, skip this row (do not modify)
+        if df_row.empty:
+            # Optional: print or log once if you want to see these
+            # print(f"Warning: no metadata row for ID {idx}; leaving row unchanged.")
+            continue
+
+        classifier = df_row.iloc[0].get("neurotransmitter classifier", None)
+
         if classifier == "inhibitory":
             matrix.loc[idx] *= -1
+        # If excitatory or None/NaN, we leave the row as-is
 
     return matrix
 

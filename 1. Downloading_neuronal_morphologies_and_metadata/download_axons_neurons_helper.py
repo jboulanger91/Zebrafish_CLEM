@@ -753,9 +753,9 @@ def write_synapse_file(
             # presynaptic file: partner is postsynaptic
             columns = [
                 "postsynaptic_ID",   # consistent naming, no space
-                "x (8 nm)",
-                "y (8 nm)",
-                "z (30 nm)",
+                "x_(8_nm)",
+                "y_(8_nm)",
+                "z_(30_nm)",
                 "synapse_id",
                 "size",
                 "prediction_status",
@@ -766,9 +766,9 @@ def write_synapse_file(
             # postsynaptic file: partner is presynaptic
             columns = [
                 "presynaptic_ID",
-                "x (8 nm)",
-                "y (8 nm)",
-                "z (30 nm)",
+                "x_(8_nm)",
+                "y_(8_nm)",
+                "z_(30_nm)",
                 "synapse_id",
                 "size",
                 "prediction_status",

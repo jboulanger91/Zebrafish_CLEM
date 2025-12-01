@@ -79,7 +79,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-from upload_axons_neurons_helper import (
+from download_axons_neurons_helper import (
     init_helpers,
     check_problematic_segments,
     generate_metadata_files,
