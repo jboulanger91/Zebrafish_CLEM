@@ -26,16 +26,22 @@ All mapped outputs are written into each neuron directory under `mapped/`.
 
 ---
 
+## ANTs Requirements (Must Be Installed Separately)
+
+This pipeline depends on **ANTs** for nonlinear registration. See the [Github repository](https://github.com/ANTsX/ANTs?tab=readme-ov-file) for installation options 
+
+---
+
 ## Environment Setup
 
 Create the recommended environment using:
 
 ```bash
-conda env create -f map_and_skeletonize.yaml
-conda activate map_and_skeletonize
+conda env create -f env_register_and_skeletonize.yaml
+conda activate register_and_skeletonize
 ```
 
-This environment installs ANTs dependencies and all required mesh‑processing and skeletonization tools.
+This environment all required mesh‑processing and skeletonization tools.
 
 ---
 

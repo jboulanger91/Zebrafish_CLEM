@@ -1,4 +1,4 @@
-name: map_and_skeletonize
+name: register_and_skeletonize
 channels:
   - defaults
   - conda-forge

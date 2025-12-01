@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Map clem_zfish1 neuron segments to a reference brain and skeletonize them.
+Map clem_zfish1 neuron/axon segments to a reference brain and skeletonize them.
 
 This script applies ANTs deformation fields to:
     - soma, axon, and dendrite meshes
@@ -19,7 +19,7 @@ NOTE:
 Example usage
 -------------
 python3 register_and_skeletonize.py \
-    --cells-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
+    --cells-folder ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
     --transform-prefix "ANTs_transforms/ANTs_dfield" \
     --ants-bin-path /Users/jonathanboulanger-weill/Packages/install/bin \
     --ants-threads 11
