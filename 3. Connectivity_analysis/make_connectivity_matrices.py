@@ -37,7 +37,7 @@ Typical usage
 python3 make_connectivity_matrices.py \
     --metadata-csv "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
     --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
-    --output-folder /connectivity_matrices \
+    --output-folder connectivity_matrices \
     --plot-type scatter \
     --suffix ground_truth_scatter
 
@@ -102,15 +102,14 @@ def parse_args() -> argparse.Namespace:
         "--metadata-csv",
         type=Path,
         required=True,
-        help="CSV metadata file (e.g., all_cells_111224_with_hemisphere.csv).",
+        help="CSV metadata file (e.g., all_reconstructed_neurons.csv).",
     )
     parser.add_argument(
         "--root-folder",
         type=Path,
         required=True,
         help=(
-            "Root folder containing traced neuron subfolders with NG synapse "
-            "tables (e.g., traced_neurons/all_cells_111224/)."
+            "Root folder containing traced neuron subfolders with synapses .csv files "
         ),
     )
     parser.add_argument(
@@ -181,17 +180,31 @@ def main() -> None:
     all_cells = load_and_clean_data(metadata_csv)
     all_cells = standardize_functional_naming(all_cells)
 
-    # ------------------------------------------------------------------
+     # ------------------------------------------------------------------
     # Ensure hemisphere information
     # ------------------------------------------------------------------
+    def _reorder_hemisphere_column(df: pd.DataFrame) -> pd.DataFrame:
+        """Place 'hemisphere' column right after 'tracer names' if both exist."""
+        if "hemisphere" in df.columns and "tracer names" in df.columns:
+            cols = list(df.columns)
+            # Remove current hemisphere position
+            cols.remove("hemisphere")
+            # Insert right after 'tracer names'
+            insert_at = cols.index("tracer names") + 1
+            cols.insert(insert_at, "hemisphere")
+            df = df[cols]
+        return df
+
     need_hemi = (
         recompute_hemisphere
         or ("hemisphere" not in all_cells.columns)
         or all_cells["hemisphere"].isna().all()
     )
+
     if need_hemi:
         logger.info(
-            "Computing 'hemisphere' column from mapped meshes in %s ...", root_folder
+            "Computing 'hemisphere' column from mapped meshes in %s ...",
+            root_folder,
         )
         progress = {"processed_count": 0, "total_rows": len(all_cells)}
         all_cells["hemisphere"] = all_cells.apply(
@@ -201,9 +214,26 @@ def main() -> None:
             progress=progress,
         )
         logger.info("Hemisphere classification completed.")
+
+        # Reorder so 'hemisphere' comes right after 'tracer names'
+        all_cells = _reorder_hemisphere_column(all_cells)
+
+        # Write back to the original CSV
+        try:
+            all_cells.to_csv(metadata_csv, index=False)
+            logger.info(
+                "Updated metadata (with hemisphere) written back to: %s",
+                metadata_csv,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to write hemisphere column back to metadata CSV: %s", e
+            )
     else:
         logger.info("Using existing 'hemisphere' column from metadata.")
-
+        # Even if it exists already, ensure it's in the right position
+        all_cells = _reorder_hemisphere_column(all_cells)
+        
     # ------------------------------------------------------------------
     # 1. Pooled connectivity matrix (no L/R split)
     # ------------------------------------------------------------------

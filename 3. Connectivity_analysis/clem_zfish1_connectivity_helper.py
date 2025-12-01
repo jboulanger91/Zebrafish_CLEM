@@ -498,27 +498,26 @@ def read_synapse_table(path: Path) -> pd.DataFrame:
     """
     Read a synapse CSV written by the NG-res postprocessing step and
     standardize the partner column name to 'partner_cell_id'.
-
-    The file is expected to have:
-    - either a 'postsynaptic ID' column (presynaptic file)
-    - or a 'presynaptic_ID' column (postsynaptic file)
-    plus 'synapse_id' and 'validation_status'.
     """
-    df = pd.read_csv(path)
 
-    if "postsynaptic ID" in df.columns:
-        df["partner_cell_id"] = df["postsynaptic ID"]
+    # CRITICAL: synapse files are whitespace-separated, not comma-separated
+    df = pd.read_csv(path, sep=r"\s+", engine="python")
+
+    # Identify partner column
+    if "postsynaptic_ID" in df.columns:
+        df["partner_cell_id"] = df["postsynaptic_ID"]
     elif "presynaptic_ID" in df.columns:
         df["partner_cell_id"] = df["presynaptic_ID"]
     else:
         raise ValueError(
-            f"Could not find 'postsynaptic ID' or 'presynaptic_ID' in {path}"
+            f"Could not find 'postsynaptic_ID' or 'presynaptic_ID' in {path}. "
+            f"Found columns: {list(df.columns)}"
         )
 
-    if "synapse_id" not in df.columns or "validation_status" not in df.columns:
-        raise ValueError(
-            f"'synapse_id' and/or 'validation_status' missing in {path}"
-        )
+    # Verify required columns
+    for col in ["synapse_id", "validation_status"]:
+        if col not in df.columns:
+            raise ValueError(f"{col} is missing in {path}, columns found: {df.columns}")
 
     return df
 
@@ -611,7 +610,7 @@ def get_inputs_outputs_by_hemisphere_general(
         if output_file_path and output_file_path.exists():
             outputs_data = read_synapse_table(output_file_path)
             valid_outputs = outputs_data[
-                outputs_data["validation_status"].str.contains("valid", na=False)
+                outputs_data["validation_status"].astype(str).str.contains("valid", na=False)
             ]
             output_ids = valid_outputs["partner_cell_id"]
 
@@ -724,7 +723,7 @@ def get_inputs_outputs_by_hemisphere_general(
         if input_file_path and input_file_path.exists():
             inputs_data = read_synapse_table(input_file_path)
             valid_inputs = inputs_data[
-                inputs_data["validation_status"].str.contains("valid", na=False)
+                inputs_data["validation_status"].astype(str).str.contains("valid", na=False)
             ]
             input_ids = valid_inputs["partner_cell_id"]
 
@@ -903,7 +902,7 @@ def generate_directional_connectivity_matrix_general(
             ],
         )
         valid_outputs = outputs_data[
-            outputs_data["validation_status"].str.contains("valid", na=False)
+            outputs_data["validation_status"].astype(str).str.contains("valid", na=False)
         ]
 
         for direction in ["same_side", "different_side"]:
@@ -967,7 +966,7 @@ def generate_directional_connectivity_matrix_general(
             ],
         )
         valid_inputs = inputs_data[
-            inputs_data["validation_status"].str.contains("valid", na=False)
+            inputs_data["validation_status"].astype(str).str.contains("valid", na=False)
         ]
 
         for direction in ["same_side", "different_side"]:
