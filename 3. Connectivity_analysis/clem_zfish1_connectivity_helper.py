@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Helper functions for connectivity analysis in the zebrafish hindbrain (clem_zfish1).
 
@@ -17,19 +16,16 @@ Functional type naming
 To match the terminology used in the manuscript, we use the following
 functional labels in this module:
 
-- ipsilateral_motion_integrator     (previously: integrator_ipsilateral)
-- contralateral_motion_integrator   (previously: integrator_contralateral)
-- motion_onset                      (previously: dynamic_threshold)
-- slow_motion_integrator            (previously: motor_command)
+- ipsilateral_motion_integrator
+- contralateral_motion_integrator
+- motion_onset
+- slow_motion_integrator
 
-The underlying metadata table still uses:
-- 'integrator'       in the "functional classifier" column
-- 'dynamic_threshold'
-- 'motor_command'
+The underlying metadata table uses the functional classifier values:
+- 'motion_integrator'
+- 'motion_onset'
+- 'slow_motion_integrator'
 - 'myelinated'
-
-These are mapped to the new labels when constructing connectivity matrices
-and color-coded summaries.
 """
 
 from __future__ import annotations
@@ -202,30 +198,20 @@ def load_and_clean_data(path: str | Path, drop_duplicates: bool = True) -> pd.Da
 
 def standardize_functional_naming(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Standardize naming in the 'functional classifier' column.
+    Ensure that the 'functional classifier' column exists and is ready
+    for downstream grouping.
 
-    This only normalizes spelling/spacing from the original annotations,
-    e.g. 'dynamic threshold' -> 'dynamic_threshold'. Higher-level functional
-    labels (e.g. 'motion_onset') are introduced when grouping IDs.
+    The clem_zfish1 metadata is assumed to already use the canonical labels:
+        - 'motion_integrator'
+        - 'motion_onset'
+        - 'slow_motion_integrator'
+        - 'myelinated'
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Metadata table.
-
-    Returns
-    -------
-    pandas.DataFrame
-        DataFrame with standardized 'functional classifier' entries.
+    This function is kept as a hook for potential future normalization,
+    but does not change any values in the current repository version.
     """
     if "functional classifier" not in df.columns:
         return df
-
-    replacements = {
-        "dynamic threshold": "dynamic_threshold",
-        "motor command": "motor_command",
-    }
-    df["functional classifier"] = df["functional classifier"].replace(replacements)
     return df
 
 
@@ -281,9 +267,9 @@ def create_nucleus_id_groups(df: pd.DataFrame) -> Dict[str, List[str]]:
     - axon_caudal
 
     The underlying DataFrame is assumed to use:
-    - 'integrator'          in 'functional classifier'
-    - 'dynamic_threshold'
-    - 'motor_command'
+    - 'motion_integrator'      in 'functional classifier'
+    - 'motion_onset'
+    - 'slow_motion_integrator'
     - 'myelinated'
     plus 'projection classifier' ('ipsilateral'/'contralateral').
 
@@ -292,6 +278,9 @@ def create_nucleus_id_groups(df: pd.DataFrame) -> Dict[str, List[str]]:
     dict
         Mapping from functional group name to list of string IDs.
     """
+    # Make sure functional classifier values are normalized
+    df = standardize_functional_naming(df.copy())
+
     groups = {
         "axon_rostral": df.loc[
             (df["type"] == "axon")
@@ -299,13 +288,15 @@ def create_nucleus_id_groups(df: pd.DataFrame) -> Dict[str, List[str]]:
             "axon_id",
         ],
         "ipsilateral_motion_integrator": fetch_filtered_ids(
-            df, 9, "integrator", 11, "ipsilateral"
+            df, 9, "motion_integrator", 11, "ipsilateral"
         )[0],
         "contralateral_motion_integrator": fetch_filtered_ids(
-            df, 9, "integrator", 11, "contralateral"
+            df, 9, "motion_integrator", 11, "contralateral"
         )[0],
-        "motion_onset": fetch_filtered_ids(df, 9, "dynamic_threshold")[0],
-        "slow_motion_integrator": fetch_filtered_ids(df, 9, "motor_command")[0],
+        "motion_onset": fetch_filtered_ids(df, 9, "motion_onset")[0],
+        "slow_motion_integrator": fetch_filtered_ids(
+            df, 9, "slow_motion_integrator"
+        )[0],
         "myelinated": df.loc[
             (df["type"] == "cell")
             & (df["functional classifier"] == "myelinated"),
@@ -345,6 +336,9 @@ def create_nucleus_id_groups_hemisphere(df: pd.DataFrame) -> Dict[str, List[str]
     dict
         Mapping from group name to list of string IDs.
     """
+    # Ensure functional classifier names are in the new scheme
+    df = standardize_functional_naming(df.copy())
+
     groups = {
         # Axon rostral
         "axon_rostral_left": df.loc[
@@ -359,31 +353,31 @@ def create_nucleus_id_groups_hemisphere(df: pd.DataFrame) -> Dict[str, List[str]
             & (df["hemisphere"] == "R"),
             "axon_id",
         ],
-        # Integrators by projection + hemisphere
+        # Motion integrators by projection + hemisphere
         "ipsilateral_motion_integrator_left": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "integrator")
+            & (df["functional classifier"] == "motion_integrator")
             & (df["projection classifier"] == "ipsilateral")
             & (df["hemisphere"] == "L"),
             "nucleus_id",
         ],
         "ipsilateral_motion_integrator_right": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "integrator")
+            & (df["functional classifier"] == "motion_integrator")
             & (df["projection classifier"] == "ipsilateral")
             & (df["hemisphere"] == "R"),
             "nucleus_id",
         ],
         "contralateral_motion_integrator_left": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "integrator")
+            & (df["functional classifier"] == "motion_integrator")
             & (df["projection classifier"] == "contralateral")
             & (df["hemisphere"] == "L"),
             "nucleus_id",
         ],
         "contralateral_motion_integrator_right": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "integrator")
+            & (df["functional classifier"] == "motion_integrator")
             & (df["projection classifier"] == "contralateral")
             & (df["hemisphere"] == "R"),
             "nucleus_id",
@@ -391,26 +385,26 @@ def create_nucleus_id_groups_hemisphere(df: pd.DataFrame) -> Dict[str, List[str]
         # Motion onset
         "motion_onset_left": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "dynamic_threshold")
+            & (df["functional classifier"] == "motion_onset")
             & (df["hemisphere"] == "L"),
             "nucleus_id",
         ],
         "motion_onset_right": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "dynamic_threshold")
+            & (df["functional classifier"] == "motion_onset")
             & (df["hemisphere"] == "R"),
             "nucleus_id",
         ],
         # Slow motion integrator
         "slow_motion_integrator_left": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "motor_command")
+            & (df["functional classifier"] == "slow_motion_integrator")
             & (df["hemisphere"] == "L"),
             "nucleus_id",
         ],
         "slow_motion_integrator_right": df.loc[
             (df["type"] == "cell")
-            & (df["functional classifier"] == "motor_command")
+            & (df["functional classifier"] == "slow_motion_integrator")
             & (df["hemisphere"] == "R"),
             "nucleus_id",
         ],

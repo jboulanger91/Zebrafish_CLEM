@@ -52,7 +52,7 @@ Outputs are per-neuron folders containing:
 
 **Main script:** `register_and_skeletonize.py`  
 **Helper module:** `register_and_skeletonize_cells_helpers.py`  
-**Environment file:** `map_and_skeletonize.yaml`  
+**Environment file:** `env_register_and_skeletonize.yaml`  
 
 ---
 

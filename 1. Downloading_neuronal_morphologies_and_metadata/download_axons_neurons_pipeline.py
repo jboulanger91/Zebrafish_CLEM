@@ -34,21 +34,9 @@ Main functionality
   For functionally imaged neurons, extract ΔF/F activity from the HDF5 dataset, save it in
   per-neuron HDF5 files, and optionally generate diagnostic activity plots.
 
-Dependencies
-------------
-- Python 3.10+
-- navis
-- cloudvolume
-- numpy
-- pandas
-- h5py
-- matplotlib
-- scipy
-- caveclient
-
 Environment setup
 -----------------
-Create and activatz the recommended environment using:
+Create and activates the recommended environment using:
 
     conda env create -f env_clem_zfish1_neuroglancer.yaml
     conda activate clem_zfish1_neuroglancer

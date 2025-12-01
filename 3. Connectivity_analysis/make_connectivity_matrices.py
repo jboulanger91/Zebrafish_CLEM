@@ -3,7 +3,7 @@
 """
 Make connectivity matrices for zebrafish hindbrain neurons (clem_zfish1).
 
-This script builds directional connectivity matrices from NG-resolution synapse
+This script builds directional connectivity matrices from synapse
 tables and a metadata CSV. It produces:
 
 1. A single pooled matrix across hemispheres, grouping neurons into:
@@ -21,8 +21,8 @@ tables and a metadata CSV. It produces:
 
 The underlying metadata table is assumed to contain:
 - 'type' ('cell' or 'axon')
-- 'functional classifier' (e.g., 'integrator', 'dynamic_threshold',
-  'motor_command', 'myelinated')
+- 'functional classifier' (e.g., 'motion_integrator',
+  'motion_onset', 'slow_motion_integrator', 'myelinated')
 - 'projection classifier' ('ipsilateral'/'contralateral')
 - 'neurotransmitter classifier' ('inhibitory'/'excitatory')
 - 'comment' (e.g., 'axon exits the volume caudally/rostrally')
@@ -35,11 +35,11 @@ mesh files using `determine_hemisphere` from the helper module.
 Typical usage
 -------------
 python3 make_connectivity_matrices.py \
-    --metadata-csv all_reconstructed_neurons.csv \
-    --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/hb_connectome/hindbrain_structure_function/clem_zfish1/traced_neurons/all_cells_111224" \
+    --metadata-csv "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
+    --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
     --output-folder /connectivity_matrices \
     --plot-type scatter \
-    --suffix native_112725
+    --suffix ground_truth_scatter
 
 All paths should be adapted to your local setup.
 """
