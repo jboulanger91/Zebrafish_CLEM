@@ -66,27 +66,7 @@ Both pipelines rely on the mapped neuron outputs generated in **Step 2** and ope
 
 #### 3.1 Connectivity Matrices
 
-This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional neuron classes. Three matrix types are produced:
-
-### **1. Pooled connectivity matrix (hemispheres merged)**
-Neurons/axons are grouped into manuscript-defined functional classes:
-
-- `axon_rostral`  
-- `ipsilateral_motion_integrator`  
-- `contralateral_motion_integrator`  
-- `motion_onset`  
-- `slow_motion_integrator`  
-- `myelinated`  
-- `axon_caudal`
-
-### **2. Left–right split connectivity matrix**
-Same classes as above, expanded with hemisphere suffixes (`*_left`, `*_right`).
-
-### **3. Left–right split (raster display)**
-Same as (2) but rendered with a pixel-based raster visualization.
-
-### **Automatic hemisphere assignment**
-If the metadata lacks a `hemisphere` column, it is computed automatically using mapped meshes and the `determine_hemisphere` helper.
+This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional/morphologcial neuron/axon classes. 
 
 ### **Outputs**
 - Pooled connectivity matrix (PDF)  
@@ -100,30 +80,12 @@ If the metadata lacks a `hemisphere` column, it is computed automatically using 
 
 ---
 
-#### 3.2 Two-Layer Network Diagrams (`make_connectome_diagrams.py`)
+#### 3.2 Two-Layer Network Diagrams
 
 This pipeline creates **compact schematic connectivity diagrams** for selected functional populations:
 
-- **cMI** — contralateral motion integrators  
-- **MON** — motion onset neurons  
-- **MC** — slow motion integrators (motor-command-like)  
-- **iMI+** — ipsilateral motion integrators (excitatory)  
-- **iMI−** — ipsilateral motion integrators (inhibitory)
-
-For each seed population, the workflow:
-
-- Extracts **same-side** and **cross-side** inputs and outputs  
-- Computes **synapse-count probabilities**  
-- Draws **four two-layer diagrams**:  
-  - Same-side inputs  
-  - Cross-side inputs  
-  - Same-side outputs  
-  - Cross-side outputs  
-
-Line thickness scales with synapse counts, and node colors match the functional color dictionary defined in `connectivity_matrices_helper.py`.
-
 ### **Outputs**
-- Four-panel PDF diagram per population (cMI, MON, MC, iMI+, iMI−)
+- Four-panel PDF connectivity diagram per population (cMI, MON, MC, iMI+, iMI−)
 
 **Main script:** `make_connectome_diagrams.py`  
 **Helper modules:**  
