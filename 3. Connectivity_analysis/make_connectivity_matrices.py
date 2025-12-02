@@ -53,7 +53,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from connectivity_helpers import (
+from connectivity_matrices_helpers import (
     COLOR_CELL_TYPE_DICT,
     COLOR_CELL_TYPE_DICT_LR,
     create_nucleus_id_groups,

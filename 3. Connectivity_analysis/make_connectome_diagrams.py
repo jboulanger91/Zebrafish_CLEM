@@ -5,7 +5,7 @@ Regenerate two-layer network diagrams for zebrafish hindbrain connectomes.
 
 This script:
     1. Loads an LDA-annotated metadata table (one row per reconstructed neuron).
-    2. Selects seed populations (IC, MON, MC, iMI+, iMI-).
+    2. Selects seed populations (cMI, MON, MC, iMI+, iMI-).
     3. For each population:
         - extracts input/output connections with hemisphere info,
         - computes synapse-count probabilities,
@@ -16,7 +16,7 @@ This script:
     4. Saves each figure as a PDF in the chosen output folder.
 
 The actual connectivity and plotting logic is delegated to helper functions:
-    - get_inputs_outputs_by_hemisphere
+    - get_inputs_outputs_by_hemisphere_general
     - compute_count_probabilities_from_results
     - draw_two_layer_neural_net
     - fetch_filtered_ids
@@ -26,7 +26,7 @@ These helpers are expected to live in `connectivity_helpers.py` (or similar).
 
 Typical usage
 -------------
-python3 make_connectom_diagrmas.py \
+python3 make_connectome_diagrams.py \
     --lda-csv /path/to/all_cells_with_hemisphere_lda.csv \
     --root-folder /path/to/traced_axons_neurons \
     --output-folder /path/to/network_plots
@@ -36,13 +36,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Iterable
+from typing import Dict, Iterable
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 from connectivity_helpers import (
-    get_inputs_outputs_by_hemisphere,
+    get_inputs_outputs_by_hemisphere_general,
     compute_count_probabilities_from_results,
     draw_two_layer_neural_net,
     fetch_filtered_ids,
@@ -78,9 +78,17 @@ def load_lda_metadata(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def get_seed_id_sets(df: pd.DataFrame) -> dict[str, pd.Series]:
+def get_seed_id_sets(df: pd.DataFrame) -> Dict[str, pd.Series]:
     """
     Collect seed nucleus ID sets for each functional population.
+
+    This version assumes the *updated* LDA functional classifier column
+    (column index 9) uses the new labels:
+
+        'motion_integrator'
+        'motion_onset'
+        'slow_motion_integrator'
+        'myelinated'
 
     Uses `fetch_filtered_ids` / `fetch_filtered_ids_EI`, which operate
     on column indices rather than names:
@@ -89,40 +97,48 @@ def get_seed_id_sets(df: pd.DataFrame) -> dict[str, pd.Series]:
         col 10 -> neurotransmitter classifier
         col 11 -> projection classifier
 
-    Returns
-    -------
-    dict
-        Mapping from population label -> Series of nucleus IDs (as in the CSV).
+    Populations
+    -----------
+    - cMI      : motion_integrator, contralateral
+    - MON      : motion_onset
+    - MC       : slow_motion_integrator
+    - iMI_all  : motion_integrator, ipsilateral
+    - iMI_plus : motion_integrator, ipsilateral, excitatory
+    - iMI_minus: motion_integrator, ipsilateral, inhibitory
     """
-    # All dynamic threshold (MON)
-    dt_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "dynamic_threshold")
+    # MON: all motion_onset
+    mon_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "motion_onset")
 
-    # All contralateral integrator (cMI)
-    ic_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "integrator", 11, "contralateral")
-
-    # All ipsilateral integrator (iMI)
-    ii_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "integrator", 11, "ipsilateral")
-
-    # All motor command (MC)
-    mc_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "motor_command")
-
-    # Ipsilateral integrator EXCITATORY (iMI+)
-    ii_ex_ids_all_nuc, _ = fetch_filtered_ids_EI(
-        df, 9, "integrator", 10, "excitatory", 11, "ipsilateral"
+    # cMI: contralateral motion_integrator
+    cmi_ids_all_nuc, _ = fetch_filtered_ids(
+        df, 9, "motion_integrator", 11, "contralateral"
     )
 
-    # Ipsilateral integrator INHIBITORY (iMI-)
-    ii_inh_ids_all_nuc, _ = fetch_filtered_ids_EI(
-        df, 9, "integrator", 10, "inhibitory", 11, "ipsilateral"
+    # iMI (all ipsilateral motion_integrator)
+    imi_all_ids_all_nuc, _ = fetch_filtered_ids(
+        df, 9, "motion_integrator", 11, "ipsilateral"
+    )
+
+    # MC: all slow_motion_integrator
+    mc_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "slow_motion_integrator")
+
+    # iMI+ : motion_integrator, ipsilateral, excitatory
+    imi_plus_ids_all_nuc, _ = fetch_filtered_ids_EI(
+        df, 9, "motion_integrator", 10, "excitatory", 11, "ipsilateral"
+    )
+
+    # iMI- : motion_integrator, ipsilateral, inhibitory
+    imi_minus_ids_all_nuc, _ = fetch_filtered_ids_EI(
+        df, 9, "motion_integrator", 10, "inhibitory", 11, "ipsilateral"
     )
 
     return {
-        "cMI": ic_ids_all_nuc,
-        "MON": dt_ids_all_nuc,
+        "cMI": cmi_ids_all_nuc,
+        "MON": mon_ids_all_nuc,
         "MC": mc_ids_all_nuc,
-        "iMI_plus": ii_ex_ids_all_nuc,
-        "iMI_minus": ii_inh_ids_all_nuc,
-        "iMI_all": ii_ids_all_nuc,
+        "iMI_plus": imi_plus_ids_all_nuc,
+        "iMI_minus": imi_minus_ids_all_nuc,
+        "iMI_all": imi_all_ids_all_nuc,
     }
 
 
@@ -168,7 +184,7 @@ def plot_population_networks(
         Suffix included in the output filename (e.g. 'ic_all_lda_110725').
     input_circle_color : str
         Functional color key passed to `draw_two_layer_neural_net`
-        (e.g. 'integrator_contralateral', 'dynamic_threshold').
+        (e.g. 'contralateral_motion_integrator', 'motion_onset').
     input_cell_type : str
         High-level description of the seed population, used by the helper
         plotting function (e.g. 'inhibitory', 'excitatory', 'mixed').
@@ -182,7 +198,7 @@ def plot_population_networks(
 
     # --- 1. Build connectome for this seed population ------------------
     print(f"\n=== Population: {population_name} ===")
-    connectome = get_inputs_outputs_by_hemisphere(
+    connectome = get_inputs_outputs_by_hemisphere_general(
         root_folder=root_folder,
         seed_cell_ids=seed_ids,
         hemisphere_df=lda_df,
@@ -334,7 +350,7 @@ def main() -> None:
 
     out_folder = args.output_folder
 
-    # 1) cMI (contralateral integrator, inhibitory)
+    # 1) cMI (contralateral motion integrator, mostly inhibitory)
     plot_population_networks(
         population_name="cMI",
         seed_ids=seed_sets["cMI"],
@@ -342,25 +358,25 @@ def main() -> None:
         root_folder=args.root_folder,
         output_folder=out_folder,
         plot_suffix=f"ic_all_lda{suffix_part}",
-        input_circle_color="integrator_contralateral",
+        input_circle_color="contralateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
     )
 
-    # 2) MON (dynamic threshold, inhibitory)
+    # 2) MON (motion onset, mostly inhibitory)
     plot_population_networks(
         population_name="MON",
         seed_ids=seed_sets["MON"],
         lda_df=lda_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"dt_all_lda{suffix_part}",
-        input_circle_color="dynamic_threshold",
+        plot_suffix=f"mon_all_lda{suffix_part}",
+        input_circle_color="motion_onset",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
     )
 
-    # 3) MC (motor command, mixed)
+    # 3) MC (slow motion integrator / motor command, mixed)
     plot_population_networks(
         population_name="MC",
         seed_ids=seed_sets["MC"],
@@ -368,33 +384,33 @@ def main() -> None:
         root_folder=args.root_folder,
         output_folder=out_folder,
         plot_suffix=f"mc_all_lda{suffix_part}",
-        input_circle_color="motor_command",
+        input_circle_color="slow_motion_integrator",
         input_cell_type="mixed",
         outputs_total_mode="both",
     )
 
-    # 4) iMI+ (ipsilateral integrator, excitatory, same-side outputs for norm)
+    # 4) iMI+ (ipsilateral motion integrator, excitatory, same-side outputs for norm)
     plot_population_networks(
         population_name="iMI+",
         seed_ids=seed_sets["iMI_plus"],
         lda_df=lda_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"ii_plus_all_lda{suffix_part}",
-        input_circle_color="integrator_ipsilateral",
+        plot_suffix=f"imi_plus_all_lda{suffix_part}",
+        input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="excitatory",
         outputs_total_mode="same_only",
     )
 
-    # 5) iMI- (ipsilateral integrator, inhibitory, same-side outputs for norm)
+    # 5) iMI- (ipsilateral motion integrator, inhibitory, same-side outputs for norm)
     plot_population_networks(
         population_name="iMI-",
         seed_ids=seed_sets["iMI_minus"],
         lda_df=lda_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"ii_minus_all_lda{suffix_part}",
-        input_circle_color="integrator_ipsilateral",
+        plot_suffix=f"imi_minus_all_lda{suffix_part}",
+        input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="same_only",
     )
