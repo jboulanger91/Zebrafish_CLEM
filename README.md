@@ -64,14 +64,20 @@ The pipelines operate on mapped neurons (from Step 2), using synapse tables and 
 
 ---
 
-## Connectivity Matrices (`make_connectivity_matrices.py`)
+### 3. Connectivity Matrices and Network Diagram Generation
 
-This script constructs **directional connectivity matrices** describing pre → post synaptic connections between functionally defined neuron groups.
+This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate Neuroglancer-derived synapse tables, registered neuron meshes, and functional classifications.
 
-It produces three matrix types:
+Both pipelines rely on the mapped neuron outputs generated in **Step 2** and operate directly on per-neuron `*_presynapses.csv` and `*_postsynapses.csv` tables.
 
-#### **1. Pooled connectivity matrix (hemispheres merged)**  
-Neurons and axons are grouped into the functional classes defined in the manuscript:
+---
+
+#### 3.1 Connectivity Matrices
+
+This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional neuron classes. Three matrix types are produced:
+
+### **1. Pooled connectivity matrix (hemispheres merged)**
+Neurons/axons are grouped into manuscript-defined functional classes:
 
 - `axon_rostral`  
 - `ipsilateral_motion_integrator`  
@@ -81,52 +87,57 @@ Neurons and axons are grouped into the functional classes defined in the manuscr
 - `myelinated`  
 - `axon_caudal`
 
-#### **2. Left–right split connectivity matrix**  
-Same classes as above, expanded with hemisphere-specific suffixes:  
-`*_left` and `*_right`.
+### **2. Left–right split connectivity matrix**
+Same classes as above, expanded with hemisphere suffixes (`*_left`, `*_right`).
 
-#### **3. Left–right split connectivity matrix with raster display**  
-Same as above with rste display. 
+### **3. Left–right split (raster display)**
+Same as (2) but rendered with a pixel-based raster visualization.
 
-**Outputs include:**
-- The matrices described bove, as PDFs. 
+### **Automatic hemisphere assignment**
+If the metadata lacks a `hemisphere` column, it is computed automatically using mapped meshes and the `determine_hemisphere` helper.
+
+### **Outputs**
+- Pooled connectivity matrix (PDF)  
+- Left/right split connectivity matrix (PDF)  
+- Optional raster or scatter representations  
+- Optional inhibitory/excitatory signed representation (inhibitory rows × −1)
 
 **Main script:** `make_connectivity_matrices.py`  
 **Helper module:** `connectivity_matrices_helper.py`  
-**Environment file:** `env_clem_zfish1_global.yaml`
+**Environment:** `env_clem_zfish1_global.yaml`
 
 ---
 
-## Two-Layer Network Diagrams (`make_connectome_diagrams.py`)
+#### 3.2 Two-Layer Network Diagrams (`make_connectome_diagrams.py`)
 
-This script generates **compact two-layer connectivity schematics** for specific functional neuron populations:
+This pipeline creates **compact schematic connectivity diagrams** for selected functional populations:
 
 - **cMI** — contralateral motion integrators  
 - **MON** — motion onset neurons  
-- **MC** — slow motion integrators (motor command–like)  
+- **MC** — slow motion integrators (motor-command-like)  
 - **iMI+** — ipsilateral motion integrators (excitatory)  
 - **iMI−** — ipsilateral motion integrators (inhibitory)
 
-For each seed population, the pipeline:
+For each seed population, the workflow:
 
-- Extracts **same-side** and **cross-side** inputs & outputs  
+- Extracts **same-side** and **cross-side** inputs and outputs  
 - Computes **synapse-count probabilities**  
-- Plots four diagrams per population:  
+- Draws **four two-layer diagrams**:  
   - Same-side inputs  
   - Cross-side inputs  
   - Same-side outputs  
   - Cross-side outputs  
 
-Node colors follow the functional color scheme defined in `clem_zfish1_connectivity_helper.py`, and connection thickness scales with synapse counts.
+Line thickness scales with synapse counts, and node colors match the functional color dictionary defined in `connectivity_matrices_helper.py`.
 
-**Outputs include:**
-- Four-panel network diagrams (PDFs) for each functional population
+### **Outputs**
+- Four-panel PDF diagram per population (cMI, MON, MC, iMI+, iMI−)
 
 **Main script:** `make_connectome_diagrams.py`  
 **Helper modules:**  
 - `connectivity_diagrams_helper.py`  
-- `connectivity_matrices_helper.py`
-**Environment file:** `env_clem_zfish1_global.yaml`
+- `connectivity_matrices_helper.py`  
+**Environment:** `env_clem_zfish1_global.yaml`
 
 ---
 
