@@ -1041,7 +1041,7 @@ def plot_connectivity_matrix(
     df: pd.DataFrame | None = None,
     title: str = "Directional Connectivity Matrix",
     display_type: str = "normal",
-    plot_type: str = "heatmap",
+    plot_type: str = "raster",
     color_cell_type_dict: Dict[str, Tuple[float, float, float, float]] | None = None,
 ) -> None:
     """
@@ -1067,8 +1067,8 @@ def plot_connectivity_matrix(
         - 'normal' plots raw counts.
         - 'Inhibitory_Excitatory' flips inhibitory rows and uses a diverging
           colormap around zero.
-    plot_type : {'heatmap', 'scatter'}, optional
-        - 'heatmap' uses matshow.
+    plot_type : {'raster', 'scatter'}, optional
+        - 'raster' uses matshow to make pixels.
         - 'scatter' uses a bubble-plot representation.
     color_cell_type_dict : dict, optional
         Mapping from functional category name -> RGBA color.
@@ -1085,8 +1085,8 @@ def plot_connectivity_matrix(
 
     if display_type not in {"normal", "Inhibitory_Excitatory"}:
         raise ValueError("display_type must be 'normal' or 'Inhibitory_Excitatory'.")
-    if plot_type not in {"heatmap", "scatter"}:
-        raise ValueError("plot_type must be 'heatmap' or 'scatter'.")
+    if plot_type not in {"raster", "scatter"}:
+        raise ValueError("plot_type must be 'raster' or 'scatter'.")
 
     if display_type == "Inhibitory_Excitatory":
         if df is None:
@@ -1143,7 +1143,7 @@ def plot_connectivity_matrix(
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
-    if plot_type == "heatmap":
+    if plot_type == "raster":
         cax = ax.matshow(matrix_with_nan, cmap=cmap, norm=norm)
         artist_for_cbar = cax
     else:
@@ -1158,27 +1158,19 @@ def plot_connectivity_matrix(
 
     ax.set_aspect("equal")
 
-    cbar = plt.colorbar(
-        artist_for_cbar,
-        ax=ax,
-        boundaries=bounds,
-        ticks=ticks,
-        spacing="uniform",
-        orientation="horizontal",
-        pad=0.1,
-    )
-    cbar.set_label(cbar_label)
-
     ax.set_xticks(range(len(matrix_with_nan.columns)))
     ax.set_yticks(range(len(matrix_with_nan.index)))
-    ax.set_xticklabels(matrix_with_nan.columns, rotation=90, fontsize=8)
-    ax.set_yticklabels(matrix_with_nan.index, fontsize=8)
+    ax.set_xticklabels(matrix_with_nan.columns, rotation=90, fontsize=5)
+    ax.set_yticklabels(matrix_with_nan.index, fontsize=5)
     ax.set_xlabel("Pre-synaptic (axons)")
     ax.set_ylabel("Post-synaptic (dendrites)")
     ax.set_title(title, fontsize=12)
 
-    bar_width = 3
-    bar_height = 3
+    bar_width = 1.5   # 50% of original 3
+    bar_height = 1.5  # 50% of original 3
+
+    left_bar_x = -bar_width - 0.5
+    top_bar_y = -bar_height - 0.5
 
     for i, functional_id in enumerate(matrix_with_nan.index):
         if functional_id not in functional_types:
@@ -1186,18 +1178,21 @@ def plot_connectivity_matrix(
         ftype = functional_types[functional_id]
         color = color_cell_type_dict.get(ftype, (0.8, 0.8, 0.8, 0.7))
 
+        # Left bar (row indicator), fully outside matrix
         ax.add_patch(
             patches.Rectangle(
-                (-bar_width, i - 0.5),
+                (left_bar_x, i - 0.5),
                 bar_width,
                 1,
                 color=color,
                 zorder=2,
             )
         )
+
+        # Top bar (column indicator), fully outside matrix
         ax.add_patch(
             patches.Rectangle(
-                (i - 0.5, -bar_height),
+                (i - 0.5, top_bar_y),
                 1,
                 bar_height,
                 color=color,
@@ -1220,6 +1215,66 @@ def plot_connectivity_matrix(
 
     ax.set_xlim(-1.5, len(matrix_with_nan.columns) - 0.5)
     ax.set_ylim(len(matrix_with_nan.index) - 0.5, -1.5)
+
+    # ------------------------------------------------------------------
+    # Colorbar (synapse strength) – vertical on the right
+    # ------------------------------------------------------------------
+    cbar = plt.colorbar(
+        artist_for_cbar,
+        ax=ax,
+        boundaries=bounds,
+        ticks=ticks,
+        spacing="uniform",
+        orientation="vertical",
+        fraction=0.045,   # slim colorbar
+        pad=0.02,         # small gap from matrix
+    )
+    cbar.set_label(cbar_label, fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    # ------------------------------------------------------------------
+    # Legends (all in the top-right, to the RIGHT of the colorbar)
+    # ------------------------------------------------------------------
+    # Figure-coordinates position of the colorbar axis
+    cbar_bbox = cbar.ax.get_position()
+
+    # x coordinate where legends should start: just to the right of the bar
+    legend_x = cbar_bbox.x1 + 0.010
+    legend_y = cbar_bbox.y1   # align with top of colorbar
+
+        # ------------------------------------------------------------------
+    # Legends (all in the top-right, to the RIGHT of the matrix+colorbar)
+    # ------------------------------------------------------------------
+    func_handles = []
+    func_labels = []
+    for cat in category_order:
+        if cat in color_cell_type_dict:
+            func_handles.append(
+                patches.Patch(
+                    color=color_cell_type_dict[cat],
+                    label=cat.replace("_", " "),
+                )
+            )
+            func_labels.append(cat.replace("_", " "))
+
+    # Place legend using the main axes coordinate system:
+    # x > 1 means "to the right of the matrix (and colorbar)"
+    func_legend = ax.legend(
+        handles=func_handles,
+        labels=func_labels,
+        loc="upper left",
+        bbox_to_anchor=(1.25, 1.0),      # move further right if still too close
+        bbox_transform=ax.transAxes,     # coordinates relative to the matrix axes
+        borderaxespad=0.0,
+        fontsize=7,
+        title="Functional type",
+        title_fontsize=8,
+        frameon=False,
+        handlelength=1.5,
+        handletextpad=0.4,
+        labelspacing=0.2,
+    )
+    fig.add_artist(func_legend)
 
     plt.tight_layout()
     sanitized_title = (

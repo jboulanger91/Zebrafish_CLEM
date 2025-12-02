@@ -39,7 +39,7 @@ python3 make_connectivity_matrices.py \
     --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
     --output-folder connectivity_matrices \
     --plot-type scatter \
-    --suffix ground_truth_scatter
+    --suffix gt
 
 All paths should be adapted to your local setup.
 """
@@ -53,7 +53,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from clem_zfish1_connectivity_helper import (
+from connectivity_helpers import (
     COLOR_CELL_TYPE_DICT,
     COLOR_CELL_TYPE_DICT_LR,
     create_nucleus_id_groups,
@@ -171,10 +171,8 @@ def main() -> None:
     plot_type: str = args.plot_type
     suffix: str = args.suffix.strip()
 
-    if suffix:
-        suffix_str = f"_{suffix}"
-    else:
-        suffix_str = ""
+    suffix = args.suffix.strip().lstrip("_")   # remove any leading underscores
+    suffix_str = f"_{suffix}" if suffix else ""
 
     logger.info("Loading metadata from %s", metadata_csv)
     all_cells = load_and_clean_data(metadata_csv)
@@ -267,7 +265,7 @@ def main() -> None:
         "axon_caudal",
     ]
 
-    pooled_title = f"pooled_connectivity_matrix{suffix_str}"
+    pooled_title = f"connectivity_matrix{suffix_str}"
     logger.info("Plotting pooled connectivity matrix (%s)...", plot_type)
     plot_connectivity_matrix(
         filtered_matrix,
@@ -290,23 +288,23 @@ def main() -> None:
         logger.info("  %s: %d", category, count)
 
     # ------------------------------------------------------------------
-    # 2. Left/right split connectivity matrix
+    # 2. Left/right split connectivity matrix, bubble plot
     # ------------------------------------------------------------------
-    logger.info("Building L/R split functional groups...")
+    logger.info("Building Left/Right split functional groups...")
     nucleus_id_groups_lr = create_nucleus_id_groups_hemisphere(all_cells)
     functional_types_lr = generate_functional_types(nucleus_id_groups_lr)
 
     all_ids_nuc_lr = np.concatenate(list(nucleus_id_groups_lr.values()))
-    logger.info("Total L/R IDs used in matrix: %d", len(all_ids_nuc_lr))
+    logger.info("Total Left/Right IDs used in matrix: %d", len(all_ids_nuc_lr))
 
-    logger.info("Computing L/R directional connectivity matrix...")
+    logger.info("Computing Left/Right directional connectivity matrix...")
     connectivity_matrix_lr = generate_directional_connectivity_matrix_general(
         root_folder=root_folder,
         seg_ids=all_ids_nuc_lr,
         df_w_hemisphere=all_cells,
     )
 
-    logger.info("Filtering L/R connectivity matrix to non-zero rows/cols...")
+    logger.info("Filtering Left/Right connectivity matrix to non-zero rows/cols...")
     filtered_matrix_lr, filtered_types_lr = filter_connectivity_matrix(
         connectivity_matrix_lr,
         functional_types_lr,
@@ -329,9 +327,9 @@ def main() -> None:
         "axon_caudal_right",
     ]
 
-    lr_title = f"lr_split_connectivity_matrix_inhibitory_excitatory{suffix_str}"
+    lr_title = f"left-right_matrix_e-i{suffix_str}"
     logger.info(
-        "Plotting L/R connectivity matrix in inhibitory/excitatory mode (%s)...",
+        "Plotting Left/Right connectivity matrix in inhibitory/excitatory mode (%s)...",
         plot_type,
     )
     plot_connectivity_matrix(
@@ -343,6 +341,65 @@ def main() -> None:
         title=lr_title,
         display_type="Inhibitory_Excitatory",
         plot_type=plot_type,
+        color_cell_type_dict=COLOR_CELL_TYPE_DICT_LR,
+    )
+
+    logger.info("Connectivity matrix generation finished successfully.")
+
+    # ------------------------------------------------------------------
+    # 3. Left/right split connectivity matrix, raster plot
+    # ------------------------------------------------------------------
+    logger.info("Building Left/Right split functional groups...")
+    nucleus_id_groups_lr = create_nucleus_id_groups_hemisphere(all_cells)
+    functional_types_lr = generate_functional_types(nucleus_id_groups_lr)
+
+    all_ids_nuc_lr = np.concatenate(list(nucleus_id_groups_lr.values()))
+    logger.info("Total Left/Right IDs used in matrix: %d", len(all_ids_nuc_lr))
+
+    logger.info("Computing Left/Right directional connectivity matrix...")
+    connectivity_matrix_lr = generate_directional_connectivity_matrix_general(
+        root_folder=root_folder,
+        seg_ids=all_ids_nuc_lr,
+        df_w_hemisphere=all_cells,
+    )
+
+    logger.info("Filtering Left/Right connectivity matrix to non-zero rows/cols...")
+    filtered_matrix_lr, filtered_types_lr = filter_connectivity_matrix(
+        connectivity_matrix_lr,
+        functional_types_lr,
+    )
+
+    category_order_lr = [
+        "axon_rostral_left",
+        "ipsilateral_motion_integrator_left",
+        "contralateral_motion_integrator_left",
+        "motion_onset_left",
+        "slow_motion_integrator_left",
+        "myelinated_left",
+        "axon_caudal_left",
+        "axon_rostral_right",
+        "ipsilateral_motion_integrator_right",
+        "contralateral_motion_integrator_right",
+        "motion_onset_right",
+        "slow_motion_integrator_right",
+        "myelinated_right",
+        "axon_caudal_right",
+    ]
+
+    lr_title = f"left-right_matrix_e-i_raster{suffix_str}"
+    logger.info(
+        "Plotting Left/Right connectivity matrix in inhibitory/excitatory mode (%s)...",
+        plot_type,
+    )
+    plot_connectivity_matrix(
+        filtered_matrix_lr,
+        filtered_types_lr,
+        output_path=output_folder,
+        category_order=category_order_lr,
+        df=all_cells,
+        title=lr_title,
+        display_type="Inhibitory_Excitatory",
+        plot_type='raster',
         color_cell_type_dict=COLOR_CELL_TYPE_DICT_LR,
     )
 
