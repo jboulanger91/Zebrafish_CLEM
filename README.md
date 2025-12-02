@@ -56,7 +56,7 @@ Outputs are per-neuron folders containing:
 
 ---
 
-### 3. Connectivity Matrix Generation
+### 3. Connectivity Matrix and Diagrams Generation
 
 Pipeline for computing and visualizing directional connectivity matrices from the **clem_zfish1** connectome.  This includes
 - Import of Neuroglancer-resolution synapse tables

@@ -34,14 +34,12 @@ This pipeline depends on **ANTs** for nonlinear registration. See the [Github re
 
 ## Environment Setup
 
-Create the recommended environment using:
+Create the dedicated registration environment using:
 
 ```bash
 conda env create -f env_register_and_skeletonize.yaml
 conda activate register_and_skeletonize
 ```
-
-This environment all required mesh‑processing and skeletonization tools.
 
 ---
 
@@ -65,6 +63,8 @@ python3 register_and_skeletonize.py \
 ---
 
 ## Input Data and Example Files
+
+An example folder is provided under ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/example_neuron_axon"
 
 Each neuron/axon directory must contain:
 

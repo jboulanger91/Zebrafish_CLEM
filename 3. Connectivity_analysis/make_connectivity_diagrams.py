@@ -4,7 +4,7 @@
 Regenerate two-layer network diagrams for zebrafish hindbrain connectomes.
 
 This script:
-    1. Loads an LDA-annotated metadata table (one row per reconstructed neuron).
+    1. Loads a .csv annotated metadata table (one row per reconstructed neuron/axon).
     2. Selects seed populations (cMI, MON, MC, iMI+, iMI-).
     3. For each population:
         - extracts input/output connections with hemisphere info,
@@ -15,14 +15,20 @@ This script:
           with line thickness proportional to connection strength.
     4. Saves each figure as a PDF in the chosen output folder.
 
-The actual connectivity and plotting logic is delegated to helper functions:
+Helpers are split across two modules:
+
+Matrix helpers (matrix_helpers.py)
+----------------------------------
+    - COLOR_CELL_TYPE_DICT
+    - fetch_filtered_ids
     - get_inputs_outputs_by_hemisphere_general
+    - (plus matrix-related utilities not used here)
+
+Connectivity-diagram helpers (connectivity_helpers.py)
+------------------------------------------------------
     - compute_count_probabilities_from_results
     - draw_two_layer_neural_net
-    - fetch_filtered_ids
     - fetch_filtered_ids_EI
-
-These helpers are expected to live in `connectivity_helpers.py` (or similar).
 
 Typical usage
 -------------
@@ -41,11 +47,16 @@ from typing import Dict, Iterable
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from connectivity_helpers import (
+# --- imports from the MATRIX helper (ID selection + hemisphere-aware IO) -----
+from connectivity_matrices_helpers import (
+    fetch_filtered_ids,
     get_inputs_outputs_by_hemisphere_general,
+)
+
+# --- imports from the CONNECTIVITY-DIAGRAM helper ----------------------------
+from connectivity_diagrams_helpers import (
     compute_count_probabilities_from_results,
     draw_two_layer_neural_net,
-    fetch_filtered_ids,
     fetch_filtered_ids_EI,
 )
 
@@ -55,9 +66,9 @@ from connectivity_helpers import (
 # ----------------------------------------------------------------------
 
 
-def load_lda_metadata(path: Path) -> pd.DataFrame:
+def load_csv_metadata(path: Path) -> pd.DataFrame:
     """
-    Load the LDA-annotated metadata table.
+    Load the .csv metadata table. 
 
     The CSV is expected to contain (among others):
         - column 9 : 'functional classifier'
@@ -69,7 +80,7 @@ def load_lda_metadata(path: Path) -> pd.DataFrame:
     Parameters
     ----------
     path : Path
-        Path to the LDA metadata CSV.
+        Path to the .csv metadata CSV.
 
     Returns
     -------
@@ -82,7 +93,7 @@ def get_seed_id_sets(df: pd.DataFrame) -> Dict[str, pd.Series]:
     """
     Collect seed nucleus ID sets for each functional population.
 
-    This version assumes the *updated* LDA functional classifier column
+    This version assumes the *updated* functional classifier column
     (column index 9) uses the new labels:
 
         'motion_integrator'
@@ -341,7 +352,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    lda_df = load_lda_metadata(args.lda_csv)
+    lda_df = load_csv_metadata(args.lda_csv)
     seed_sets = get_seed_id_sets(lda_df)
 
     # Normalise CLI suffix so you can pass '110725' or '_110725'
@@ -357,7 +368,7 @@ def main() -> None:
         lda_df=lda_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"ic_all_lda{suffix_part}",
+        plot_suffix=f"cmi_all_lda{suffix_part}",
         input_circle_color="contralateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
