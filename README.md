@@ -58,15 +58,7 @@ Outputs are per-neuron folders containing:
 
 ### 3. Connectivity Matrices and Network Diagram Generation
 
-This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate Neuroglancer-derived synapse tables with functional classifications.
-
-The pipelines operate on mapped neurons (from Step 2), using synapse tables and metadata to build population-level connectivity summaries.
-
----
-
-### 3. Connectivity Matrices and Network Diagram Generation
-
-This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate Neuroglancer-derived synapse tables, registered neuron meshes, and functional classifications.
+This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate CAVE-derived synapse tables, registered neuron meshes, and functional classifications.
 
 Both pipelines rely on the mapped neuron outputs generated in **Step 2** and operate directly on per-neuron `*_presynapses.csv` and `*_postsynapses.csv` tables.
 
