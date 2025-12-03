@@ -66,7 +66,8 @@ Both pipelines rely on the mapped neuron outputs generated in **Step 2**.
 
 This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional/morphologcial neuron/axon classes. 
 
-### **Outputs**
+Outputs: 
+
 - Pooled connectivity matrix (PDF)  
 - Left/right split connectivity matrix (PDF)  
 - Optional raster or scatter representations  
@@ -80,7 +81,8 @@ This pipeline constructs **directional pre→post synaptic connectivity matrices
 
 This pipeline creates **compact schematic connectivity diagrams** for selected functional populations:
 
-### **Outputs**
+Outputs: 
+
 - Four-panel PDF connectivity diagram (inputs, outputs, ipsilateral and contralateral) per population (cMI, MON, MC, iMI+, iMI−)
 
 **Main script:** `make_connectome_diagrams.py`  
