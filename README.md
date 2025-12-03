@@ -60,7 +60,7 @@ Outputs are per-neuron folders containing:
 
 This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate CAVE-derived synapse tables, registered neuron meshes, and functional classifications.
 
-Both pipelines rely on the mapped neuron outputs generated in **Step 2** and operate directly on per-neuron `*_presynapses.csv` and `*_postsynapses.csv` tables.
+Both pipelines rely on the mapped neuron outputs generated in **Step 2**. 
 
 ---
 
@@ -85,7 +85,7 @@ This pipeline constructs **directional pre→post synaptic connectivity matrices
 This pipeline creates **compact schematic connectivity diagrams** for selected functional populations:
 
 ### **Outputs**
-- Four-panel PDF connectivity diagram per population (cMI, MON, MC, iMI+, iMI−)
+- Four-panel PDF connectivity diagram (inputs, outputs, ipsilateral and contralateral) per population (cMI, MON, MC, iMI+, iMI−)
 
 **Main script:** `make_connectome_diagrams.py`  
 **Helper modules:**  

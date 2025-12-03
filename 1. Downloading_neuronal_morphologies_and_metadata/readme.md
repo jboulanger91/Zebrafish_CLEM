@@ -32,18 +32,18 @@ All output is organized into per-neuron directories under the folder provided vi
 
 ## Environment Setup
 
-The recommended environment for running this script can be created via:
+The global environment can be used:
 
 ```bash
-conda env create -f env_clem_zfish1_neuroglancer.yaml
-conda activate clem_zfish1_neuroglancer
+conda env create -f clem_zfish1_global.yaml
+conda activate clem_zfish1_global
 ```
 
 ---
 
 ## Example Usage
 
-Run the full pipeline from the command line:
+Run the full pipeline from the command line below:
 
 ```bash
   python3 download_axons_neurons_pipeline.py \

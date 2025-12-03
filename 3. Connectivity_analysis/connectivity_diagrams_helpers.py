@@ -58,10 +58,9 @@ from matplotlib.patches import Circle
 # Import shared tools from the matrix helpers
 # -------------------------------------------------------------------------
 
-from matrix_helpers import (  # type: ignore[import]
+from connectivity_matrices_helpers import (
     COLOR_CELL_TYPE_DICT,
     fetch_filtered_ids,
-    get_inputs_outputs_by_hemisphere_general,
 )
 
 

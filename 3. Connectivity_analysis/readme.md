@@ -63,11 +63,11 @@ python3 make_connectivity_matrices.py \
 
 1. **Builed two-layer connectivity diagrams**
 
-python3 make_connectome_diagrams.py \
-    --lda-csv /path/to/all_cells_with_hemisphere_lda.csv \
-    --root-folder /path/to/traced_axons_neurons \
-    --output-folder network_plots \
-    --suffix 110725
+python3 make_connectivity_diagrams.py \
+    --lda-csv "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
+    --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
+    --output-folder connectivity_diagrams \
+    --suffix gt
 
 ---
 
