@@ -141,8 +141,8 @@ Values: number of valid synapses (signed if inhibitory/excitatory mode is used)
 
 Running `make_connectome_diagrams.py` produces one PDF per seed population:
 
-- `neural_network_visualization_with_lda_ic_all_lda_<suffix>.pdf`  
-- `neural_network_visualization_with_lda_dt_all_lda_<suffix>.pdf`  
+- `ic_all_<suffix>.pdf`  
+- `neural_network_visualization_with_lda_dt_all_<suffix>.pdf`  
 - `neural_network_visualization_with_lda_mc_all_lda_<suffix>.pdf`  
 - `neural_network_visualization_with_lda_ii_plus_all_lda_<suffix>.pdf`  
 - `neural_network_visualization_with_lda_ii_minus_all_lda_<suffix>.pdf`

@@ -32,10 +32,11 @@ Connectivity-diagram helpers (connectivity_helpers.py)
 
 Typical usage
 -------------
-python3 make_connectome_diagrams.py \
-    --lda-csv /path/to/all_cells_with_hemisphere_lda.csv \
-    --root-folder /path/to/traced_axons_neurons \
-    --output-folder /path/to/network_plots
+python3 make_connectivity_diagrams.py \
+    --lda-csv ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
+    --root-folder ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
+    --output-folder connectivity_diagrams \
+    --suffix gt
 """
 
 from __future__ import annotations
@@ -47,110 +48,15 @@ from typing import Dict, Iterable
 import matplotlib.pyplot as plt
 import pandas as pd
 
-# --- imports from the MATRIX helper (ID selection + hemisphere-aware IO) -----
-from connectivity_matrices_helpers import (
-    fetch_filtered_ids,
-    get_inputs_outputs_by_hemisphere_general,
-)
 
 # --- imports from the CONNECTIVITY-DIAGRAM helper ----------------------------
 from connectivity_diagrams_helpers import (
-    compute_count_probabilities_from_results,
+    load_csv_metadata,
+    get_seed_id_sets,
+    summarize_connectome,
     draw_two_layer_neural_net,
-    fetch_filtered_ids_EI,
+    export_connectivity_tables_txt,
 )
-
-
-# ----------------------------------------------------------------------
-# ID selection helpers
-# ----------------------------------------------------------------------
-
-
-def load_csv_metadata(path: Path) -> pd.DataFrame:
-    """
-    Load the .csv metadata table. 
-
-    The CSV is expected to contain (among others):
-        - column 9 : 'functional classifier'
-        - column 10: 'neurotransmitter classifier'
-        - column 11: 'projection classifier'
-        - column 5 : nucleus_id
-        - column 1 : functional_id (or similar)
-
-    Parameters
-    ----------
-    path : Path
-        Path to the .csv metadata CSV.
-
-    Returns
-    -------
-    pandas.DataFrame
-    """
-    return pd.read_csv(path)
-
-
-def get_seed_id_sets(df: pd.DataFrame) -> Dict[str, pd.Series]:
-    """
-    Collect seed nucleus ID sets for each functional population.
-
-    This version assumes the *updated* functional classifier column
-    (column index 9) uses the new labels:
-
-        'motion_integrator'
-        'motion_onset'
-        'slow_motion_integrator'
-        'myelinated'
-
-    Uses `fetch_filtered_ids` / `fetch_filtered_ids_EI`, which operate
-    on column indices rather than names:
-
-        col 9  -> functional classifier
-        col 10 -> neurotransmitter classifier
-        col 11 -> projection classifier
-
-    Populations
-    -----------
-    - cMI      : motion_integrator, contralateral
-    - MON      : motion_onset
-    - MC       : slow_motion_integrator
-    - iMI_all  : motion_integrator, ipsilateral
-    - iMI_plus : motion_integrator, ipsilateral, excitatory
-    - iMI_minus: motion_integrator, ipsilateral, inhibitory
-    """
-    # MON: all motion_onset
-    mon_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "motion_onset")
-
-    # cMI: contralateral motion_integrator
-    cmi_ids_all_nuc, _ = fetch_filtered_ids(
-        df, 9, "motion_integrator", 11, "contralateral"
-    )
-
-    # iMI (all ipsilateral motion_integrator)
-    imi_all_ids_all_nuc, _ = fetch_filtered_ids(
-        df, 9, "motion_integrator", 11, "ipsilateral"
-    )
-
-    # MC: all slow_motion_integrator
-    mc_ids_all_nuc, _ = fetch_filtered_ids(df, 9, "slow_motion_integrator")
-
-    # iMI+ : motion_integrator, ipsilateral, excitatory
-    imi_plus_ids_all_nuc, _ = fetch_filtered_ids_EI(
-        df, 9, "motion_integrator", 10, "excitatory", 11, "ipsilateral"
-    )
-
-    # iMI- : motion_integrator, ipsilateral, inhibitory
-    imi_minus_ids_all_nuc, _ = fetch_filtered_ids_EI(
-        df, 9, "motion_integrator", 10, "inhibitory", 11, "ipsilateral"
-    )
-
-    return {
-        "cMI": cmi_ids_all_nuc,
-        "MON": mon_ids_all_nuc,
-        "MC": mc_ids_all_nuc,
-        "iMI_plus": imi_plus_ids_all_nuc,
-        "iMI_minus": imi_minus_ids_all_nuc,
-        "iMI_all": imi_all_ids_all_nuc,
-    }
 
 
 # ----------------------------------------------------------------------
@@ -171,7 +77,8 @@ def plot_population_networks(
     outputs_total_mode: str = "both",
 ) -> None:
     """
-    Generate a 4-panel two-layer network figure for a given seed population.
+    Generate a 4-panel two-layer network figure for a given seed population
+    and export a detailed TXT connectivity table.
 
     Panels (2x2):
         [0,0] same-side inputs
@@ -182,7 +89,7 @@ def plot_population_networks(
     Parameters
     ----------
     population_name : str
-        Short label used only for console messages.
+        Short label used for console messages and filenames (e.g. 'cMI', 'MON').
     seed_ids : iterable of int or str
         Nucleus IDs used as seed neurons when building the connectome.
     lda_df : pandas.DataFrame
@@ -190,12 +97,16 @@ def plot_population_networks(
     root_folder : Path
         Folder containing NG-resolution synapse tables for each neuron.
     output_folder : Path
-        Folder where the resulting PDF will be saved.
+        Folder where the resulting PDF and TXT will be saved.
     plot_suffix : str
         Suffix included in the output filename (e.g. 'ic_all_lda_110725').
     input_circle_color : str
         Functional color key passed to `draw_two_layer_neural_net`
-        (e.g. 'contralateral_motion_integrator', 'motion_onset').
+        (e.g. 'ipsilateral_motion_integrator',
+              'contralateral_motion_integrator',
+              'motion_onset',
+              'slow_motion_integrator',
+              'myelinated').
     input_cell_type : str
         High-level description of the seed population, used by the helper
         plotting function (e.g. 'inhibitory', 'excitatory', 'mixed').
@@ -207,49 +118,35 @@ def plot_population_networks(
     """
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # --- 1. Build connectome for this seed population ------------------
+    # --- 1. Build and summarize connectome for this seed population ----
     print(f"\n=== Population: {population_name} ===")
-    connectome = get_inputs_outputs_by_hemisphere_general(
+    summary = summarize_connectome(
         root_folder=root_folder,
-        seed_cell_ids=seed_ids,
+        seed_ids=seed_ids,
         hemisphere_df=lda_df,
+        outputs_total_mode=outputs_total_mode,
+        functional_only=False,
     )
 
-    # --- 2. Compute synapse-count probabilities (helper returns nested dict)
-    probs = compute_count_probabilities_from_results(
-        connectome, functional_only=False
-    )
-
-    same_out_cells = probs["outputs"]["same_side"]["cells"]
-    same_out_syn = probs["outputs"]["same_side"]["synapses"]
-    same_in_cells = probs["inputs"]["same_side"]["cells"]
-    same_in_syn = probs["inputs"]["same_side"]["synapses"]
-
-    diff_out_cells = probs["outputs"]["different_side"]["cells"]
-    diff_out_syn = probs["outputs"]["different_side"]["synapses"]
-    diff_in_cells = probs["inputs"]["different_side"]["cells"]
-    diff_in_syn = probs["inputs"]["different_side"]["synapses"]
-
-    # --- 3. Totals used for proportional line widths -------------------
-    if outputs_total_mode == "same_only":
-        # iMI+ / iMI- convention: normalize outputs by same-side counts
-        total_outputs = same_out_syn["Count"].sum()
-    else:  # 'both'
-        total_outputs = same_out_syn["Count"].sum() + diff_out_syn["Count"].sum()
-
-    total_inputs = same_in_syn["Count"].sum() + diff_in_syn["Count"].sum()
+    probs = summary["probs"]
+    same_out_syn = summary["same_out_syn"]
+    diff_out_syn = summary["diff_out_syn"]
+    same_in_syn = summary["same_in_syn"]
+    diff_in_syn = summary["diff_in_syn"]
+    total_outputs = summary["total_outputs"]
+    total_inputs = summary["total_inputs"]
 
     print(f"Total output synapses: {total_outputs}")
     print(f"Total input synapses:  {total_inputs}")
 
-    # --- 4. Build the 2x2 figure --------------------------------------
+    # --- 2. Build the 2x2 figure --------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     titles = [
-        "Same-side input synapses",
-        "Cross-side input synapses",
-        "Same-side output synapses",
-        "Cross-side output synapses",
+        "Ipsilateral input synapses",
+        "Contralateral input synapses",
+        "Ipsilateral output synapses",
+        "Contralateral output synapses",
     ]
 
     dataframes = [
@@ -272,8 +169,7 @@ def plot_population_networks(
     for i, (ax, title, df_syn, ctype, show_midline) in enumerate(
         zip(axes.flatten(), titles, dataframes, connection_types, show_midlines)
     ):
-        # Normalization key passed to `draw_two_layer_neural_net`
-        kwargs = {}
+        kwargs: dict = {}
         if ctype == "outputs":
             kwargs["total_outputs"] = total_outputs
         else:
@@ -294,22 +190,38 @@ def plot_population_networks(
             a=6,
             b=2,
             connection_type=ctype,
-            add_legend=(i == 0),          # show legend once (top-left panel)
-            label_mode="proportion",      # line labels show proportions
+            add_legend=(i == 0),          # show full legend once (top-left panel)
+            label_mode="proportion",      # labels show proportions
             label_as_percent=True,        # ...as percent
             label_decimals=1,
             **kwargs,
         )
         ax.set_title(title, fontsize=14)
 
-    plt.tight_layout()
+    # Add a global title for the PDF
+    fig.suptitle(
+        f"{population_name}: two-layer connectivity diagrams",
+        fontsize=16,
+        y=0.99,
+    )
 
-    # --- 5. Save figure ------------------------------------------------
-    basename = f"neural_network_visualization_with_lda_{plot_suffix}.pdf"
-    out_path = output_folder / basename
-    plt.savefig(out_path, dpi=300, bbox_inches="tight", format="pdf")
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # --- 3. Save figure ------------------------------------------------
+    basename_pdf = f"{plot_suffix}.pdf"
+    out_path_pdf = output_folder / basename_pdf
+    plt.savefig(out_path_pdf, dpi=300, bbox_inches="tight", format="pdf")
     plt.show()
-    print(f"Saved figure: {out_path}")
+    print(f"Saved figure: {out_path_pdf}")
+
+    # --- 4. Export detailed TXT connectivity table ---------------------
+    txt_path = export_connectivity_tables_txt(
+        population_name=population_name,
+        summary=summary,
+        output_folder=output_folder,
+        suffix=plot_suffix,
+    )
+    print(f"Saved connectivity table: {txt_path}")
 
 
 # ----------------------------------------------------------------------
@@ -352,10 +264,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    lda_df = load_csv_metadata(args.lda_csv)
-    seed_sets = get_seed_id_sets(lda_df)
+    csv_df = load_csv_metadata(args.lda_csv)
+    seed_sets = get_seed_id_sets(csv_df)
 
-    # Normalise CLI suffix so you can pass '110725' or '_110725'
     global_suffix = args.suffix.strip().lstrip("_")
     suffix_part = f"_{global_suffix}" if global_suffix else ""
 
@@ -365,10 +276,10 @@ def main() -> None:
     plot_population_networks(
         population_name="cMI",
         seed_ids=seed_sets["cMI"],
-        lda_df=lda_df,
+        lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"cmi_all_lda{suffix_part}",
+        plot_suffix=f"cmi_all{suffix_part}",
         input_circle_color="contralateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
@@ -378,10 +289,10 @@ def main() -> None:
     plot_population_networks(
         population_name="MON",
         seed_ids=seed_sets["MON"],
-        lda_df=lda_df,
+        lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"mon_all_lda{suffix_part}",
+        plot_suffix=f"mon_all{suffix_part}",
         input_circle_color="motion_onset",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
@@ -389,12 +300,12 @@ def main() -> None:
 
     # 3) MC (slow motion integrator / motor command, mixed)
     plot_population_networks(
-        population_name="MC",
-        seed_ids=seed_sets["MC"],
-        lda_df=lda_df,
+        population_name="SMI",
+        seed_ids=seed_sets["SMI"],
+        lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"mc_all_lda{suffix_part}",
+        plot_suffix=f"SMI_all{suffix_part}",
         input_circle_color="slow_motion_integrator",
         input_cell_type="mixed",
         outputs_total_mode="both",
@@ -404,10 +315,10 @@ def main() -> None:
     plot_population_networks(
         population_name="iMI+",
         seed_ids=seed_sets["iMI_plus"],
-        lda_df=lda_df,
+        lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"imi_plus_all_lda{suffix_part}",
+        plot_suffix=f"imi_plus{suffix_part}",
         input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="excitatory",
         outputs_total_mode="same_only",
@@ -417,15 +328,27 @@ def main() -> None:
     plot_population_networks(
         population_name="iMI-",
         seed_ids=seed_sets["iMI_minus"],
-        lda_df=lda_df,
+        lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"imi_minus_all_lda{suffix_part}",
+        plot_suffix=f"imi_minus{suffix_part}",
         input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="same_only",
     )
 
+    # 6) iMI (ipsilateral motion integrator, same-side outputs for norm)
+    plot_population_networks(
+        population_name="iMI_all",
+        seed_ids=seed_sets["iMI_all"],
+        lda_df=csv_df,
+        root_folder=args.root_folder,
+        output_folder=out_folder,
+        plot_suffix=f"imi{suffix_part}",
+        input_circle_color="ipsilateral_motion_integrator",
+        input_cell_type="mixed",
+        outputs_total_mode="same_only",
+    )
 
 if __name__ == "__main__":
     main()

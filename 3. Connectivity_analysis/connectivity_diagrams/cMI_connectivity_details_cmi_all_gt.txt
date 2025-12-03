@@ -1,0 +1,57 @@
+Connection Type	Side	Unit Type	Functional Classifier	Neurotransmitter Classifier	Projection Classifier	Axon Exit Direction	Count	Probability	Panel_Total	Global_Total	Global_Proportion
+inputs	different_side	cells	axon	None	None	axon exits the volume caudally	1	0.043478260869565216	23.0	59.0	0.01694915254237288
+inputs	different_side	cells	motion_integrator	inhibitory	contralateral	None	10	0.43478260869565216	23.0	59.0	0.1694915254237288
+inputs	different_side	cells	motion_onset	inhibitory	contralateral	None	1	0.043478260869565216	23.0	59.0	0.01694915254237288
+inputs	different_side	cells	not functionally imaged	excitatory	contralateral	None	2	0.08695652173913043	23.0	59.0	0.03389830508474576
+inputs	different_side	cells	not functionally imaged	inhibitory	contralateral	None	6	0.2608695652173913	23.0	59.0	0.1016949152542373
+inputs	different_side	cells	not functionally imaged	unknown	contralateral	None	1	0.043478260869565216	23.0	59.0	0.01694915254237288
+inputs	different_side	cells	slow_motion_integrator	inhibitory	contralateral	None	2	0.08695652173913043	23.0	59.0	0.03389830508474576
+inputs	same_side	cells	axon	None	None	axon exits the volume caudally	9	0.25	36.0	59.0	0.15254237288135594
+inputs	same_side	cells	axon	None	None	axon exits the volume rostrally	4	0.1111111111111111	36.0	59.0	0.06779661016949153
+inputs	same_side	cells	motion_integrator	excitatory	ipsilateral	None	4	0.1111111111111111	36.0	59.0	0.06779661016949153
+inputs	same_side	cells	motion_integrator	inhibitory	ipsilateral	None	3	0.08333333333333333	36.0	59.0	0.05084745762711865
+inputs	same_side	cells	motion_onset	inhibitory	ipsilateral	None	6	0.16666666666666666	36.0	59.0	0.1016949152542373
+inputs	same_side	cells	motion_onset	inhibitory	contralateral	None	3	0.08333333333333333	36.0	59.0	0.05084745762711865
+inputs	same_side	cells	not functionally imaged	excitatory	ipsilateral	None	5	0.1388888888888889	36.0	59.0	0.0847457627118644
+inputs	same_side	cells	not functionally imaged	inhibitory	contralateral	None	2	0.05555555555555555	36.0	59.0	0.03389830508474576
+inputs	different_side	synapses	axon	None	None	axon exits the volume caudally	1	0.03571428571428571	28.0	74.0	0.013513513513513514
+inputs	different_side	synapses	motion_integrator	inhibitory	contralateral	None	10	0.35714285714285715	28.0	74.0	0.13513513513513514
+inputs	different_side	synapses	motion_onset	inhibitory	contralateral	None	1	0.03571428571428571	28.0	74.0	0.013513513513513514
+inputs	different_side	synapses	not functionally imaged	excitatory	contralateral	None	4	0.14285714285714285	28.0	74.0	0.05405405405405406
+inputs	different_side	synapses	not functionally imaged	inhibitory	contralateral	None	9	0.32142857142857145	28.0	74.0	0.12162162162162163
+inputs	different_side	synapses	not functionally imaged	unknown	contralateral	None	1	0.03571428571428571	28.0	74.0	0.013513513513513514
+inputs	different_side	synapses	slow_motion_integrator	inhibitory	contralateral	None	2	0.07142857142857142	28.0	74.0	0.02702702702702703
+inputs	same_side	synapses	axon	None	None	axon exits the volume caudally	13	0.2826086956521739	46.0	74.0	0.17567567567567569
+inputs	same_side	synapses	axon	None	None	axon exits the volume rostrally	4	0.08695652173913043	46.0	74.0	0.05405405405405406
+inputs	same_side	synapses	motion_integrator	excitatory	ipsilateral	None	5	0.10869565217391304	46.0	74.0	0.06756756756756757
+inputs	same_side	synapses	motion_integrator	inhibitory	ipsilateral	None	3	0.06521739130434782	46.0	74.0	0.04054054054054054
+inputs	same_side	synapses	motion_onset	inhibitory	ipsilateral	None	7	0.15217391304347827	46.0	74.0	0.0945945945945946
+inputs	same_side	synapses	motion_onset	inhibitory	contralateral	None	4	0.08695652173913043	46.0	74.0	0.05405405405405406
+inputs	same_side	synapses	not functionally imaged	excitatory	ipsilateral	None	8	0.17391304347826086	46.0	74.0	0.10810810810810811
+inputs	same_side	synapses	not functionally imaged	inhibitory	contralateral	None	2	0.043478260869565216	46.0	74.0	0.02702702702702703
+outputs	different_side	cells	motion_integrator	excitatory	ipsilateral	None	11	0.18032786885245902	61.0	64.0	0.171875
+outputs	different_side	cells	motion_integrator	excitatory	contralateral	None	1	0.01639344262295082	61.0	64.0	0.015625
+outputs	different_side	cells	motion_integrator	inhibitory	contralateral	None	11	0.18032786885245902	61.0	64.0	0.171875
+outputs	different_side	cells	motion_integrator	inhibitory	ipsilateral	None	2	0.03278688524590164	61.0	64.0	0.03125
+outputs	different_side	cells	motion_onset	inhibitory	ipsilateral	None	1	0.01639344262295082	61.0	64.0	0.015625
+outputs	different_side	cells	not functionally imaged	excitatory	ipsilateral	None	20	0.32786885245901637	61.0	64.0	0.3125
+outputs	different_side	cells	not functionally imaged	inhibitory	contralateral	None	8	0.13114754098360656	61.0	64.0	0.125
+outputs	different_side	cells	not functionally imaged	inhibitory	ipsilateral	None	2	0.03278688524590164	61.0	64.0	0.03125
+outputs	different_side	cells	not functionally imaged	unknown	ipsilateral	None	1	0.01639344262295082	61.0	64.0	0.015625
+outputs	different_side	cells	slow_motion_integrator	excitatory	ipsilateral	None	2	0.03278688524590164	61.0	64.0	0.03125
+outputs	different_side	cells	slow_motion_integrator	inhibitory	contralateral	None	2	0.03278688524590164	61.0	64.0	0.03125
+outputs	same_side	cells	not functionally imaged	excitatory	ipsilateral	None	2	0.6666666666666666	3.0	64.0	0.03125
+outputs	same_side	cells	off-response	inhibitory	contralateral	None	1	0.3333333333333333	3.0	64.0	0.015625
+outputs	different_side	synapses	motion_integrator	excitatory	ipsilateral	None	13	0.17567567567567569	74.0	77.0	0.16883116883116883
+outputs	different_side	synapses	motion_integrator	excitatory	contralateral	None	1	0.013513513513513514	74.0	77.0	0.012987012987012988
+outputs	different_side	synapses	motion_integrator	inhibitory	contralateral	None	12	0.16216216216216217	74.0	77.0	0.15584415584415584
+outputs	different_side	synapses	motion_integrator	inhibitory	ipsilateral	None	3	0.04054054054054054	74.0	77.0	0.03896103896103896
+outputs	different_side	synapses	motion_onset	inhibitory	ipsilateral	None	1	0.013513513513513514	74.0	77.0	0.012987012987012988
+outputs	different_side	synapses	not functionally imaged	excitatory	ipsilateral	None	26	0.35135135135135137	74.0	77.0	0.33766233766233766
+outputs	different_side	synapses	not functionally imaged	inhibitory	contralateral	None	10	0.13513513513513514	74.0	77.0	0.12987012987012986
+outputs	different_side	synapses	not functionally imaged	inhibitory	ipsilateral	None	2	0.02702702702702703	74.0	77.0	0.025974025974025976
+outputs	different_side	synapses	not functionally imaged	unknown	ipsilateral	None	1	0.013513513513513514	74.0	77.0	0.012987012987012988
+outputs	different_side	synapses	slow_motion_integrator	excitatory	ipsilateral	None	3	0.04054054054054054	74.0	77.0	0.03896103896103896
+outputs	different_side	synapses	slow_motion_integrator	inhibitory	contralateral	None	2	0.02702702702702703	74.0	77.0	0.025974025974025976
+outputs	same_side	synapses	not functionally imaged	excitatory	ipsilateral	None	2	0.6666666666666666	3.0	77.0	0.025974025974025976
+outputs	same_side	synapses	off-response	inhibitory	contralateral	None	1	0.3333333333333333	3.0	77.0	0.012987012987012988

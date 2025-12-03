@@ -47,13 +47,19 @@ import pandas as pd
 # -------------------------------------------------------------------------
 
 COLOR_CELL_TYPE_DICT: Dict[str, Tuple[float, float, float, float]] = {
-    "ipsilateral_motion_integrator": (254 / 255, 179 / 255, 38 / 255, 0.7),        # Yellow-orange
-    "contralateral_motion_integrator": (232 / 255, 77 / 255, 138 / 255, 0.7),      # Magenta-pink
-    "motion_onset": (100 / 255, 197 / 255, 235 / 255, 0.7),                        # Light blue
-    "slow_motion_integrator": (127 / 255, 88 / 255, 175 / 255, 0.7),               # Purple
-    "myelinated": (80 / 255, 220 / 255, 100 / 255, 0.7),                           # Green
-    "axon_rostral": (105 / 255, 105 / 255, 105 / 255, 0.7),                        # Dim gray
-    "axon_caudal": (192 / 255, 192 / 255, 192 / 255, 0.7),                         # Light gray
+    "ipsilateral_motion_integrator":   (254 / 255, 179 / 255, 38 / 255, 0.7),  # Yellow-orange
+    "contralateral_motion_integrator": (232 / 255, 77 / 255, 138 / 255, 0.7),  # Magenta-pink
+    "motion_onset":                    (100 / 255, 197 / 255, 235 / 255, 0.7), # Light blue
+    "slow_motion_integrator":          (127 / 255, 88 / 255, 175 / 255, 0.7),  # Purple
+    "myelinated":                      (80 / 255, 220 / 255, 100 / 255, 0.7),  # Green
+    "other_functional_types":                (220 / 255, 20 / 255, 60 / 255, 0.7),   # Crimson red
+
+    # Axon-only categories
+    "axon_rostral":                    (1.0, 1.0, 1.0, 0.7),                   # White
+    "axon_caudal":                     (0.0, 0.0, 0.0, 0.7),                   # Black
+
+    # Non-functionally imaged neurons
+    "not_functionally_imaged":         (0.7, 0.7, 0.7, 0.7),                   # Medium gray
 }
 
 COLOR_CELL_TYPE_DICT_LR: Dict[str, Tuple[float, float, float, float]] = {
@@ -67,12 +73,11 @@ COLOR_CELL_TYPE_DICT_LR: Dict[str, Tuple[float, float, float, float]] = {
     "slow_motion_integrator_right": (127 / 255, 88 / 255, 175 / 255, 0.7),
     "myelinated_left": (80 / 255, 220 / 255, 100 / 255, 0.7),
     "myelinated_right": (80 / 255, 220 / 255, 100 / 255, 0.7),
-    "axon_rostral_left": (105 / 255, 105 / 255, 105 / 255, 0.7),
-    "axon_rostral_right": (105 / 255, 105 / 255, 105 / 255, 0.7),
-    "axon_caudal_left": (192 / 255, 192 / 255, 192 / 255, 0.7),
-    "axon_caudal_right": (192 / 255, 192 / 255, 192 / 255, 0.7),
+    "axon_rostral_left": (1.0, 1.0, 1.0, 0.7),
+    "axon_rostral_right": (1.0, 1.0, 1.0, 0.7),
+    "axon_caudal_left": (0.0, 0.0, 0.0, 0.7),
+    "axon_caudal_right": (0.7, 0.7, 0.7, 0.7),
 }
-
 
 # -------------------------------------------------------------------------
 # Hemisphere classification

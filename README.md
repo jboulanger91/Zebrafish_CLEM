@@ -69,9 +69,8 @@ This pipeline constructs **directional pre→post synaptic connectivity matrices
 Outputs: 
 
 - Pooled connectivity matrix (PDF)  
-- Left/right split connectivity matrix (PDF)  
-- Optional raster or scatter representations  
-- Optional inhibitory/excitatory signed representation (inhibitory rows × −1)
+- Left/right split connectivity matrix showing synapse counts (PDF)  
+- Left/right split connectivity matrix with excitatory/inhibitory representation (PDF) 
 
 **Main script:** `make_connectivity_matrices.py`  
 **Helper module:** `connectivity_matrices_helper.py`  
