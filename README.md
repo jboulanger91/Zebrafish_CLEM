@@ -62,8 +62,6 @@ This folder contains the pipelines used to compute **synaptic connectivity matri
 
 Both pipelines rely on the mapped neuron outputs generated in **Step 2**. 
 
----
-
 #### 3.1 Connectivity Matrices
 
 This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional/morphologcial neuron/axon classes. 
@@ -77,8 +75,6 @@ This pipeline constructs **directional pre→post synaptic connectivity matrices
 **Main script:** `make_connectivity_matrices.py`  
 **Helper module:** `connectivity_matrices_helper.py`  
 **Environment:** `env_clem_zfish1_global.yaml`
-
----
 
 #### 3.2 Two-Layer Network Diagrams
 
