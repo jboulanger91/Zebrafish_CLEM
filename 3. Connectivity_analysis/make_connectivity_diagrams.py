@@ -50,6 +50,8 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import (
     Patch,
+    FancyArrowPatch,
+    Polygon,
 )
 import pandas as pd
 
@@ -61,11 +63,8 @@ from connectivity_diagrams_helpers import (
     summarize_connectome,
     draw_two_layer_neural_net,
     export_connectivity_tables_txt,
-    HalfBlackWhiteHandler
-)
-
-from connectivity_matrices_helpers import (  
-    COLOR_CELL_TYPE_DICT,
+    HalfBlackWhiteHandler,
+    draw_full_connectivity_legend
 )
 
 # ----------------------------------------------------------------------
@@ -241,7 +240,7 @@ def plot_population_networks(
     common_xlim = (min(xmins), max(xmaxs))
     common_ylim = (min(ymins), max(ymaxs))
 
-    # --- Optional: zoom all panels by a fixed factor around the center ----
+    # --- Zoom all panels by a fixed factor around the center ----
     # factor < 1 → zoom in (features look bigger)
     # factor > 1 → zoom out (more whitespace, features look smaller)
     zoom_factor = 0.7   # 0.7 ≈ “30% larger” appearance
@@ -259,114 +258,12 @@ def plot_population_networks(
         ax.set_xlim(zoomed_xlim)
         ax.set_ylim(zoomed_ylim)
 
-    # --- 3. Draw the legends INTO legend_ax -------------------------------
-    # Three stacked legend boxes: cell outlines, functional types, and
-    # fraction-of-synapses + connector types.
-
-    # 3.1 Cell outlines
-    outline_handles = [
-        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="solid",
-               label="Excitatory outline"),
-        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dashed",
-               label="Inhibitory outline"),
-        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dotted",
-               label="Mixed / unknown outline"),
-    ]
-    # Slightly more compact vertical spacing between legend blocks
-    ax_outline = legend_ax.inset_axes([0.0, 0.62, 1.0, 0.35])
-    ax_outline.axis("off")
-    ax_outline.legend(
-        handles=outline_handles,
-        loc="upper left",
-        fontsize=9,
-        frameon=True,
-        title="Cell outlines",
-        title_fontsize=10,
-        prop={"family": "Arial"},
-        borderpad=0.6,
-    )
-
-    # 3.2 Functional types (node fill colors)
-    func_handles: list[Patch] = []
-    for key in sorted(COLOR_CELL_TYPE_DICT.keys()):
-        rgba = COLOR_CELL_TYPE_DICT[key]
-        label = key.replace("_", " ")
-        if key == input_circle_color:
-            label += " (seed population)"
-        func_handles.append(Patch(facecolor=rgba, edgecolor="black", label=label))
-
-    dual_handle = Patch(
-        facecolor="none",
-        edgecolor="black",
-        label="axon exits rostrally & caudally",
-    )
-    handler_map_func = {dual_handle: HalfBlackWhiteHandler()}
-
-    ax_func = legend_ax.inset_axes([0.0, 0.30, 1.0, 0.50])
-    ax_func.axis("off")
-    ax_func.legend(
-        handles=func_handles + [dual_handle],
-        handler_map=handler_map_func,
-        loc="upper left",
-        fontsize=9,
-        frameon=True,
-        title="Functional types",
-        title_fontsize=10,
-        prop={"family": "Arial"},
-        borderpad=0.6,
-    )
-
-    # 3.3 Fraction of synapses & connector types
-    example_fracs = [0.01, 0.10, 0.50]
-    frac_handles = []
-    for p in example_fracs:
-        # Use same mapping as lines in the network: lw = a * p + b with a=12, b=1
-        lw_ex = 12 * p + 1
-        frac_handles.append(
-            Line2D([0, 1], [0, 0], color="black", lw=lw_ex, label=f"{p:g}")
-        )
-
-    # Use a mid example fraction (0.10) for connector thickness
-    lw_conn = 12 * 0.10 + 1
-    conn_exc = Line2D(
-        [0, 1], [0, 0],
-        color="black",
-        lw=lw_conn,
-        marker=">",
-        markersize=7,
-        markevery=(1,),
-        label="Excitation",
-    )
-    conn_inh = Line2D(
-        [0, 1], [0, 0],
-        color="black",
-        lw=lw_conn,
-        marker="<",
-        markersize=7,
-        markevery=(1,),
-        label="Inhibition",
-    )
-    conn_mix = Line2D(
-        [0, 1], [0, 0],
-        color="black",
-        lw=lw_conn,
-        marker="o",
-        markersize=6,
-        markevery=(1,),
-        label="Mixed",
-    )
-
-    ax_frac = legend_ax.inset_axes([0.0, 0.05, 1.0, 0.40])
-    ax_frac.axis("off")
-    ax_frac.legend(
-        handles=frac_handles + [conn_exc, conn_inh, conn_mix],
-        loc="upper left",
-        fontsize=9,
-        frameon=True,
-        title="Fraction of synapses\n& connectors",
-        title_fontsize=10,
-        prop={"family": "Arial"},
-        borderpad=0.6,
+        # --- 3. Draw the legends into the dedicated legend axis ---------------
+    draw_full_connectivity_legend(
+        legend_ax,
+        input_circle_color=input_circle_color,
+        a_for_width=12.0,  # must match the 'a' you pass to draw_two_layer_neural_net
+        b_for_width=1.0,   # must match the 'b' you pass to draw_two_layer_neural_net
     )
 
     # --- 4. Global title & layout -----------------------------------------

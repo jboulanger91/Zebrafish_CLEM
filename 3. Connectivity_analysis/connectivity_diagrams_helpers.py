@@ -50,12 +50,13 @@ from colorsys import rgb_to_hls, hls_to_rgb
 from matplotlib.patches import (
     Rectangle,
     Wedge,
-    Patch,
     Circle,
+    Patch,
     Polygon
 )
-from matplotlib.legend_handler import HandlerPatch
+from matplotlib.legend_handler import HandlerPatch, HandlerBase
 from matplotlib.lines import Line2D
+
 
 # -------------------------------------------------------------------------
 # Import shared tools from the matrix helpers
@@ -94,6 +95,7 @@ def load_csv_metadata(path: Path) -> pd.DataFrame:
     pandas.DataFrame
     """
     return pd.read_csv(path)
+
 
 # -------------------------------------------------------------------------
 # Seed ID selection
@@ -1040,6 +1042,268 @@ def draw_two_layer_neural_net(
     ax.set_xlim(left - h_spacing, right + h_spacing)
     ax.set_ylim(bottom - v_spacing * 1.5, top + v_spacing)
     ax.set_aspect("equal", adjustable="datalim")
+
+
+def draw_full_connectivity_legend(
+    legend_ax,
+    *,
+    input_circle_color: str,
+    a_for_width: float = 12.0,
+    b_for_width: float = 1.0,
+) -> None:
+    """
+    Draw the full connectivity legend into a dedicated Axes.
+
+    The legend is split into three stacked boxes:
+
+    1) Cell outlines
+       - Solid stroke   → excitatory cell
+       - Dashed stroke  → inhibitory cell
+       - Dotted stroke  → mixed / unknown cell
+
+    2) Functional types (node fill colors)
+       - One colored square for each entry in COLOR_CELL_TYPE_DICT
+       - The seed population is annotated as '(seed population)'
+       - A special half–white / half–black disk for 'axon exits rostrally & caudally'
+         is rendered via HalfBlackWhiteHandler on a dummy Patch.
+
+    3) Fraction of synapses and connector types
+       - Three horizontal example strokes for 1%, 10%, 50% of synapses:
+           lw = a_for_width * p + b_for_width
+         (same mapping as used in the network diagrams)
+       - Four connector types drawn at the *tip* of the stroke:
+           • Excitation: arrowhead at the right end (→)
+           • Inhibition: inverted arrow at the right end (base at tip, point inward)
+           • Mixed: small filled circle at the right end
+           • Unknown: plain black line (no marker)
+    """
+    legend_ax.axis("off")
+
+    # -------------------------------------------------------------
+    # 1) Cell outlines
+    # -------------------------------------------------------------
+    outline_handles = [
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="solid",
+               label="Excitatory outline"),
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dashed",
+               label="Inhibitory outline"),
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dotted",
+               label="Mixed / unknown outline"),
+    ]
+
+    ax_outline = legend_ax.inset_axes([0.0, 0.62, 1.0, 0.35])
+    ax_outline.axis("off")
+    ax_outline.legend(
+        handles=outline_handles,
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Cell outlines",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
+
+    # -------------------------------------------------------------
+    # 2) Functional types (node fill colors)
+    # -------------------------------------------------------------
+    from connectivity_diagrams_helpers import HalfBlackWhiteHandler  # avoid circular import at top if needed
+
+    func_handles: list[Patch] = []
+    for key in sorted(COLOR_CELL_TYPE_DICT.keys()):
+        rgba = COLOR_CELL_TYPE_DICT[key]
+        label = key.replace("_", " ")
+        if key == input_circle_color:
+            label += " (seed population)"
+        func_handles.append(Patch(facecolor=rgba, edgecolor="black", label=label))
+
+    dual_handle = Patch(
+        facecolor="none",
+        edgecolor="black",
+        label="axon exits rostrally & caudally",
+    )
+    handler_map_func = {dual_handle: HalfBlackWhiteHandler()}
+
+    ax_func = legend_ax.inset_axes([0.0, 0.30, 1.0, 0.50])
+    ax_func.axis("off")
+    ax_func.legend(
+        handles=func_handles + [dual_handle],
+        handler_map=handler_map_func,
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Functional types",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
+
+    # -------------------------------------------------------------
+    # 3) Fraction of synapses & connector types
+    # -------------------------------------------------------------
+    # Line thickness vs fraction: same mapping as in draw_two_layer_neural_net
+    example_fracs = [0.01, 0.10, 0.50]
+    frac_handles = []
+    for p in example_fracs:
+        lw_ex = a_for_width * p + b_for_width
+        frac_handles.append(
+            Line2D([0, 1], [0, 0], color="black", lw=lw_ex, label=f"{p:g}")
+        )
+
+    # Use a mid example fraction for connector thickness, purely visual
+    lw_conn = a_for_width * 0.10 + b_for_width
+
+    # Dummy handles for connector types (actual shapes via custom handlers)
+    conn_exc = Line2D([], [], label="Excitation")
+    conn_inh = Line2D([], [], label="Inhibition")
+    conn_mix = Line2D([], [], label="Mixed")
+    conn_unknown = Line2D([], [], label="Unknown")
+
+    ax_frac = legend_ax.inset_axes([0.0, 0.05, 1.0, 0.40])
+    ax_frac.axis("off")
+
+    class _ExcConnHandler(HandlerBase):
+        """Line with an arrowhead at the right tip (excitatory)."""
+
+        def create_artists(
+            self, legend, orig_handle, x0, y0, width, height, fontsize, trans
+        ):
+            y_mid = y0 + 0.5 * height
+            x_start = x0
+            x_end = x0 + width
+
+            # Shaft
+            line = Line2D(
+                [x_start, x_end],
+                [y_mid, y_mid],
+                color="black",
+                linewidth=lw_conn,
+                transform=trans,
+            )
+
+            # Arrowhead (triangle) at the right tip, pointing outward (→)
+            head_len = 0.18 * width
+            head_half = 0.30 * height
+            p1 = (x_end, y_mid)
+            p2 = (x_end - head_len, y_mid + head_half)
+            p3 = (x_end - head_len, y_mid - head_half)
+            head = Polygon(
+                [p1, p2, p3],
+                closed=True,
+                facecolor="black",
+                edgecolor="black",
+                transform=trans,
+            )
+            return [line, head]
+
+    class _InhConnHandler(HandlerBase):
+        """
+        Inhibitory connector.
+
+        Horizontal line from left→right, with an *inverted* arrow at the
+        RIGHT end: the flat base is at the very right tip, and the point of
+        the arrow is shifted inward (to the left).
+        """
+
+        def create_artists(
+            self, legend, orig_handle, x0, y0, width, height, fontsize, trans
+        ):
+            y_mid = y0 + 0.5 * height
+            x_start = x0
+            x_end = x0 + width
+
+            # Shaft: left → right
+            line = Line2D(
+                [x_start, x_end],
+                [y_mid, y_mid],
+                color="black",
+                linewidth=lw_conn,
+                transform=trans,
+            )
+
+            # Inverted arrow at the RIGHT end
+            head_len = 0.18 * width
+            head_half = 0.30 * height
+
+            base_top = (x_end, y_mid + head_half)
+            base_bottom = (x_end, y_mid - head_half)
+            tip = (x_end - head_len, y_mid)  # tip pointing inward
+
+            head = Polygon(
+                [base_top, base_bottom, tip],
+                closed=True,
+                facecolor="black",
+                edgecolor="black",
+                transform=trans,
+            )
+
+            return [line, head]
+
+    class _MixedConnHandler(HandlerBase):
+        """Line with a small filled circle at the right tip (mixed)."""
+
+        def create_artists(
+            self, legend, orig_handle, x0, y0, width, height, fontsize, trans
+        ):
+            y_mid = y0 + 0.5 * height
+            x_start = x0
+            x_end = x0 + width
+
+            line = Line2D(
+                [x_start, x_end],
+                [y_mid, y_mid],
+                color="black",
+                linewidth=lw_conn,
+                transform=trans,
+            )
+
+            marker = Line2D(
+                [x_end],
+                [y_mid],
+                color="black",
+                marker="o",
+                markersize=6,
+                transform=trans,
+            )
+            return [line, marker]
+
+    class _UnknownConnHandler(HandlerBase):
+        """Plain black line, no marker (unknown)."""
+
+        def create_artists(
+            self, legend, orig_handle, x0, y0, width, height, fontsize, trans
+        ):
+            y_mid = y0 + 0.5 * height
+            x_start = x0
+            x_end = x0 + width
+
+            line = Line2D(
+                [x_start, x_end],
+                [y_mid, y_mid],
+                color="black",
+                linewidth=lw_conn,
+                transform=trans,
+            )
+            return [line]
+
+    handler_map_conn = {
+        conn_exc: _ExcConnHandler(),
+        conn_inh: _InhConnHandler(),
+        conn_mix: _MixedConnHandler(),
+        conn_unknown: _UnknownConnHandler(),
+    }
+
+    ax_frac.legend(
+        handles=frac_handles + [conn_exc, conn_inh, conn_mix, conn_unknown],
+        handler_map=handler_map_conn,
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Fraction of synapses\n& connectors",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
 
 # -------------------------------------------------------------------------
 # High-level summariser + TXT export used by the main script
