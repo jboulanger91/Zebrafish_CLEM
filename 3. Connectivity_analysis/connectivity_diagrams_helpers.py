@@ -709,7 +709,7 @@ def draw_two_layer_neural_net(
             input_radius,
             edgecolor=seed_color,
             facecolor=seed_color,
-            lw=3,
+            lw=1,
             alpha=0.8,
         )
     )
@@ -838,7 +838,7 @@ def draw_two_layer_neural_net(
                     radius,
                     facecolor="none",
                     edgecolor="black",
-                    lw=3,
+                    lw=1,
                     linestyle=outline_style,
                     zorder=3,
                 )
@@ -850,7 +850,7 @@ def draw_two_layer_neural_net(
                     radius,
                     edgecolor=outline_rgb,
                     facecolor=fill_color,
-                    lw=3,
+                    lw=1,
                     alpha=0.8,
                     linestyle=outline_style,
                 )

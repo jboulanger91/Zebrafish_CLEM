@@ -43,16 +43,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Iterable
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.lines import Line2D
-from matplotlib.patches import (
-    Patch,
-    FancyArrowPatch,
-    Polygon,
-)
 import pandas as pd
 
 
@@ -63,7 +57,6 @@ from connectivity_diagrams_helpers import (
     summarize_connectome,
     draw_two_layer_neural_net,
     export_connectivity_tables_txt,
-    HalfBlackWhiteHandler,
     draw_full_connectivity_legend
 )
 
@@ -122,7 +115,7 @@ def plot_population_networks(
         Controls how the total number of output synapses is computed
         for normalization:
             - 'both'      : same-side + different-side outputs
-            - 'same_only' : same-side outputs only (used for iMI+ / iMI-)
+            - 'same_only' : same-side outputs only (used for iMIs)
     """
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -149,7 +142,7 @@ def plot_population_networks(
 
     # --- 2. Build the 2x2 figure + legend column --------------------------
     # We make a 2x3 grid: 2 rows of panels, 3rd column is only for legends.
-    fig = plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=(18, 12))  
 
     gs = gridspec.GridSpec(
         2, 3,
@@ -226,37 +219,9 @@ def plot_population_networks(
         ax.set_title(title, fontsize=14)
 
     # --- 2b. Force all four network panels to share the same data limits ---
-    # This makes node radii and line widths *visually* comparable across subplots,
-    # independent of how many nodes each panel has or whether it has a midline.
-    xmins, xmaxs, ymins, ymaxs = [], [], [], []
     for ax in axes:
-        x0, x1 = ax.get_xlim()
-        y0, y1 = ax.get_ylim()
-        xmins.append(x0)
-        xmaxs.append(x1)
-        ymins.append(y0)
-        ymaxs.append(y1)
-
-    common_xlim = (min(xmins), max(xmaxs))
-    common_ylim = (min(ymins), max(ymaxs))
-
-    # --- Zoom all panels by a fixed factor around the center ----
-    # factor < 1 → zoom in (features look bigger)
-    # factor > 1 → zoom out (more whitespace, features look smaller)
-    zoom_factor = 0.7   # 0.7 ≈ “30% larger” appearance
-
-    x_center = 0.5 * (common_xlim[0] + common_xlim[1])
-    y_center = 0.5 * (common_ylim[0] + common_ylim[1])
-
-    x_half = 0.5 * (common_xlim[1] - common_xlim[0]) * zoom_factor
-    y_half = 0.5 * (common_ylim[1] - common_ylim[0]) * zoom_factor
-
-    zoomed_xlim = (x_center - x_half, x_center + x_half)
-    zoomed_ylim = (y_center - y_half, y_center + y_half)
-
-    for ax in axes:
-        ax.set_xlim(zoomed_xlim)
-        ax.set_ylim(zoomed_ylim)
+        ax.set_xlim(-0.4, 1.1)   # whatever you like after tuning
+        ax.set_ylim(0.3, 1.3)
 
         # --- 3. Draw the legends into the dedicated legend axis ---------------
     draw_full_connectivity_legend(
