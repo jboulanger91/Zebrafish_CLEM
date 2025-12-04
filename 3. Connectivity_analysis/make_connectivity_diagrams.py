@@ -46,6 +46,11 @@ from pathlib import Path
 from typing import Dict, Iterable
 
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
+from matplotlib.patches import (
+    Patch,
+)
 import pandas as pd
 
 
@@ -56,8 +61,12 @@ from connectivity_diagrams_helpers import (
     summarize_connectome,
     draw_two_layer_neural_net,
     export_connectivity_tables_txt,
+    HalfBlackWhiteHandler
 )
 
+from connectivity_matrices_helpers import (  
+    COLOR_CELL_TYPE_DICT,
+)
 
 # ----------------------------------------------------------------------
 # Core plotting routine
@@ -139,8 +148,27 @@ def plot_population_networks(
     print(f"Total output synapses: {total_outputs}")
     print(f"Total input synapses:  {total_inputs}")
 
-    # --- 2. Build the 2x2 figure --------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    # --- 2. Build the 2x2 figure + legend column --------------------------
+    # We make a 2x3 grid: 2 rows of panels, 3rd column is only for legends.
+    fig = plt.figure(figsize=(16, 10))
+
+    gs = gridspec.GridSpec(
+        2, 3,
+        width_ratios=[1.0, 1.0, 0.7],   # last column reserved for legend
+        wspace=0.30,
+        hspace=0.35,
+    )
+
+    ax00 = fig.add_subplot(gs[0, 0])   # ipsi inputs
+    ax01 = fig.add_subplot(gs[0, 1])   # contra inputs
+    ax10 = fig.add_subplot(gs[1, 0])   # ipsi outputs
+    ax11 = fig.add_subplot(gs[1, 1])   # contra outputs
+
+    # Legend axis (spans both rows); we draw no data here, only legends.
+    legend_ax = fig.add_subplot(gs[:, 2])
+    legend_ax.axis("off")
+
+    axes = [ax00, ax01, ax10, ax11]
 
     titles = [
         "Ipsilateral input synapses",
@@ -163,11 +191,12 @@ def plot_population_networks(
         "outputs",
     ]
 
-    # Midline only makes sense for cross-side panels
+    # Midline only makes sense for the cross-side (contralateral) panels
+    # → only the right-hand panels (index 1 and 3) get midlines.
     show_midlines = [False, True, False, True]
 
-    for i, (ax, title, df_syn, ctype, show_midline) in enumerate(
-        zip(axes.flatten(), titles, dataframes, connection_types, show_midlines)
+    for i, (ax, title, df_syn, ctype, show_midline_flag) in enumerate(
+        zip(axes, titles, dataframes, connection_types, show_midlines)
     ):
         kwargs: dict = {}
         if ctype == "outputs":
@@ -185,36 +214,178 @@ def plot_population_networks(
             node_radius=0.02,
             input_circle_color=input_circle_color,
             input_cell_type=input_cell_type,
-            show_midline=show_midline,
+            show_midline=show_midline_flag,
             proportional_lines=True,
-            a=6,
-            b=2,
+            a=12,
+            b=1,
             connection_type=ctype,
-            add_legend=(i == 0),          # show full legend once (top-left panel)
-            label_mode="proportion",      # labels show proportions
-            label_as_percent=True,        # ...as percent
+            label_mode="proportion",
+            label_as_percent=True,
             label_decimals=1,
             **kwargs,
         )
         ax.set_title(title, fontsize=14)
 
-    # Add a global title for the PDF
+    # --- 2b. Force all four network panels to share the same data limits ---
+    # This makes node radii and line widths *visually* comparable across subplots,
+    # independent of how many nodes each panel has or whether it has a midline.
+    xmins, xmaxs, ymins, ymaxs = [], [], [], []
+    for ax in axes:
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        xmins.append(x0)
+        xmaxs.append(x1)
+        ymins.append(y0)
+        ymaxs.append(y1)
+
+    common_xlim = (min(xmins), max(xmaxs))
+    common_ylim = (min(ymins), max(ymaxs))
+
+    # --- Optional: zoom all panels by a fixed factor around the center ----
+    # factor < 1 → zoom in (features look bigger)
+    # factor > 1 → zoom out (more whitespace, features look smaller)
+    zoom_factor = 0.7   # 0.7 ≈ “30% larger” appearance
+
+    x_center = 0.5 * (common_xlim[0] + common_xlim[1])
+    y_center = 0.5 * (common_ylim[0] + common_ylim[1])
+
+    x_half = 0.5 * (common_xlim[1] - common_xlim[0]) * zoom_factor
+    y_half = 0.5 * (common_ylim[1] - common_ylim[0]) * zoom_factor
+
+    zoomed_xlim = (x_center - x_half, x_center + x_half)
+    zoomed_ylim = (y_center - y_half, y_center + y_half)
+
+    for ax in axes:
+        ax.set_xlim(zoomed_xlim)
+        ax.set_ylim(zoomed_ylim)
+
+    # --- 3. Draw the legends INTO legend_ax -------------------------------
+    # Three stacked legend boxes: cell outlines, functional types, and
+    # fraction-of-synapses + connector types.
+
+    # 3.1 Cell outlines
+    outline_handles = [
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="solid",
+               label="Excitatory outline"),
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dashed",
+               label="Inhibitory outline"),
+        Line2D([0, 1], [0, 0], color="black", lw=3, linestyle="dotted",
+               label="Mixed / unknown outline"),
+    ]
+    # Slightly more compact vertical spacing between legend blocks
+    ax_outline = legend_ax.inset_axes([0.0, 0.62, 1.0, 0.35])
+    ax_outline.axis("off")
+    ax_outline.legend(
+        handles=outline_handles,
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Cell outlines",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
+
+    # 3.2 Functional types (node fill colors)
+    func_handles: list[Patch] = []
+    for key in sorted(COLOR_CELL_TYPE_DICT.keys()):
+        rgba = COLOR_CELL_TYPE_DICT[key]
+        label = key.replace("_", " ")
+        if key == input_circle_color:
+            label += " (seed population)"
+        func_handles.append(Patch(facecolor=rgba, edgecolor="black", label=label))
+
+    dual_handle = Patch(
+        facecolor="none",
+        edgecolor="black",
+        label="axon exits rostrally & caudally",
+    )
+    handler_map_func = {dual_handle: HalfBlackWhiteHandler()}
+
+    ax_func = legend_ax.inset_axes([0.0, 0.30, 1.0, 0.50])
+    ax_func.axis("off")
+    ax_func.legend(
+        handles=func_handles + [dual_handle],
+        handler_map=handler_map_func,
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Functional types",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
+
+    # 3.3 Fraction of synapses & connector types
+    example_fracs = [0.01, 0.10, 0.50]
+    frac_handles = []
+    for p in example_fracs:
+        # Use same mapping as lines in the network: lw = a * p + b with a=12, b=1
+        lw_ex = 12 * p + 1
+        frac_handles.append(
+            Line2D([0, 1], [0, 0], color="black", lw=lw_ex, label=f"{p:g}")
+        )
+
+    # Use a mid example fraction (0.10) for connector thickness
+    lw_conn = 12 * 0.10 + 1
+    conn_exc = Line2D(
+        [0, 1], [0, 0],
+        color="black",
+        lw=lw_conn,
+        marker=">",
+        markersize=7,
+        markevery=(1,),
+        label="Excitation",
+    )
+    conn_inh = Line2D(
+        [0, 1], [0, 0],
+        color="black",
+        lw=lw_conn,
+        marker="<",
+        markersize=7,
+        markevery=(1,),
+        label="Inhibition",
+    )
+    conn_mix = Line2D(
+        [0, 1], [0, 0],
+        color="black",
+        lw=lw_conn,
+        marker="o",
+        markersize=6,
+        markevery=(1,),
+        label="Mixed",
+    )
+
+    ax_frac = legend_ax.inset_axes([0.0, 0.05, 1.0, 0.40])
+    ax_frac.axis("off")
+    ax_frac.legend(
+        handles=frac_handles + [conn_exc, conn_inh, conn_mix],
+        loc="upper left",
+        fontsize=9,
+        frameon=True,
+        title="Fraction of synapses\n& connectors",
+        title_fontsize=10,
+        prop={"family": "Arial"},
+        borderpad=0.6,
+    )
+
+    # --- 4. Global title & layout -----------------------------------------
     fig.suptitle(
         f"{population_name}: two-layer connectivity diagrams",
         fontsize=16,
-        y=0.99,
+        y=0.98,
     )
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=[0.0, 0.0, 0.98, 0.60])  # leave a bit of room for suptitle
 
-    # --- 3. Save figure ------------------------------------------------
+    # --- 5. Save figure ----------------------------------------------------
     basename_pdf = f"{plot_suffix}.pdf"
     out_path_pdf = output_folder / basename_pdf
     plt.savefig(out_path_pdf, dpi=300, bbox_inches="tight", format="pdf")
     plt.show()
     print(f"Saved figure: {out_path_pdf}")
 
-    # --- 4. Export detailed TXT connectivity table ---------------------
+    # --- 6. Export detailed TXT connectivity table ------------------------
     txt_path = export_connectivity_tables_txt(
         population_name=population_name,
         summary=summary,
@@ -222,7 +393,6 @@ def plot_population_networks(
         suffix=plot_suffix,
     )
     print(f"Saved connectivity table: {txt_path}")
-
 
 # ----------------------------------------------------------------------
 # CLI entry point
@@ -279,7 +449,7 @@ def main() -> None:
         lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"cmi_all{suffix_part}",
+        plot_suffix=f"cMI_all{suffix_part}",
         input_circle_color="contralateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
@@ -292,13 +462,13 @@ def main() -> None:
         lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"mon_all{suffix_part}",
+        plot_suffix=f"MON_all{suffix_part}",
         input_circle_color="motion_onset",
         input_cell_type="inhibitory",
         outputs_total_mode="both",
     )
 
-    # 3) MC (slow motion integrator / motor command, mixed)
+    # 3) SMI (slow motion integrator / motor command, mixed)
     plot_population_networks(
         population_name="SMI",
         seed_ids=seed_sets["SMI"],
@@ -318,7 +488,7 @@ def main() -> None:
         lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"imi_plus{suffix_part}",
+        plot_suffix=f"iMI_plus{suffix_part}",
         input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="excitatory",
         outputs_total_mode="same_only",
@@ -331,7 +501,7 @@ def main() -> None:
         lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"imi_minus{suffix_part}",
+        plot_suffix=f"iMI_minus{suffix_part}",
         input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="inhibitory",
         outputs_total_mode="same_only",
@@ -344,7 +514,7 @@ def main() -> None:
         lda_df=csv_df,
         root_folder=args.root_folder,
         output_folder=out_folder,
-        plot_suffix=f"imi{suffix_part}",
+        plot_suffix=f"iMI{suffix_part}",
         input_circle_color="ipsilateral_motion_integrator",
         input_cell_type="mixed",
         outputs_total_mode="same_only",

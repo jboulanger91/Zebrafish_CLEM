@@ -382,10 +382,9 @@ def draw_two_layer_neural_net(
     input_cell_type: str = "excitatory",
     show_midline: bool = True,
     proportional_lines: bool = True,
-    a: float = 5.0,
-    b: float = 2.0,
+    a: float = 110,
+    b: float = 0.1,
     connection_type: str = "outputs",
-    add_legend: bool = True,
     # Label behaviour
     label_mode: str = "count",        # 'count' | 'proportion' | 'probability' | 'none'
     label_as_percent: bool = True,
@@ -395,31 +394,177 @@ def draw_two_layer_neural_net(
     total_inputs: float | None = None,
 ) -> None:
     """
-    Draw a 2-layer network:
+    Draw a schematic 2-layer connectivity diagram for a single seed population.
 
-        layer 1: one seed population node
-        layer 2: connection categories from `data_df`
+    Overview
+    --------
+    The diagram has:
 
-    `data_df` is expected to contain:
+    - **Layer 1**: one large seed node (the population of interest).
+    - **Layer 2**: one node per connection *category* derived from `data_df`.
+    - **Edges**: straight lines from the seed node to each category node, with
+      width and terminal symbol (arrow / inverted arrow / dot) encoding
+      connection strength and sign.
 
-        'Functional Classifier'   (motion_integrator, motion_onset,
-                                   slow_motion_integrator, myelinated, axon, ...)
-        'Neurotransmitter Classifier'
-        'Projection Classifier'   ('ipsilateral', 'contralateral', or 'None')
-        'Axon Exit Direction'
-        'Probability'
-        'Count'
+    Expected columns in `data_df`
+    -----------------------------
+    Each row represents one connectivity category and must contain:
 
-    Colors come from `COLOR_CELL_TYPE_DICT` with keys:
-        'ipsilateral_motion_integrator', 'contralateral_motion_integrator',
-        'motion_onset', 'slow_motion_integrator', 'myelinated',
-        'not_functionally_imaged', 'axon_rostral', 'axon_caudal'.
+    - ``'Functional Classifier'``: e.g. ``motion_integrator``,
+      ``motion_onset``, ``slow_motion_integrator``, ``myelinated``,
+      ``axon``, ``not functionally imaged``, etc.
+    - ``'Neurotransmitter Classifier'``: ``excitatory``, ``inhibitory``,
+      or anything else (treated as mixed / unknown).
+    - ``'Projection Classifier'``: ``ipsilateral``, ``contralateral``, or ``'None'``.
+    - ``'Axon Exit Direction'``: free text; we search for the substrings
+      ``'rostrally'`` and/or ``'caudally'`` to determine axon exit direction.
+    - ``'Probability'``: panel-wise probability of that category.
+    - ``'Count'``: number of synapses in that category.
+
+    Pre-processing of categories
+    ----------------------------
+    Before plotting, the function simplifies `data_df`:
+
+    1. **“Not functionally imaged”** rows are merged into a single row with
+       summed ``Count`` / ``Probability`` and dummy classifiers
+       (projection = ``'None'``, neurotransmitter = ``'unknown'``).
+
+    2. **Other functional labels** (anything not in
+       {``motion_integrator``, ``motion_onset``, ``slow_motion_integrator``,
+       ``myelinated``, ``not functionally imaged``, ``axon``}) are merged into a
+       single category ``other_functional_types`` (also with ``unknown`` /
+       ``None`` classifiers).
+
+    3. **Motion onset**: ipsilateral and contralateral motion-onset rows are
+       merged into a single ``motion_onset`` category, with its neurotransmitter
+       set to ``inhibitory`` and projection to ``None``.
+
+    4. **Myelinated** rows are merged into a single ``myelinated`` category.
+
+    Node appearance
+    ---------------
+    - **Position**: category nodes are spaced vertically between ``bottom`` and
+      ``top``; the seed node is centered vertically at the left (for
+      ``connection_type='outputs'``) or right (for ``'inputs'``).
+
+    - **Fill color**:
+        - motion_integrator → ipsi/contra-specific keys
+          ``ipsilateral_motion_integrator`` or ``contralateral_motion_integrator``.
+        - slow_motion_integrator → ``slow_motion_integrator`` color.
+        - motion_onset           → ``motion_onset`` color.
+        - myelinated             → ``myelinated`` color.
+        - other_functional_types → ``other_functional_types`` color.
+        - axon:
+            * exits rostrally only  → ``axon_rostral`` color.
+            * exits caudally only   → ``axon_caudal`` color.
+            * exits rostrally **and** caudally → special half black / half white
+              circle (independent of `COLOR_CELL_TYPE_DICT`).
+        - anything else            → ``not_functionally_imaged`` color.
+
+      Seed node color is taken from `COLOR_CELL_TYPE_DICT[input_circle_color]`.
+
+    - **Outline style (cell outline legend)**:
+        - solid   → ``Neurotransmitter Classifier == 'excitatory'``
+        - dashed  → ``'inhibitory'``
+        - dotted  → all other values (mixed / unknown)
+
+      Outline color is a darkened version of the fill color
+      (via ``_adjust_luminance``).
+
+    - **Node size**:
+        ``radius = node_radius * (1 + 4 * Probability)``, so more probable
+        classes are drawn larger.  The seed node radius is 4× `node_radius`.
+
+    - **Labels**:
+        Controlled by ``label_mode``:
+
+        - ``'count'``       → raw ``Count``.
+        - ``'proportion'``  → ``Count / denom`` where
+            * denom = ``total_outputs`` for output panels (if given),
+            * denom = ``total_inputs`` for input panels (if given),
+            * otherwise denom = total count in this panel.
+        - ``'probability'`` → uses the ``Probability`` column.
+
+        If ``label_as_percent=True``, labels are formatted as percentages
+        with ``label_decimals`` decimal places.
+
+    Edges, line width & connector type
+    ----------------------------------
+    For each category node, a straight line is drawn between the seed node
+    and the category node.
+
+    - **Direction**:
+        - For ``connection_type='outputs'``: seed → target.
+        - For ``'inputs'``: target → seed (the arguments are swapped so the
+          line still points toward the postsynaptic cell).
+
+    - **Line width (strength of connectivity)**:
+
+        If ``proportional_lines=True``:
+
+            ``linewidth = a * Probability + b``
+
+        so that high-probability categories are drawn with thicker links.
+        If ``proportional_lines=False``, all links have width ``b``.
+
+        In the legend, three example line widths (e.g. p = 0.05, 0.1, 0.5)
+        are shown to illustrate this mapping (“Fraction of synapses”).
+
+    - **Connector type (connector legend)**:
+
+        For **input panels** (``connection_type='inputs'``), the connector
+        depends on the partner’s neurotransmitter:
+
+        - excitatory → arrowhead pointing toward the postsynaptic seed.
+        - inhibitory → inverted arrow (small triangle) whose base lies on the
+          circle outline and whose tip points away from the circle.
+        - mixed / unknown → no extra symbol (just a line).
+
+        For **output panels** (``connection_type='outputs'``), the connector
+        depends on the *seed* population type:
+
+        - ``input_cell_type='excitatory'`` → all arrows.
+        - ``'inhibitory'`` → all inverted arrows at the target node.
+        - ``'mixed'`` → black circle at the line endpoint (no arrow).
+
+    Midline
+    -------
+    If ``show_midline=True``, a dashed vertical line is drawn at the center
+    between ``left`` and ``right`` to indicate the midline (used for
+    cross-hemisphere panels).
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes on which to draw the diagram.
+    left, right, bottom, top : float
+        Logical bounds in axis coordinates for placing nodes.
+    data_df : pandas.DataFrame
+        Connectivity summary with the columns described above.
+    node_radius : float
+        Base radius for category nodes (seed node is 4× this radius).
+    input_circle_color : str
+        Key into `COLOR_CELL_TYPE_DICT` for the seed node.
+    input_cell_type : {'excitatory', 'inhibitory', 'mixed'}
+        Type of seed population, used for output connector style.
+    show_midline : bool
+        Whether to draw a dashed midline.
+    proportional_lines : bool
+        Whether edge line width scales with probability.
+    a, b : float
+        Parameters for line-width scaling: ``lw = a * Probability + b``.
+    connection_type : {'inputs', 'outputs'}
+        Whether this panel shows inputs to the seed or outputs from it.
+    add_legend : bool
+        If True, draws the three legends described above.
+    label_mode, label_as_percent, label_decimals :
+        Control content and formatting of node labels.
+    total_outputs, total_inputs : float or None
+        Optional global totals for proportion labels.
     """
     if data_df.empty:
         ax.axis("off")
         return
-
-    import matplotlib.pyplot as plt  # local import
 
     df = data_df.copy()
 
@@ -437,7 +582,7 @@ def draw_two_layer_neural_net(
                         {
                             "Functional Classifier": "not functionally imaged",
                             "Projection Classifier": "None",
-                            "Neurotransmitter Classifier": "unknown",
+                            "Neurotransmitter Classifier": "mixed",
                             "Axon Exit Direction": "None",
                             "Probability": merged_prob,
                             "Count": merged_count,
@@ -455,7 +600,7 @@ def draw_two_layer_neural_net(
         "slow_motion_integrator",
         "myelinated",
         "not functionally imaged",
-        "axon"
+        "axon",
     }
 
     other_rows = df[~df["Functional Classifier"].isin(valid_labels)]
@@ -463,7 +608,6 @@ def draw_two_layer_neural_net(
         other_count = other_rows["Count"].sum()
         other_prob = other_rows["Probability"].sum()
 
-        # Keep only the valid labels, then append a single "other_functional" row
         df = df[df["Functional Classifier"].isin(valid_labels)]
         df = pd.concat(
             [
@@ -472,7 +616,7 @@ def draw_two_layer_neural_net(
                     [
                         {
                             "Functional Classifier": "other_functional_types",
-                            "Neurotransmitter Classifier": "unknown",
+                            "Neurotransmitter Classifier": "mixed",
                             "Projection Classifier": "None",
                             "Axon Exit Direction": "None",
                             "Probability": other_prob,
@@ -572,16 +716,28 @@ def draw_two_layer_neural_net(
     panel_total = float(df["Count"].sum()) if "Count" in df.columns else 0.0
     if label_mode == "proportion":
         if connection_type == "outputs" and total_outputs is not None:
+            # cross-panel normalization for outputs
+            denom = float(total_outputs)
+        elif connection_type == "inputs" and total_inputs is not None:
+            # cross-panel normalization for inputs
+            denom = float(total_inputs)
+        else:
+            # fall back to within-panel normalization
+            denom = panel_total
+    else:
+        # even if labels are not "proportion", we still use this denom
+        # to normalize radii and line widths so the visual encoding
+        # is comparable across panels
+        if connection_type == "outputs" and total_outputs is not None:
             denom = float(total_outputs)
         elif connection_type == "inputs" and total_inputs is not None:
             denom = float(total_inputs)
         else:
             denom = panel_total
-    else:
-        denom = panel_total
 
     # --- Output nodes (one per row) ---------------------------------------
     node_positions: List[Tuple[Tuple[float, float], float]] = []
+    row_props: List[float] = []   # normalized proportions for each row
     output_top = bottom + (top - bottom) / 2.0 + v_spacing * (layer_sizes[1] - 1) / 2.0
 
     for idx, row in df.iterrows():
@@ -641,13 +797,19 @@ def draw_two_layer_neural_net(
         else:
             outline_style = "dotted"
 
-        prob = float(row["Probability"])
-        radius = node_radius * (1.0 + prob * 4.0)
+        # ----- unified normalized proportion for this row ------------------
+        count_val = float(row.get("Count", 0.0))
+        if denom > 0:
+            prop_norm = count_val / denom
+        else:
+            # fall back to the Probability column if denom is zero
+            prop_norm = float(row.get("Probability", 0.0))
+
+        # use the same prop_norm for radius, line width, and (optionally) label
+        radius = node_radius * (1.0 + prop_norm * 4.0)
 
         if half_rostral_caudal:
-            # --- Half white / half black circle (pure B/W), independent of COLOR_CELL_TYPE_DICT ---
-
-            # 1) Full white circle as background
+            # Half white / half black circle (pure B/W), independent of COLOR_CELL_TYPE_DICT
             ax.add_patch(
                 Circle(
                     node_center,
@@ -657,8 +819,6 @@ def draw_two_layer_neural_net(
                     zorder=1,
                 )
             )
-
-            # 2) Left half (black) – 90° to 270° in data coordinates
             ax.add_patch(
                 Wedge(
                     center=node_center,
@@ -670,8 +830,6 @@ def draw_two_layer_neural_net(
                     zorder=2,
                 )
             )
-
-            # 3) Outline in solid black, with the inhibitory/excitatory linestyle
             ax.add_patch(
                 Circle(
                     node_center,
@@ -700,11 +858,9 @@ def draw_two_layer_neural_net(
         label_text: str | None = None
         if label_mode != "none":
             if label_mode == "count":
-                count_val = int(row.get("Count", 0))
-                label_text = f"{count_val}"
+                label_text = f"{int(count_val)}"
             elif label_mode == "proportion":
-                count_val = float(row.get("Count", 0.0))
-                prop = (count_val / denom) if denom > 0 else 0.0
+                prop = prop_norm
                 if label_as_percent:
                     label_text = f"{prop * 100:.{label_decimals}f}%"
                 else:
@@ -718,7 +874,7 @@ def draw_two_layer_neural_net(
 
         if label_text is not None:
             if connection_type == "inputs":
-                offset = -radius * 3.5  # move labels farther left
+                offset = -radius * 4.5  # move labels farther left
             else:
                 offset = radius * 1.5   # outputs stay the same
             ax.text(
@@ -733,11 +889,13 @@ def draw_two_layer_neural_net(
             )
 
         node_positions.append((node_center, radius))
+        row_props.append(prop_norm)
 
     # --- Connections from input → outputs ---------------------------------
     for idx, (out_center, out_radius) in enumerate(node_positions):
-        prob = float(df.iloc[idx]["Probability"]) if idx < len(df) else 0.0
-        width = a * prob + b if proportional_lines else b
+        # use the same normalized proportion for line width
+        prop_for_width = row_props[idx] if idx < len(row_props) else 0.0
+        width = a * prop_for_width + b if proportional_lines else b
 
         dx = out_center[0] - input_center[0]
         dy = out_center[1] - input_center[1]
@@ -762,11 +920,24 @@ def draw_two_layer_neural_net(
             )
         )
 
-        # Arrow or T-bar
+        # Circle, arrow or inverted arrow at the target node
         nt_type = df.iloc[idx]["Neurotransmitter Classifier"]
         if connection_type == "inputs":
-            # arrow / T at the seed node
-            if nt_type == "excitatory":
+
+            # oinputs
+            if nt_type == "mixed":
+                # Mixed: small black circle at boundary
+                ax.add_patch(
+                    Circle(
+                        (dst_x, dst_y),
+                        radius=width * 0.005,
+                        facecolor="black",
+                        edgecolor="black",
+                        zorder=5,
+                    )
+                )
+
+            elif nt_type == "excitatory":
                 arrow_start_x = dst_x - 0.1 * (dst_x - src_x)
                 arrow_start_y = dst_y - 0.1 * (dst_y - src_y)
                 ax.arrow(
@@ -782,22 +953,13 @@ def draw_two_layer_neural_net(
                 )
             elif nt_type == "inhibitory":
                 # Inverted arrow: base on the circle outline, tip pointing away
-                # dst_x, dst_y is the point on the circle (postsynaptic / seed)
-                # src_x, src_y is the point toward the presynaptic node.
-
-                # Unit vector from circle outward (seed -> presynaptic)
                 ux = (src_x - dst_x) / dist
                 uy = (src_y - dst_y) / dist
-
-                # Perpendicular for the base width
                 nx = -uy
                 ny = ux
+                arrow_len = width * 0.01
+                base_half = width * 0.01
 
-                # Arrow geometry (scaled by line width)
-                arrow_len = width * 0.01   # length of arrow in data coords
-                base_half = width * 0.01   # half-width of the base
-
-                # Base centered exactly on the circle boundary
                 base_left = (dst_x - base_half * nx, dst_y - base_half * ny)
                 base_right = (dst_x + base_half * nx, dst_y + base_half * ny)
                 tip = (dst_x + arrow_len * ux, dst_y + arrow_len * uy)
@@ -813,8 +975,19 @@ def draw_two_layer_neural_net(
                 ax.add_patch(arrow_poly)
 
         else:
-            # outputs: arrow/T at the target node
-            if input_cell_type == "excitatory":
+            # outputs
+            if input_cell_type == "mixed":
+                # Mixed: small black circle at boundary
+                ax.add_patch(
+                    Circle(
+                        (dst_x, dst_y),
+                        radius=width * 0.005,
+                        facecolor="black",
+                        edgecolor="black",
+                        zorder=5,
+                    )
+                )
+            elif input_cell_type == "excitatory":
                 arrow_start_x = dst_x - 0.1 * (dst_x - src_x)
                 arrow_start_y = dst_y - 0.1 * (dst_y - src_y)
                 ax.arrow(
@@ -828,28 +1001,17 @@ def draw_two_layer_neural_net(
                     ec="black",
                     length_includes_head=True,
                 )
-            else:  # inhibitory *outputs* (seed population is inhibitory)
-                # Inverted arrow with base ON the circle outline, tip pointing outward
-                px, py = dst_x, dst_y  # point on the target circle boundary
-
-                # Unit vector from target-circle outward (opposite direction of input case)
+            else:  # inhibitory *outputs*
                 ux = (src_x - dst_x) / dist
                 uy = (src_y - dst_y) / dist
-
-                # Perpendicular unit vector for arrow base width
                 nx = -uy
                 ny = ux
+                arrow_len = width * 0.01
+                base_half = width * 0.01
 
-                # Arrow geometry
-                arrow_len = width * 0.01   # length of arrow
-                base_half = width * 0.01   # half-width of triangle base
-
-                # Base coordinates (touching circle)
-                base_left = (px - base_half * nx, py - base_half * ny)
-                base_right = (px + base_half * nx, py + base_half * ny)
-
-                # Arrow tip (pointing outward)
-                tip = (px + arrow_len * ux, py + arrow_len * uy)
+                base_left = (dst_x - base_half * nx, dst_y - base_half * ny)
+                base_right = (dst_x + base_half * nx, dst_y + base_half * ny)
+                tip = (dst_x + arrow_len * ux, dst_y + arrow_len * uy)
 
                 arrow_poly = Polygon(
                     [base_left, base_right, tip],
@@ -874,44 +1036,6 @@ def draw_two_layer_neural_net(
             linewidth=1.5,
         )
 
-    # ------------------------------------------------------------------
-    # Legend (functional colors + neurotransmitter styles)
-    # ------------------------------------------------------------------
-    if add_legend:
-        # Neurotransmitter legend
-        nt_handles = [
-            Line2D([0], [0], color="black", lw=3, linestyle="solid", label="Excitatory"),
-            Line2D([0], [0], color="black", lw=3, linestyle="dashed", label="Inhibitory"),
-            Line2D([0], [0], color="black", lw=3, linestyle="dotted", label="Mixed"),
-        ]
-
-        func_handles: List[Patch] = []
-        for key in sorted(COLOR_CELL_TYPE_DICT.keys()):
-            rgba = COLOR_CELL_TYPE_DICT[key]
-            label = key.replace("_", " ")
-            if key == input_circle_color:
-                label += " (seed population)"
-            func_handles.append(Patch(facecolor=rgba, edgecolor="black", label=label))
-
-        # Special proxy for axons exiting both rostrally & caudally
-        dual_handle = Patch(facecolor="none", edgecolor="none", label="axon exits rostrally & caudally")
-
-        legend_handles = nt_handles + func_handles + [dual_handle]
-
-        handler_map = {dual_handle: HalfBlackWhiteHandler()}
-
-        ax.legend(
-            handles=legend_handles,
-            loc="upper left",
-            bbox_to_anchor=(1.20, 1.00),
-            fontsize=9,
-            frameon=False,
-            title="Legend",
-            title_fontsize=10,
-            prop={"family": "Arial"},
-            handler_map=handler_map,
-        )
-
     ax.axis("off")
     ax.set_xlim(left - h_spacing, right + h_spacing)
     ax.set_ylim(bottom - v_spacing * 1.5, top + v_spacing)
@@ -920,7 +1044,6 @@ def draw_two_layer_neural_net(
 # -------------------------------------------------------------------------
 # High-level summariser + TXT export used by the main script
 # -------------------------------------------------------------------------
-
 
 def summarize_connectome(
     root_folder: Path | str,
