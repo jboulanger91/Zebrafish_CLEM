@@ -1038,7 +1038,7 @@ def process_matrix(
     return matrix
 
 
-def plot_connectivity_matrix(
+def plot_connectivity_matrix_old(
     matrix: pd.DataFrame,
     functional_types: Dict[str, str],
     output_path: str | Path,
@@ -1281,6 +1281,409 @@ def plot_connectivity_matrix(
     )
     fig.add_artist(func_legend)
 
+    plt.tight_layout()
+    sanitized_title = (
+        title.lower().replace(" ", "_").replace(":", "").replace("/", "_")
+    )
+    output_pdf_path = output_path / f"{sanitized_title}.pdf"
+    plt.savefig(output_pdf_path, dpi=300, bbox_inches="tight", format="pdf")
+    plt.show()
+
+
+
+def plot_connectivity_matrix(
+    matrix: pd.DataFrame,
+    functional_types: Dict[str, str],
+    output_path: str | Path,
+    category_order: List[str],
+    df: pd.DataFrame | None = None,
+    title: str = "Directional Connectivity Matrix",
+    display_type: str = "normal",
+    plot_type: str = "raster",
+    color_cell_type_dict: Dict[str, Tuple[float, float, float, float]] | None = None,
+) -> None:
+    """
+    Plot a connectivity matrix, optionally encoding inhibitory / excitatory sign.
+
+    Parameters
+    ----------
+    matrix : pandas.DataFrame
+        Connectivity matrix to plot (raw synapse counts; rows/cols are IDs).
+    functional_types : dict
+        Mapping from matrix index ID -> functional category name
+        (e.g. 'motion_integrator', 'axon_rostral', 'axon_caudal_left', ...).
+    output_path : str or Path
+        Directory where the resulting PDF will be written.
+    category_order : list of str
+        Ordered list of functional categories for sorting indices and
+        drawing separators.
+    df : pandas.DataFrame, optional
+        Metadata with at least 'nucleus_id' (or equivalent ID) and
+        'neurotransmitter classifier'. Required if display_type == 'Inhibitory_Excitatory'.
+    title : str, optional
+        Plot title and base for the output filename.
+    display_type : {'normal', 'Inhibitory_Excitatory'}, optional
+        - 'normal'  : plot raw counts with a simple sequential colormap.
+        - 'Inhibitory_Excitatory' :
+              * use process_matrix(...) to map synapse sign/strength into
+                discrete values in [-2, -1, 0, 1, 2],
+              * plot with a 5-level inhibitory→excitatory colormap,
+              * for axon categories (axon_rostral / axon_caudal ± _left/_right),
+                override the color with light/dark gray depending on
+                raw synapse count:
+                    - 1 synapse  → light gray
+                    - ≥ 2 synapses → dark gray
+    plot_type : {'raster', 'scatter'}, optional
+        - 'raster'  : use matshow to draw pixels.
+        - 'scatter' : bubble-plot representation.
+    color_cell_type_dict : dict, optional
+        Mapping from functional category name -> RGBA color used for the
+        outer row/column bars and the functional legend.
+
+    Returns
+    -------
+    None
+    """
+    output_path = Path(output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    if color_cell_type_dict is None:
+        color_cell_type_dict = COLOR_CELL_TYPE_DICT
+
+    if display_type not in {"normal", "Inhibitory_Excitatory"}:
+        raise ValueError("display_type must be 'normal' or 'Inhibitory_Excitatory'.")
+    if plot_type not in {"raster", "scatter"}:
+        raise ValueError("plot_type must be 'raster' or 'scatter'.")
+
+    # Keep a copy of the raw integer counts for axon gray shading
+    matrix_raw_counts = matrix.copy()
+
+    # ------------------------------------------------------------------
+    # 1) Possibly transform to inhibitory/excitatory representation
+    # ------------------------------------------------------------------
+    if display_type == "Inhibitory_Excitatory":
+        if df is None:
+            raise ValueError(
+                "df is required for 'Inhibitory_Excitatory' display_type."
+            )
+        # process_matrix should return a matrix in [-2, 2] (signed)
+        matrix = process_matrix(matrix.copy(), df)
+    else:
+        matrix = matrix.copy()
+
+    # ------------------------------------------------------------------
+    # 2) Filter to indices that have functional_types in category_order
+    # ------------------------------------------------------------------
+    functional_types = {
+        k: v for k, v in functional_types.items()
+        if v in category_order and k in matrix.index
+    }
+
+    filtered_indices = [
+        idx
+        for idx in matrix.index
+        if functional_types.get(idx, "unknown") in category_order
+    ]
+
+    # Filter both transformed matrix and raw counts to the same subset
+    filtered_matrix = matrix.loc[filtered_indices, filtered_indices]
+    filtered_raw_counts = matrix_raw_counts.loc[filtered_indices, filtered_indices]
+
+    # Sort indices according to category_order
+    def sort_key(func_id: str) -> int:
+        category = functional_types.get(func_id, "unknown")
+        return category_order.index(category) if category in category_order else len(
+            category_order
+        )
+
+    sorted_indices = sorted(filtered_indices, key=sort_key)
+
+    # Final matrices used for plotting
+    matrix_with_nan = filtered_matrix.loc[sorted_indices, sorted_indices]
+    raw_counts_for_grey = filtered_raw_counts.loc[sorted_indices, sorted_indices]
+
+    # ------------------------------------------------------------------
+    # 3) Choose colormap / normalization
+    # ------------------------------------------------------------------
+    if display_type == "Inhibitory_Excitatory":
+        # Clip to [-2,2] where:
+        #   -2, -1 = inhibitory (weak/strong)
+        #    0     = zero / unknown
+        #    1,  2 = excitatory (weak/strong)
+        matrix_with_nan = np.clip(matrix_with_nan, -2, 2)
+
+        colors = [
+            "#9B00AE",  # -2  strong inhibitory (dark magenta)
+            "#FF4DFF",  # -1  weak inhibitory (light magenta)
+            "#FFFFFF",  #  0  zero
+            "#7CFF5A",  # +1  weak excitatory (light green)
+            "#007A00",  # +2  strong excitatory (dark green)
+        ]
+
+        cmap = mcolors.ListedColormap(colors, name="Inhibitory-Excitatory")
+        bounds = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5]
+        norm = mcolors.BoundaryNorm(bounds, cmap.N)
+        ticks = [-2, -1, 0, 1, 2]
+        cbar_label = "Synapse sign & strength (inhibitory → excitatory)"
+    else:
+        # Simple sequential colormap for raw counts (0–5+)
+        cmap = mcolors.ListedColormap(
+            ["white", "blue", "green", "yellow", "pink", "red"]
+        )
+        bounds = [0, 1, 2, 3, 4, 5, 6]
+        norm = mcolors.BoundaryNorm(bounds, cmap.N)
+        ticks = [0, 1, 2, 3, 4, 5]
+        cbar_label = "Number of synapses"
+
+    # ------------------------------------------------------------------
+    # 4) Plot matrix (raster or scatter)
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    if plot_type == "raster":
+        cax = ax.matshow(matrix_with_nan, cmap=cmap, norm=norm)
+        artist_for_cbar = cax
+    else:
+        # Bubble / scatter representation
+        x, y = np.meshgrid(
+            range(len(matrix_with_nan.columns)),
+            range(len(matrix_with_nan.index)),
+        )
+        x_flat, y_flat = x.flatten(), y.flatten()
+        vals = matrix_with_nan.values.flatten()
+        sizes = np.abs(vals) * 100.0  # bubble size ~ |value|
+        scatter = ax.scatter(
+            x_flat,
+            y_flat,
+            c=vals,
+            s=sizes,
+            cmap=cmap,
+            norm=norm,
+        )
+        artist_for_cbar = scatter
+
+    ax.set_aspect("equal")
+
+    ax.set_xticks(range(len(matrix_with_nan.columns)))
+    ax.set_yticks(range(len(matrix_with_nan.index)))
+    ax.set_xticklabels(matrix_with_nan.columns, rotation=90, fontsize=5)
+    ax.set_yticklabels(matrix_with_nan.index, fontsize=5)
+    ax.set_xlabel("Pre-synaptic (axons)")
+    ax.set_ylabel("Post-synaptic (dendrites)")
+    ax.set_title(title, fontsize=12)
+
+    # ------------------------------------------------------------------
+    # 5) Functional-category color bars (outside matrix)
+    # ------------------------------------------------------------------
+    bar_width = 1.5
+    bar_height = 1.5
+
+    left_bar_x = -bar_width - 0.5
+    top_bar_y = -bar_height - 0.5
+
+    for i, functional_id in enumerate(matrix_with_nan.index):
+        if functional_id not in functional_types:
+            continue
+        ftype = functional_types[functional_id]
+        color = color_cell_type_dict.get(ftype, (0.8, 0.8, 0.8, 0.7))
+
+        # Left bar (row indicator)
+        ax.add_patch(
+            patches.Rectangle(
+                (left_bar_x, i - 0.5),
+                bar_width,
+                1,
+                color=color,
+                zorder=2,
+            )
+        )
+
+        # Top bar (column indicator)
+        ax.add_patch(
+            patches.Rectangle(
+                (i - 0.5, top_bar_y),
+                1,
+                bar_height,
+                color=color,
+                zorder=2,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # 6) Draw group boundaries between functional categories
+    # ------------------------------------------------------------------
+    group_boundaries: List[float] = []
+    last_type = None
+    for i, idx in enumerate(matrix_with_nan.index):
+        current_type = functional_types.get(idx, "unknown")
+        if current_type != last_type:
+            group_boundaries.append(i - 0.5)
+            last_type = current_type
+    group_boundaries.append(len(matrix_with_nan.index) - 0.5)
+
+    for boundary in group_boundaries:
+        ax.axhline(boundary, color="black", linewidth=1.5, zorder=3)
+        ax.axvline(boundary, color="black", linewidth=1.5, zorder=3)
+
+    ax.set_xlim(-1.5, len(matrix_with_nan.columns) - 0.5)
+    ax.set_ylim(len(matrix_with_nan.index) - 0.5, -1.5)
+
+    # ------------------------------------------------------------------
+    # 7) Overlay greys for axon rows in Inhibitory-Excitatory mode
+    #    (works for BOTH raster and scatter)
+    # ------------------------------------------------------------------
+    if display_type == "Inhibitory_Excitatory":
+        axon_categories = {
+            "axon_rostral",
+            "axon_caudal",
+            "axon_rostral_left",
+            "axon_rostral_right",
+            "axon_caudal_left",
+            "axon_caudal_right",
+        }
+
+        for i, row_id in enumerate(matrix_with_nan.index):
+            row_cat = functional_types.get(row_id, "unknown")
+
+            # Only apply greyscale override to axon categories
+            if row_cat not in axon_categories:
+                continue
+
+            for j, col_id in enumerate(matrix_with_nan.columns):
+                raw_val = raw_counts_for_grey.loc[row_id, col_id]
+
+                if pd.isna(raw_val) or raw_val <= 0:
+                    continue
+
+                # Synapse-count → grey color
+                if raw_val == 1:
+                    grey = "#D0D0D0"   # light grey
+                else:  # raw_val >= 2
+                    grey = "#606060"   # dark grey
+
+                if plot_type == "raster":
+                    # Draw a full cell-sized rectangle over this position
+                    rect = patches.Rectangle(
+                        (j - 0.5, i - 0.5),
+                        1.0,
+                        1.0,
+                        facecolor=grey,
+                        edgecolor="none",
+                        alpha=1.0,
+                        zorder=4,
+                    )
+                    ax.add_patch(rect)
+                else:
+                    # Scatter mode: overlay a grey bubble exactly at (j, i)
+                    ax.scatter(
+                        [j],
+                        [i],
+                        s=200.0,          # size tuned to cover the cell
+                        facecolor=grey,
+                        edgecolor="none",
+                        alpha=1.0,
+                        zorder=4,
+                    )
+
+    # ------------------------------------------------------------------
+    # 8) Colorbar (synapse strength / counts)
+    # ------------------------------------------------------------------
+    cbar = plt.colorbar(
+        artist_for_cbar,
+        ax=ax,
+        boundaries=bounds,
+        ticks=ticks,
+        spacing="uniform",
+        orientation="vertical",
+        fraction=0.045,
+        pad=0.02,
+    )
+    cbar.set_label(cbar_label, fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+
+    # ------------------------------------------------------------------
+    # 9) Functional-type legend (to the right of matrix+colorbar)
+    # ------------------------------------------------------------------
+    func_handles = []
+    func_labels = []
+    for cat in category_order:
+        if cat in color_cell_type_dict:
+            func_handles.append(
+                patches.Patch(
+                    color=color_cell_type_dict[cat],
+                    label=cat.replace("_", " "),
+                )
+            )
+            func_labels.append(cat.replace("_", " "))
+
+    func_legend = ax.legend(
+        handles=func_handles,
+        labels=func_labels,
+        loc="upper left",
+        bbox_to_anchor=(1.25, 1.0),
+        bbox_transform=ax.transAxes,
+        borderaxespad=0.0,
+        fontsize=7,
+        title="Functional type",
+        title_fontsize=8,
+        frameon=False,
+        handlelength=1.5,
+        handletextpad=0.4,
+        labelspacing=0.2,
+    )
+    fig.add_artist(func_legend)
+
+    # ------------------------------------------------------------------
+    # 10) (Optional) Synapse-strength legend for IE mode
+    # ------------------------------------------------------------------
+    if display_type == "Inhibitory_Excitatory":
+        strength_handles = [
+            patches.Patch(color="#9B00AE", label="strong inhibitory (≤ -2)"),
+            patches.Patch(color="#FF4DFF", label="weak inhibitory (-1)"),
+            patches.Patch(color="#FFFFFF", label="zero (0)"),
+            patches.Patch(color="#7CFF5A", label="weak excitatory (+1)"),
+            patches.Patch(color="#007A00", label="strong excitatory (≥ +2)"),
+        ]
+        strength_legend = ax.legend(
+            handles=strength_handles,
+            loc="upper left",
+            bbox_to_anchor=(1.25, 0.55),
+            bbox_transform=ax.transAxes,
+            borderaxespad=0.0,
+            fontsize=7,
+            title="Synapse sign/strength",
+            title_fontsize=8,
+            frameon=False,
+            handlelength=1.5,
+            handletextpad=0.4,
+            labelspacing=0.2,
+        )
+        fig.add_artist(strength_legend)
+
+        # Small note about greys for axons
+        grey_handles = [
+            patches.Patch(color="#D0D0D0", label="axon: 1 synapse"),
+            patches.Patch(color="#606060", label="axon: ≥ 2 synapses"),
+        ]
+        grey_legend = ax.legend(
+            handles=grey_handles,
+            loc="upper left",
+            bbox_to_anchor=(1.25, 0.20),
+            bbox_transform=ax.transAxes,
+            borderaxespad=0.0,
+            fontsize=7,
+            title="Axon inputs",
+            title_fontsize=8,
+            frameon=False,
+            handlelength=1.5,
+            handletextpad=0.4,
+            labelspacing=0.2,
+        )
+        fig.add_artist(grey_legend)
+
+    # ------------------------------------------------------------------
+    # 11) Save
+    # ------------------------------------------------------------------
     plt.tight_layout()
     sanitized_title = (
         title.lower().replace(" ", "_").replace(":", "").replace("/", "_")
