@@ -93,8 +93,7 @@ Outputs:
 - A detailed text connectivity table per population
 
 **Main script:** `make_connectivity_diagrams.py`  
-**Helper modules:**  
-- `connectivity_diagrams_helper.py`   
+**Helper module:** `connectivity_diagrams_helper.py`   
 **Environment:** `env_clem_zfish1_global.yaml`
 
 ---

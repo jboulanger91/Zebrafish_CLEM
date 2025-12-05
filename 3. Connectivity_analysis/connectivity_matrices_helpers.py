@@ -79,6 +79,7 @@ COLOR_CELL_TYPE_DICT_LR: Dict[str, Tuple[float, float, float, float]] = {
     "axon_caudal_right": (0.0, 0.0, 0.0, 0.7),
 }
 
+
 # -------------------------------------------------------------------------
 # Hemisphere classification
 # -------------------------------------------------------------------------
@@ -499,6 +500,7 @@ def filter_connectivity_matrix(
 # -------------------------------------------------------------------------
 # Connectivity extraction
 # -------------------------------------------------------------------------
+
 def read_synapse_table(path: Path) -> pd.DataFrame:
     """
     Read a synapse CSV written by the NG-res postprocessing step and
@@ -525,6 +527,7 @@ def read_synapse_table(path: Path) -> pd.DataFrame:
             raise ValueError(f"{col} is missing in {path}, columns found: {df.columns}")
 
     return df
+
 
 def get_inputs_outputs_by_hemisphere_general(
     root_folder: str | Path,
@@ -1036,260 +1039,6 @@ def process_matrix(
         # If excitatory or None/NaN, we leave the row as-is
 
     return matrix
-
-
-def plot_connectivity_matrix_old(
-    matrix: pd.DataFrame,
-    functional_types: Dict[str, str],
-    output_path: str | Path,
-    category_order: List[str],
-    df: pd.DataFrame | None = None,
-    title: str = "Directional Connectivity Matrix",
-    display_type: str = "normal",
-    plot_type: str = "raster",
-    color_cell_type_dict: Dict[str, Tuple[float, float, float, float]] | None = None,
-) -> None:
-    """
-    Plot a connectivity matrix with optional inhibitory/excitatory encoding.
-
-    Parameters
-    ----------
-    matrix : pandas.DataFrame
-        Connectivity matrix to plot.
-    functional_types : dict
-        Mapping from matrix index ID -> functional category name.
-    output_path : str or Path
-        Directory where the resulting PDF will be written.
-    category_order : list of str
-        Ordered list of functional categories for sorting indices and
-        drawing separators.
-    df : pandas.DataFrame, optional
-        Metadata DataFrame with 'nucleus_id' and 'neurotransmitter classifier'.
-        Required if display_type == 'Inhibitory_Excitatory'.
-    title : str, optional
-        Plot title and base for the output filename.
-    display_type : {'normal', 'Inhibitory_Excitatory'}, optional
-        - 'normal' plots raw counts.
-        - 'Inhibitory_Excitatory' flips inhibitory rows and uses a diverging
-          colormap around zero.
-    plot_type : {'raster', 'scatter'}, optional
-        - 'raster' uses matshow to make pixels.
-        - 'scatter' uses a bubble-plot representation.
-    color_cell_type_dict : dict, optional
-        Mapping from functional category name -> RGBA color.
-
-    Returns
-    -------
-    None
-    """
-    output_path = Path(output_path)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    if color_cell_type_dict is None:
-        color_cell_type_dict = COLOR_CELL_TYPE_DICT
-
-    if display_type not in {"normal", "Inhibitory_Excitatory"}:
-        raise ValueError("display_type must be 'normal' or 'Inhibitory_Excitatory'.")
-    if plot_type not in {"raster", "scatter"}:
-        raise ValueError("plot_type must be 'raster' or 'scatter'.")
-
-    if display_type == "Inhibitory_Excitatory":
-        if df is None:
-            raise ValueError(
-                "df is required for 'Inhibitory_Excitatory' display_type."
-            )
-        matrix = process_matrix(matrix.copy(), df)
-    else:
-        matrix = matrix.copy()
-
-    functional_types = {
-        k: v for k, v in functional_types.items() if v in category_order and k in matrix.index
-    }
-    filtered_indices = [
-        idx
-        for idx in matrix.index
-        if functional_types.get(idx, "unknown") in category_order
-    ]
-    filtered_matrix = matrix.loc[filtered_indices, filtered_indices]
-
-    def sort_key(func_id: str) -> int:
-        category = functional_types.get(func_id, "unknown")
-        return category_order.index(category) if category in category_order else len(
-            category_order
-        )
-
-    sorted_indices = sorted(filtered_indices, key=sort_key)
-    matrix_with_nan = filtered_matrix.loc[sorted_indices, sorted_indices]
-
-    if display_type == "Inhibitory_Excitatory":
-        matrix_with_nan = np.clip(matrix_with_nan, -2, 2)
-
-        colors = [
-            "#9B00AE",  # strong inhibitory (dark magenta)
-            "#FF4DFF",  # weak inhibitory (light magenta)
-            "#FFFFFF",  # zero
-            "#7CFF5A",  # weak excitatory (light green)
-            "#007A00",  # strong excitatory (dark green)
-        ]
-
-        cmap = mcolors.ListedColormap(colors, name="Inhibitory-Excitatory")
-        bounds = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5]
-        norm = mcolors.BoundaryNorm(bounds, cmap.N)
-        ticks = [-2, -1, 0, 1, 2]
-        cbar_label = "Synapse strength (inhibitory → excitatory)"
-    else:
-        cmap = mcolors.ListedColormap(
-            ["white", "blue", "green", "yellow", "pink", "red"]
-        )
-        bounds = [0, 1, 2, 3, 4, 5, 6]
-        norm = mcolors.BoundaryNorm(bounds, cmap.N)
-        ticks = [0, 1, 2, 3, 4, 5]
-        cbar_label = "Number of synapses"
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    if plot_type == "raster":
-        cax = ax.matshow(matrix_with_nan, cmap=cmap, norm=norm)
-        artist_for_cbar = cax
-    else:
-        x, y = np.meshgrid(
-            range(len(matrix_with_nan.columns)), range(len(matrix_with_nan.index))
-        )
-        x_flat, y_flat = x.flatten(), y.flatten()
-        vals = matrix_with_nan.values.flatten()
-        sizes = np.abs(vals) * 100.0
-        scatter = ax.scatter(x_flat, y_flat, c=vals, s=sizes, cmap=cmap, norm=norm)
-        artist_for_cbar = scatter
-
-    ax.set_aspect("equal")
-
-    ax.set_xticks(range(len(matrix_with_nan.columns)))
-    ax.set_yticks(range(len(matrix_with_nan.index)))
-    ax.set_xticklabels(matrix_with_nan.columns, rotation=90, fontsize=5)
-    ax.set_yticklabels(matrix_with_nan.index, fontsize=5)
-    ax.set_xlabel("Pre-synaptic (axons)")
-    ax.set_ylabel("Post-synaptic (dendrites)")
-    ax.set_title(title, fontsize=12)
-
-    bar_width = 1.5   # 50% of original 3
-    bar_height = 1.5  # 50% of original 3
-
-    left_bar_x = -bar_width - 0.5
-    top_bar_y = -bar_height - 0.5
-
-    for i, functional_id in enumerate(matrix_with_nan.index):
-        if functional_id not in functional_types:
-            continue
-        ftype = functional_types[functional_id]
-        color = color_cell_type_dict.get(ftype, (0.8, 0.8, 0.8, 0.7))
-
-        # Left bar (row indicator), fully outside matrix
-        ax.add_patch(
-            patches.Rectangle(
-                (left_bar_x, i - 0.5),
-                bar_width,
-                1,
-                color=color,
-                zorder=2,
-            )
-        )
-
-        # Top bar (column indicator), fully outside matrix
-        ax.add_patch(
-            patches.Rectangle(
-                (i - 0.5, top_bar_y),
-                1,
-                bar_height,
-                color=color,
-                zorder=2,
-            )
-        )
-
-    group_boundaries: List[float] = []
-    last_type = None
-    for i, idx in enumerate(matrix_with_nan.index):
-        current_type = functional_types.get(idx, "unknown")
-        if current_type != last_type:
-            group_boundaries.append(i - 0.5)
-            last_type = current_type
-    group_boundaries.append(len(matrix_with_nan.index) - 0.5)
-
-    for boundary in group_boundaries:
-        ax.axhline(boundary, color="black", linewidth=1.5, zorder=3)
-        ax.axvline(boundary, color="black", linewidth=1.5, zorder=3)
-
-    ax.set_xlim(-1.5, len(matrix_with_nan.columns) - 0.5)
-    ax.set_ylim(len(matrix_with_nan.index) - 0.5, -1.5)
-
-    # ------------------------------------------------------------------
-    # Colorbar (synapse strength) – vertical on the right
-    # ------------------------------------------------------------------
-    cbar = plt.colorbar(
-        artist_for_cbar,
-        ax=ax,
-        boundaries=bounds,
-        ticks=ticks,
-        spacing="uniform",
-        orientation="vertical",
-        fraction=0.045,   # slim colorbar
-        pad=0.02,         # small gap from matrix
-    )
-    cbar.set_label(cbar_label, fontsize=8)
-    cbar.ax.tick_params(labelsize=7)
-
-    # ------------------------------------------------------------------
-    # Legends (all in the top-right, to the RIGHT of the colorbar)
-    # ------------------------------------------------------------------
-    # Figure-coordinates position of the colorbar axis
-    cbar_bbox = cbar.ax.get_position()
-
-    # x coordinate where legends should start: just to the right of the bar
-    legend_x = cbar_bbox.x1 + 0.010
-    legend_y = cbar_bbox.y1   # align with top of colorbar
-
-        # ------------------------------------------------------------------
-    # Legends (all in the top-right, to the RIGHT of the matrix+colorbar)
-    # ------------------------------------------------------------------
-    func_handles = []
-    func_labels = []
-    for cat in category_order:
-        if cat in color_cell_type_dict:
-            func_handles.append(
-                patches.Patch(
-                    color=color_cell_type_dict[cat],
-                    label=cat.replace("_", " "),
-                )
-            )
-            func_labels.append(cat.replace("_", " "))
-
-    # Place legend using the main axes coordinate system:
-    # x > 1 means "to the right of the matrix (and colorbar)"
-    func_legend = ax.legend(
-        handles=func_handles,
-        labels=func_labels,
-        loc="upper left",
-        bbox_to_anchor=(1.25, 1.0),      # move further right if still too close
-        bbox_transform=ax.transAxes,     # coordinates relative to the matrix axes
-        borderaxespad=0.0,
-        fontsize=7,
-        title="Functional type",
-        title_fontsize=8,
-        frameon=False,
-        handlelength=1.5,
-        handletextpad=0.4,
-        labelspacing=0.2,
-    )
-    fig.add_artist(func_legend)
-
-    plt.tight_layout()
-    sanitized_title = (
-        title.lower().replace(" ", "_").replace(":", "").replace("/", "_")
-    )
-    output_pdf_path = output_path / f"{sanitized_title}.pdf"
-    plt.savefig(output_pdf_path, dpi=300, bbox_inches="tight", format="pdf")
-    plt.show()
-
-
 
 def plot_connectivity_matrix(
     matrix: pd.DataFrame,
