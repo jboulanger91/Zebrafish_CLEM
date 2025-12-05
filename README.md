@@ -58,36 +58,43 @@ Outputs are per-neuron folders containing:
 
 ### 3. Connectivity Matrices and Network Diagram Generation
 
-This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate CAVE-derived synapse tables, registered neuron meshes, and functional classifications.
+This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate CAVE‑derived synapse tables, **registered neuron meshes**, and functional classifications.
 
-Both pipelines rely on the mapped neuron outputs generated in **Step 2**. 
+Both pipelines require the mapped-neuron outputs generated in **Step 2 (Reference brain registration)**.
 
 #### 3.1 Connectivity Matrices
 
-This pipeline constructs **directional pre→post synaptic connectivity matrices** between functional/morphologcial neuron/axon classes. 
+This pipeline constructs directional **pre→post synaptic connectivity matrices** between functional/morphological neuron and axon classes.
 
-Outputs: 
-
-- Pooled connectivity matrix (PDF)  
-- Left/right split connectivity matrix showing synapse counts (PDF)  
-- Left/right split connectivity matrix with excitatory/inhibitory representation (PDF) 
+Outputs:
+- Pooled connectivity matrix (PDF)
+- Left/right–split connectivity matrix (PDF)
+- Left/right–split excitatory/inhibitory matrix (PDF)
 
 **Main script:** `make_connectivity_matrices.py`  
 **Helper module:** `connectivity_matrices_helper.py`  
 **Environment:** `env_clem_zfish1_global.yaml`
 
-#### 3.2 Two-Layer Network Diagrams
+#### 3.2 Two‑Layer Network Diagrams
 
-This pipeline creates **compact schematic connectivity diagrams** for selected functional populations:
+This pipeline generates compact, population‑level schematic connectivity diagrams for:
 
-Outputs: 
+- cMI — contralateral motion integrators  
+- MON — motion onset neurons  
+- MC/SMI — slow‑motion integrators  
+- iMI+ — excitatory ipsilateral motion integrators  
+- iMI− — inhibitory ipsilateral motion integrators  
+- iMI_all — pooled ipsilateral motion integrators  
 
-- Four-panel PDF connectivity diagram (inputs, outputs, ipsilateral and contralateral) per population (cMI, MON, MC, iMI+, iMI−)
+These diagrams require **registered neuron meshes**, because hemisphere assignment and cross‑side vs. same‑side connectivity depend on mapped spatial coordinates.
 
-**Main script:** `make_connectome_diagrams.py`  
+Outputs:
+- One four‑panel PDF per population (ipsi/contra × inputs/outputs)
+- A detailed text connectivity table per population
+
+**Main script:** `make_connectivity_diagrams.py`  
 **Helper modules:**  
-- `connectivity_diagrams_helper.py`  
-- `connectivity_matrices_helper.py`  
+- `connectivity_diagrams_helper.py`   
 **Environment:** `env_clem_zfish1_global.yaml`
 
 ---
