@@ -4,11 +4,11 @@
 Helper functions for two-layer network diagrams (hindbrain connectomes).
 
 This module is focused on the two-layer network plots used in
-`make_connectome_diagrams.py`. It reuses generic utilities from
+`make_connectivity_diagrams.py`. It reuses generic utilities from
 `connectivity_matrices_helpers.py` and adds:
 
-- LDA metadata loading
-- Seed ID selection for functional populations (cMI, MON, SMI, iMI±)
+- Metadata loading
+- Seed ID selection for functional populations (cMI, MON, SMI, iMI±, iMI_all)
 - Conversion of hemisphere-resolved connectivity into synapse-count
   probability tables
 - A two-layer network drawing primitive
@@ -47,6 +47,8 @@ from typing import Dict, Iterable, Tuple, List
 import numpy as np
 import pandas as pd
 from colorsys import rgb_to_hls, hls_to_rgb
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from matplotlib.patches import (
     Rectangle,
     Wedge,
@@ -56,6 +58,7 @@ from matplotlib.patches import (
 )
 from matplotlib.legend_handler import HandlerPatch, HandlerBase
 from matplotlib.lines import Line2D
+from typing import Iterable
 
 
 # -------------------------------------------------------------------------
@@ -400,169 +403,241 @@ def draw_two_layer_neural_net(
 
     Overview
     --------
-    The diagram has:
+    The diagram shows:
 
-    - **Layer 1**: one large seed node (the population of interest).
-    - **Layer 2**: one node per connection *category* derived from `data_df`.
-    - **Edges**: straight lines from the seed node to each category node, with
-      width and terminal symbol (arrow / inverted arrow / dot) encoding
-      connection strength and sign.
+    - **Layer 1**: one large seed node (the seed population).
+    - **Layer 2**: one node per connectivity *category* (rows of `data_df` after
+      pre-processing).
+    - **Edges**: straight lines between the seed node and each category node,
+      with line width and terminal symbol encoding connection strength and sign.
+
+    This function **does not** draw any legends; legends are handled separately
+    (e.g. by `draw_full_connectivity_legend`).
 
     Expected columns in `data_df`
     -----------------------------
-    Each row represents one connectivity category and must contain:
+    Each row corresponds to a single connectivity category and must contain:
 
-    - ``'Functional Classifier'``: e.g. ``motion_integrator``,
-      ``motion_onset``, ``slow_motion_integrator``, ``myelinated``,
-      ``axon``, ``not functionally imaged``, etc.
-    - ``'Neurotransmitter Classifier'``: ``excitatory``, ``inhibitory``,
-      or anything else (treated as mixed / unknown).
-    - ``'Projection Classifier'``: ``ipsilateral``, ``contralateral``, or ``'None'``.
-    - ``'Axon Exit Direction'``: free text; we search for the substrings
-      ``'rostrally'`` and/or ``'caudally'`` to determine axon exit direction.
-    - ``'Probability'``: panel-wise probability of that category.
-    - ``'Count'``: number of synapses in that category.
+    - `'Functional Classifier'`:
+        e.g. ``motion_integrator``, ``motion_onset``, ``slow_motion_integrator``,
+        ``myelinated``, ``axon``, ``not functionally imaged``, etc.
+    - `'Neurotransmitter Classifier'`:
+        ``excitatory``, ``inhibitory``, or any other value (treated as mixed/unknown).
+    - `'Projection Classifier'`:
+        ``'ipsilateral'``, ``'contralateral'``, or ``'None'``.
+    - `'Axon Exit Direction'`:
+        free text; substrings ``'rostrally'`` / ``'caudally'`` are used to infer
+        axon exit direction.
+    - `'Probability'`:
+        per-panel probability of that category (used as a fallback if needed).
+    - `'Count'`:
+        number of synapses in that category.
 
     Pre-processing of categories
     ----------------------------
-    Before plotting, the function simplifies `data_df`:
+    Before plotting, `data_df` is simplified as follows:
 
-    1. **“Not functionally imaged”** rows are merged into a single row with
-       summed ``Count`` / ``Probability`` and dummy classifiers
-       (projection = ``'None'``, neurotransmitter = ``'unknown'``).
+    1. **Not functionally imaged**  
+       All rows with ``Functional Classifier == 'not functionally imaged'`` are
+       merged into a single row with summed ``Count`` / ``Probability``, and
+       dummy classifiers:
+           - Projection = ``'None'``
+           - Neurotransmitter = ``'mixed'``.
 
-    2. **Other functional labels** (anything not in
-       {``motion_integrator``, ``motion_onset``, ``slow_motion_integrator``,
-       ``myelinated``, ``not functionally imaged``, ``axon``}) are merged into a
-       single category ``other_functional_types`` (also with ``unknown`` /
-       ``None`` classifiers).
+    2. **Other functional labels**  
+       Any functional label *not* in:
 
-    3. **Motion onset**: ipsilateral and contralateral motion-onset rows are
-       merged into a single ``motion_onset`` category, with its neurotransmitter
-       set to ``inhibitory`` and projection to ``None``.
+           {``motion_integrator``, ``motion_onset``, ``slow_motion_integrator``,
+            ``myelinated``, ``not functionally imaged``, ``axon``}
 
-    4. **Myelinated** rows are merged into a single ``myelinated`` category.
+       is merged into a single category ``'other_functional_types'`` with
+       neurotransmitter = ``'mixed'`` and projection = ``'None'``.
 
-    Node appearance
-    ---------------
-    - **Position**: category nodes are spaced vertically between ``bottom`` and
-      ``top``; the seed node is centered vertically at the left (for
-      ``connection_type='outputs'``) or right (for ``'inputs'``).
+    3. **Motion onset**  
+       All ``motion_onset`` rows (ipsi + contra) are merged into a single
+       ``motion_onset`` category with:
+           - Neurotransmitter = ``'inhibitory'``
+           - Projection = ``'None'``.
 
-    - **Fill color**:
-        - motion_integrator → ipsi/contra-specific keys
-          ``ipsilateral_motion_integrator`` or ``contralateral_motion_integrator``.
-        - slow_motion_integrator → ``slow_motion_integrator`` color.
-        - motion_onset           → ``motion_onset`` color.
-        - myelinated             → ``myelinated`` color.
-        - other_functional_types → ``other_functional_types`` color.
-        - axon:
-            * exits rostrally only  → ``axon_rostral`` color.
-            * exits caudally only   → ``axon_caudal`` color.
-            * exits rostrally **and** caudally → special half black / half white
+    4. **Myelinated**  
+       Multiple ``myelinated`` rows are merged into a single category with
+       summed ``Count`` / ``Probability``.
+
+    Node geometry and appearance
+    ----------------------------
+    - **Placement**:
+        - Category nodes are placed in a vertical stack between ``bottom`` and
+          ``top``.
+        - The seed node is centered vertically and placed at:
+            - ``x = left``  if ``connection_type='outputs'``
+            - ``x = right`` if ``connection_type='inputs'``.
+
+    - **Seed node**:
+        - Radius: ``input_radius = 4 * node_radius``.
+        - Color: fetched from ``COLOR_CELL_TYPE_DICT[input_circle_color]``.
+
+    - **Category node fill color** (via `COLOR_CELL_TYPE_DICT`):
+
+        - ``motion_integrator``:
+            - ipsilateral   → ``'ipsilateral_motion_integrator'``
+            - contralateral → ``'contralateral_motion_integrator'``
+        - ``slow_motion_integrator`` → ``'slow_motion_integrator'``
+        - ``motion_onset``           → ``'motion_onset'``
+        - ``myelinated``             → ``'myelinated'``
+        - ``other_functional_types`` → ``'other_functional_types'``
+        - ``axon``:
+            - exits rostrally only  → ``'axon_rostral'``
+            - exits caudally only   → ``'axon_caudal'``
+            - exits both rostrally and caudally → special half-white/half-black
               circle (independent of `COLOR_CELL_TYPE_DICT`).
-        - anything else            → ``not_functionally_imaged`` color.
+        - anything else             → ``'not_functionally_imaged'``.
 
-      Seed node color is taken from `COLOR_CELL_TYPE_DICT[input_circle_color]`.
+    - **Outline style (cell outline encoding)**:
 
-    - **Outline style (cell outline legend)**:
         - solid   → ``Neurotransmitter Classifier == 'excitatory'``
         - dashed  → ``'inhibitory'``
         - dotted  → all other values (mixed / unknown)
 
-      Outline color is a darkened version of the fill color
-      (via ``_adjust_luminance``).
+      The outline color is a darkened version of the fill color
+      (via ``_adjust_luminance``). For the special half-white/half-black axon
+      case, the outline is a black circle.
 
     - **Node size**:
-        ``radius = node_radius * (1 + 4 * Probability)``, so more probable
-        classes are drawn larger.  The seed node radius is 4× `node_radius`.
 
-    - **Labels**:
-        Controlled by ``label_mode``:
+        A *normalized proportion* is computed for each row:
 
-        - ``'count'``       → raw ``Count``.
-        - ``'proportion'``  → ``Count / denom`` where
-            * denom = ``total_outputs`` for output panels (if given),
-            * denom = ``total_inputs`` for input panels (if given),
-            * otherwise denom = total count in this panel.
-        - ``'probability'`` → uses the ``Probability`` column.
+            prop_norm = Count / denom   (if denom > 0)
+                        or Probability  (if denom == 0)
 
-        If ``label_as_percent=True``, labels are formatted as percentages
-        with ``label_decimals`` decimal places.
+        where ``denom`` depends on context (see below). The category radius is:
 
-    Edges, line width & connector type
-    ----------------------------------
-    For each category node, a straight line is drawn between the seed node
-    and the category node.
+            radius = node_radius * (1 + 4 * prop_norm)
+
+        so higher-fraction categories are drawn larger.
+
+        The seed node radius is fixed at ``4 * node_radius`` and is not
+        scaled by `prop_norm`.
+
+    Normalization and denominators
+    ------------------------------
+    A single denominator `denom` is used per panel for *both* node radii
+    and line widths (and for labels when `label_mode='proportion'`):
+
+    - If `label_mode == 'proportion'`:
+        - outputs panel and `total_outputs` is not None:
+            ``denom = total_outputs`` (cross-panel normalization)
+        - inputs panel and `total_inputs` is not None:
+            ``denom = total_inputs``
+        - otherwise:
+            ``denom = sum(Count)`` within this panel.
+
+    - For other label modes (`'count'`, `'probability'`, `'none'`), the same
+      logic is used so that radii and line widths are still normalized
+      consistently across panels.
+
+    Edge geometry, line width, and connector type
+    ---------------------------------------------
+    For each category node, a straight line is drawn between the seed node and
+    the category node.
 
     - **Direction**:
-        - For ``connection_type='outputs'``: seed → target.
-        - For ``'inputs'``: target → seed (the arguments are swapped so the
-          line still points toward the postsynaptic cell).
+        - ``connection_type='outputs'``:
+            line runs from seed → target node.
+        - ``connection_type='inputs'``:
+            line runs from target → seed (arguments are swapped so the line
+            still points toward the postsynaptic neuron).
 
-    - **Line width (strength of connectivity)**:
+    - **Line width (connection strength)**:
 
-        If ``proportional_lines=True``:
+        The same normalized proportion `prop_norm` used for node radius is
+        used for line width:
 
-            ``linewidth = a * Probability + b``
+            linewidth = a * prop_norm + b     if proportional_lines
+                         b                    otherwise
 
-        so that high-probability categories are drawn with thicker links.
-        If ``proportional_lines=False``, all links have width ``b``.
+        Default values are `a = 110`, `b = 0.1`. This mapping is mirrored in
+        the external legend (e.g. via `draw_full_connectivity_legend`).
 
-        In the legend, three example line widths (e.g. p = 0.05, 0.1, 0.5)
-        are shown to illustrate this mapping (“Fraction of synapses”).
+    - **Connector glyphs at the line tip**:
 
-    - **Connector type (connector legend)**:
+        *Input panels* (``connection_type='inputs'``) use the partner’s
+        neurotransmitter (`Neurotransmitter Classifier`) to choose the glyph:
 
-        For **input panels** (``connection_type='inputs'``), the connector
-        depends on the partner’s neurotransmitter:
+        - ``'excitatory'``:
+            small arrowhead pointing toward the postsynaptic seed node.
+        - ``'inhibitory'``:
+            inverted arrow (triangle) whose base lies on the circle outline and
+            whose tip points away from the circle (outwards).
+        - anything else (mixed/unknown):
+            small filled black circle at the boundary.
 
-        - excitatory → arrowhead pointing toward the postsynaptic seed.
-        - inhibitory → inverted arrow (small triangle) whose base lies on the
-          circle outline and whose tip points away from the circle.
-        - mixed / unknown → no extra symbol (just a line).
+        *Output panels* (``connection_type='outputs'``) instead use the
+        **seed population type** (`input_cell_type`) to choose the glyph:
 
-        For **output panels** (``connection_type='outputs'``), the connector
-        depends on the *seed* population type:
+        - ``input_cell_type == 'excitatory'``:
+            arrowhead at the target node (seed is excitatory).
+        - ``input_cell_type == 'inhibitory'``:
+            inverted arrow at the target node (seed is inhibitory).
+        - ``input_cell_type == 'mixed'``:
+            small filled black circle at the boundary.
 
-        - ``input_cell_type='excitatory'`` → all arrows.
-        - ``'inhibitory'`` → all inverted arrows at the target node.
-        - ``'mixed'`` → black circle at the line endpoint (no arrow).
+    Node labels
+    -----------
+    Controlled by `label_mode`:
+
+    - ``'none'``:
+        no labels are drawn.
+    - ``'count'``:
+        label is the integer `Count`.
+    - ``'proportion'``:
+        label is `prop_norm`, optionally formatted as a percentage.
+    - ``'probability'``:
+        label is taken from the `Probability` column.
+
+    If `label_as_percent=True`, labels are formatted as percentages with
+    `label_decimals` decimal places. Labels are offset to the left or right
+    of the node depending on `connection_type`.
 
     Midline
     -------
-    If ``show_midline=True``, a dashed vertical line is drawn at the center
-    between ``left`` and ``right`` to indicate the midline (used for
-    cross-hemisphere panels).
+    If `show_midline=True`, a dashed vertical line is drawn halfway between
+    `left` and `right` to mark the anatomical midline (used for cross-side
+    panels).
 
     Parameters
     ----------
     ax : matplotlib.axes.Axes
         Axes on which to draw the diagram.
     left, right, bottom, top : float
-        Logical bounds in axis coordinates for placing nodes.
+        Logical bounds for positioning nodes in this axes.
     data_df : pandas.DataFrame
         Connectivity summary with the columns described above.
     node_radius : float
-        Base radius for category nodes (seed node is 4× this radius).
+        Base radius for category nodes (seed node radius = 4× this value).
     input_circle_color : str
-        Key into `COLOR_CELL_TYPE_DICT` for the seed node.
+        Key in `COLOR_CELL_TYPE_DICT` specifying the seed node color.
     input_cell_type : {'excitatory', 'inhibitory', 'mixed'}
-        Type of seed population, used for output connector style.
+        High-level type of the seed population, used to choose connector
+        glyphs in output panels.
     show_midline : bool
         Whether to draw a dashed midline.
     proportional_lines : bool
-        Whether edge line width scales with probability.
+        Whether line width scales with normalized synapse fraction.
     a, b : float
-        Parameters for line-width scaling: ``lw = a * Probability + b``.
+        Parameters for line-width scaling: ``lw = a * prop_norm + b``.
     connection_type : {'inputs', 'outputs'}
         Whether this panel shows inputs to the seed or outputs from it.
-    add_legend : bool
-        If True, draws the three legends described above.
-    label_mode, label_as_percent, label_decimals :
-        Control content and formatting of node labels.
+    label_mode : {'count', 'proportion', 'probability', 'none'}
+        What each category node label displays.
+    label_as_percent : bool
+        If True and label_mode in {'proportion', 'probability'}, format labels
+        as percentages.
+    label_decimals : int
+        Number of decimal places for proportion/probability labels.
     total_outputs, total_inputs : float or None
-        Optional global totals for proportion labels.
+        Optional cross-panel denominators for output and input panels,
+        respectively. If provided, they override within-panel totals when
+        computing `prop_norm`.
     """
     if data_df.empty:
         ax.axis("off")
@@ -1305,9 +1380,267 @@ def draw_full_connectivity_legend(
         borderpad=0.6,
     )
 
+
+def plot_population_networks(
+    *,
+    population_name: str,
+    seed_ids: Iterable[int] | Iterable[str],
+    metadata_df: pd.DataFrame,
+    root_folder: Path,
+    output_folder: Path,
+    plot_suffix: str,
+    input_circle_color: str,
+    input_cell_type: str,
+    outputs_total_mode: str = "both",
+) -> None:
+    """
+    Generate a 4-panel two-layer network figure for a given seed population
+    and export a detailed text connectivity table.
+
+    Layout
+    ------
+    The main figure consists of a 2×2 grid of network panels plus a separate
+    legend column on the right:
+
+        [0,0] Ipsilateral input synapses
+        [0,1] Contralateral input synapses
+        [1,0] Ipsilateral output synapses
+        [1,1] Contralateral output synapses
+
+    Each panel is a two-layer network:
+
+        • Layer 1 (input): a single seed-population node, colored according
+          to `input_circle_color`.
+
+        • Layer 2 (output): one node per connection category, where a
+          category is defined by a unique combination of:
+
+              - Functional Classifier
+              - Neurotransmitter Classifier
+              - Projection Classifier
+              - Axon Exit Direction
+
+        • Edges: the line thickness encodes the fraction of synapses
+          assigned to that category in the corresponding panel. Fractions
+          are computed by `summarize_connectome` and mapped to a line
+          width via:
+
+              line_width = a * p + b
+
+          with `a = 12` and `b = 1` in the current implementation
+          (passed to `draw_two_layer_neural_net`).
+
+        • Connector glyphs: a symbol at the *tip* of each line encodes
+          the synaptic sign, using the same conventions as the legend
+          drawn by `draw_full_connectivity_legend`:
+
+              - Excitation : arrow pointing outward from the postsynaptic node
+              - Inhibition : inverted arrow / T-like symbol pointing inward
+              - Mixed      : small filled black circle at the tip
+              - Unknown    : straight line, no marker
+
+    All four panels share identical x/y limits so that circle sizes and line
+    widths are visually comparable across panels and populations, independent
+    of how many categories appear in each panel.
+
+    Parameters
+    ----------
+    population_name : str
+        Short label used for console messages and filenames
+        (e.g. 'cMI', 'MON', 'SMI', 'iMI+', 'iMI-', 'iMI_all').
+    seed_ids : iterable of int or str
+        Nucleus IDs used as seed neurons when building the connectome.
+    metadata_df : pandas.DataFrame
+        Metadata for all reconstructed neurons/axons. Must contain hemisphere
+        information and the functional / neurotransmitter / projection
+        classifiers consumed by `summarize_connectome`. No LDA-specific
+        columns are assumed at this stage.
+    root_folder : Path
+        Root folder containing traced-neuron subfolders with synapse CSVs.
+    output_folder : Path
+        Folder where the resulting PDF network diagrams and TXT tables
+        will be saved.
+    plot_suffix : str
+        Suffix included in the output filenames (e.g. 'ic_all_lda_110725').
+    input_circle_color : str
+        Functional color key passed to `draw_two_layer_neural_net` to
+        color the seed node, e.g.:
+            'ipsilateral_motion_integrator',
+            'contralateral_motion_integrator',
+            'motion_onset',
+            'slow_motion_integrator',
+            'myelinated'.
+    input_cell_type : str
+        High-level description of the seed population, used by
+        `draw_two_layer_neural_net` to select the connector type for
+        *output* synapses. Typical values:
+            'inhibitory', 'excitatory', 'mixed'.
+    outputs_total_mode : {'both', 'same_only'}, optional
+        Controls how the total number of output synapses is computed
+        for cross-panel normalization of output fractions:
+            'both'      : ipsilateral + contralateral outputs (default).
+            'same_only' : ipsilateral outputs only (used for iMI populations).
+    """
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # 1. Build and summarize the connectome for this seed population
+    # ------------------------------------------------------------------
+    print(f"\n=== Population: {population_name} ===")
+    summary = summarize_connectome(
+        root_folder=root_folder,
+        seed_ids=seed_ids,
+        hemisphere_df=metadata_df,
+        outputs_total_mode=outputs_total_mode,
+        functional_only=False,
+    )
+
+    same_out_syn = summary["same_out_syn"]
+    diff_out_syn = summary["diff_out_syn"]
+    same_in_syn = summary["same_in_syn"]
+    diff_in_syn = summary["diff_in_syn"]
+    total_outputs = summary["total_outputs"]
+    total_inputs = summary["total_inputs"]
+
+    print(f"Total output synapses: {total_outputs}")
+    print(f"Total input synapses:  {total_inputs}")
+
+    # ------------------------------------------------------------------
+    # 2. Build the 2×2 figure + legend column
+    # ------------------------------------------------------------------
+    # We make a 2×3 grid: 2 rows of network panels, 3rd column only for legends.
+    fig = plt.figure(figsize=(18, 12))
+
+    gs = gridspec.GridSpec(
+        2,
+        3,
+        width_ratios=[1.0, 1.0, 0.7],  # last column reserved for legend
+        wspace=0.30,
+        hspace=0.35,
+    )
+
+    ax00 = fig.add_subplot(gs[0, 0])  # ipsilateral inputs
+    ax01 = fig.add_subplot(gs[0, 1])  # contralateral inputs
+    ax10 = fig.add_subplot(gs[1, 0])  # ipsilateral outputs
+    ax11 = fig.add_subplot(gs[1, 1])  # contralateral outputs
+
+    # Legend axis (spans both rows); we draw no data here, only legends.
+    legend_ax = fig.add_subplot(gs[:, 2])
+    legend_ax.axis("off")
+
+    axes = [ax00, ax01, ax10, ax11]
+
+    titles = [
+        "Ipsilateral input synapses",
+        "Contralateral input synapses",
+        "Ipsilateral output synapses",
+        "Contralateral output synapses",
+    ]
+
+    dataframes = [
+        same_in_syn,
+        diff_in_syn,
+        same_out_syn,
+        diff_out_syn,
+    ]
+
+    connection_types = [
+        "inputs",
+        "inputs",
+        "outputs",
+        "outputs",
+    ]
+
+    # Midline only makes sense for the cross-side (contralateral) panels:
+    # → only the right-hand panels (index 1 and 3) get midlines.
+    show_midlines = [False, True, False, True]
+
+    # ------------------------------------------------------------------
+    # 2a. Draw the four network panels
+    # ------------------------------------------------------------------
+    for ax, title, df_syn, ctype, show_midline_flag in zip(
+        axes, titles, dataframes, connection_types, show_midlines
+    ):
+        kwargs: dict = {}
+        if ctype == "outputs":
+            kwargs["total_outputs"] = total_outputs
+        else:
+            kwargs["total_inputs"] = total_inputs
+
+        draw_two_layer_neural_net(
+            ax=ax,
+            left=0.1,
+            right=0.6,
+            bottom=0.5,
+            top=1.1,
+            data_df=df_syn,
+            node_radius=0.02,
+            input_circle_color=input_circle_color,
+            input_cell_type=input_cell_type,
+            show_midline=show_midline_flag,
+            proportional_lines=True,
+            a=12,
+            b=1,
+            connection_type=ctype,
+            label_mode="proportion",
+            label_as_percent=True,
+            label_decimals=1,
+            **kwargs,
+        )
+        ax.set_title(title, fontsize=14)
+
+    # ------------------------------------------------------------------
+    # 2b. Enforce common data limits across panels
+    # ------------------------------------------------------------------
+    # Explicit limits so that node radii and line widths are visually
+    # comparable across panels and populations.
+    for ax in axes:
+        ax.set_xlim(-0.4, 1.1)  # tuned to give a good layout
+        ax.set_ylim(0.3, 1.3)
+
+    # ------------------------------------------------------------------
+    # 3. Draw the legends into the dedicated legend axis
+    # ------------------------------------------------------------------
+    draw_full_connectivity_legend(
+        legend_ax,
+        input_circle_color=input_circle_color,
+        a_for_width=12.0,  # must match the 'a' passed to draw_two_layer_neural_net
+        b_for_width=1.0,   # must match the 'b' passed to draw_two_layer_neural_net
+    )
+
+    # ------------------------------------------------------------------
+    # 4. Global title
+    # ------------------------------------------------------------------
+    fig.suptitle(
+        f"{population_name}: connectivity diagrams",
+        fontsize=16,
+        y=0.98,
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Save figure
+    # ------------------------------------------------------------------
+    basename_pdf = f"{plot_suffix}.pdf"
+    out_path_pdf = output_folder / basename_pdf
+    plt.savefig(out_path_pdf, dpi=300, bbox_inches="tight", format="pdf")
+    plt.show()
+    print(f"Saved figure: {out_path_pdf}")
+
+    # ------------------------------------------------------------------
+    # 6. Export detailed TXT connectivity table
+    # ------------------------------------------------------------------
+    txt_path = export_connectivity_tables_txt(
+        population_name=population_name,
+        summary=summary,
+        output_folder=output_folder,
+        suffix=plot_suffix,
+    )
+    print(f"Saved connectivity table: {txt_path}")
+
 # -------------------------------------------------------------------------
 # High-level summariser + TXT export used by the main script
 # -------------------------------------------------------------------------
+
 
 def summarize_connectome(
     root_folder: Path | str,
