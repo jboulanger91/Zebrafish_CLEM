@@ -35,10 +35,11 @@ mesh files using `determine_hemisphere` from the helper module.
 Typical usage
 -------------
 python3 make_connectivity_matrices.py \
-    --metadata-csv "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
-    --root-folder "/Users/jonathanboulanger-weill/Harvard University Dropbox/Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
+    --metadata-csv ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv" \
+    --root-folder ".../Zebrafish_CLEM/1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons" \
     --output-folder connectivity_matrices \
     --plot-type scatter \
+    --with-lda \
     --suffix gt
 
 All paths should be adapted to your local setup.
@@ -56,8 +57,10 @@ import pandas as pd
 from connectivity_matrices_helpers import (
     COLOR_CELL_TYPE_DICT,
     COLOR_CELL_TYPE_DICT_LR,
+    COLOR_CELL_TYPE_DICT_LR_LDA,
     create_nucleus_id_groups,
     create_nucleus_id_groups_hemisphere,
+    create_nucleus_id_groups_hemisphere_LDA,
     determine_hemisphere,
     filter_connectivity_matrix,
     generate_directional_connectivity_matrix_general,
@@ -131,6 +134,11 @@ def parse_args() -> argparse.Namespace:
         choices=["heatmap", "scatter"],
         default="heatmap",
         help="Plot style for both matrices ('heatmap' or 'scatter').",
+    )
+    parser.add_argument(
+        "--with-lda",
+        action="store_true",
+        help="If set, compute the LDA-split connectivity matrix (requires metadata with LDA predictions).",
     )
     parser.add_argument(
         "--suffix",
@@ -405,6 +413,96 @@ def main() -> None:
 
     logger.info("Connectivity matrix generation finished successfully.")
 
+        # ------------------------------------------------------------------
+    # 4. Left/right split connectivity matrix with LDA native/predicted
+    # ------------------------------------------------------------------
+    if "lda" not in all_cells.columns:
+        logger.warning(
+            "Skipping Left/Right LDA-split matrix: metadata has no 'lda' column. "
+            "Run the LDA integration step first."
+        )
+    else:
+        logger.info("Building Left/Right LDA-split functional groups...")
+        nucleus_id_groups_lr_lda = create_nucleus_id_groups_hemisphere_LDA(all_cells)
+        functional_types_lr_lda = generate_functional_types(nucleus_id_groups_lr_lda)
+
+        all_ids_nuc_lr_lda = np.concatenate(list(nucleus_id_groups_lr_lda.values()))
+        logger.info(
+            "Total Left/Right LDA-split IDs used in matrix: %d",
+            len(all_ids_nuc_lr_lda),
+        )
+
+        logger.info(
+            "Computing Left/Right LDA-split directional connectivity matrix..."
+        )
+        connectivity_matrix_lr_lda = generate_directional_connectivity_matrix_general(
+            root_folder=root_folder,
+            seg_ids=all_ids_nuc_lr_lda,
+            df_w_hemisphere=all_cells,
+        )
+
+        logger.info(
+            "Filtering Left/Right LDA-split connectivity matrix to non-zero rows/cols..."
+        )
+        filtered_matrix_lr_lda, filtered_types_lr_lda = filter_connectivity_matrix(
+            connectivity_matrix_lr_lda,
+            functional_types_lr_lda,
+        )
+
+        # Category order: left hemisphere (native/predicted), then right
+        category_order_lr_lda = [
+            # Left: axons
+            "axon_rostral_left",
+            # Left: motion integrators (ipsi / contra)
+            "motion_integrator_ipsilateral_left_native",
+            "motion_integrator_ipsilateral_left_predicted",
+            "motion_integrator_contralateral_left_native",
+            "motion_integrator_contralateral_left_predicted",
+            # Left: motion onset
+            "motion_onset_left_native",
+            "motion_onset_left_predicted",
+            # Left: slow motion integrator
+            "slow_motion_integrator_left_native",
+            "slow_motion_integrator_left_predicted",
+            # Left: myelinated
+            "myelinated_left",
+            # Left: axon caudal
+            "axon_caudal_left",
+
+            # Right: axons
+            "axon_rostral_right",
+            # Right: motion integrators (ipsi / contra)
+            "motion_integrator_ipsilateral_right_native",
+            "motion_integrator_ipsilateral_right_predicted",
+            "motion_integrator_contralateral_right_native",
+            "motion_integrator_contralateral_right_predicted",
+            # Right: motion onset
+            "motion_onset_right_native",
+            "motion_onset_right_predicted",
+            # Right: slow motion integrator
+            "slow_motion_integrator_right_native",
+            "slow_motion_integrator_right_predicted",
+            # Right: myelinated
+            "myelinated_right",
+            # Right: axon caudal
+            "axon_caudal_right",
+        ]
+
+        lr_lda_title = f"left-right_matrix_e-i_raster_LDA_split{suffix_str}"
+        logger.info(
+            "Plotting Left/Right LDA-split connectivity matrix in inhibitory/excitatory mode..."
+        )
+        plot_connectivity_matrix(
+            filtered_matrix_lr_lda,
+            filtered_types_lr_lda,
+            output_path=output_folder,
+            category_order=category_order_lr_lda,
+            df=all_cells,
+            title=lr_lda_title,
+            display_type="Inhibitory_Excitatory",
+            plot_type="raster",
+            color_cell_type_dict=COLOR_CELL_TYPE_DICT_LR_LDA,
+        )
 
 if __name__ == "__main__":
     main()

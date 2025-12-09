@@ -1440,3 +1440,201 @@ def plot_connectivity_matrix(
     output_pdf_path = output_path / f"{sanitized_title}.pdf"
     plt.savefig(output_pdf_path, dpi=300, bbox_inches="tight", format="pdf")
     plt.show()
+
+
+# -------------------------------------------------------------------------
+# Functions for differentiating LDA predicted vs. ground-truth cells
+# -------------------------------------------------------------------------
+
+def create_nucleus_id_groups_hemisphere_LDA(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """
+    Group nucleus/axon IDs by functional type, hemisphere, and LDA (native/predicted).
+
+    This version expands each functional population into:
+        <class>_<hemisphere>_<lda>
+    e.g.:
+        integrator_ipsilateral_left_native
+        integrator_ipsilateral_left_predicted
+    """
+    groups = {}
+
+    # -----------------------------
+    # Helper to add grouped entries
+    # -----------------------------
+    def add_group(name, mask):
+        groups[name] = df.loc[mask, "nucleus_id"].astype(str).tolist()
+
+    # ============================= AXONS (no LDA split) =============================
+    groups["axon_rostral_left"] = df.loc[
+        (df.type == "axon") &
+        (df.comment == "axon exits the volume rostrally") &
+        (df.hemisphere == "L"),
+        "axon_id"
+    ].astype(str).tolist()
+
+    groups["axon_rostral_right"] = df.loc[
+        (df.type == "axon") &
+        (df.comment == "axon exits the volume rostrally") &
+        (df.hemisphere == "R"),
+        "axon_id"
+    ].astype(str).tolist()
+
+    groups["axon_caudal_left"] = df.loc[
+        (df.type == "axon") &
+        (df.comment == "axon exits the volume caudally") &
+        (df.hemisphere == "L"),
+        "axon_id"
+    ].astype(str).tolist()
+
+    groups["axon_caudal_right"] = df.loc[
+        (df.type == "axon") &
+        (df.comment == "axon exits the volume caudally") &
+        (df.hemisphere == "R"),
+        "axon_id"
+    ].astype(str).tolist()
+
+    # ============================= CELLS (with LDA split) =============================
+    for hemi in ["L", "R"]:
+        hemi_str = "left" if hemi == "L" else "right"
+
+        for lda_flag in ["native", "predicted"]:
+
+            # Integrator ipsilateral
+            add_group(
+                f"motion_integrator_ipsilateral_{hemi_str}_{lda_flag}",
+                (df.type == "cell") &
+                (df["functional classifier"] == "motion_integrator") &
+                (df["projection classifier"] == "ipsilateral") &
+                (df.hemisphere == hemi) &
+                (df.lda == lda_flag)
+            )
+
+            # Integrator contralateral
+            add_group(
+                f"motion_integrator_contralateral_{hemi_str}_{lda_flag}",
+                (df.type == "cell") &
+                (df["functional classifier"] == "motion_integrator") &
+                (df["projection classifier"] == "contralateral") &
+                (df.hemisphere == hemi) &
+                (df.lda == lda_flag)
+            )
+
+            # Motion onset
+            add_group(
+                f"motion_onset_{hemi_str}_{lda_flag}",
+                (df.type == "cell") &
+                (df["functional classifier"] == "motion_onset") &
+                (df.hemisphere == hemi) &
+                (df.lda == lda_flag)
+            )
+
+            # Slow motion integrator
+            add_group(
+                f"slow_motion_integrator_{hemi_str}_{lda_flag}",
+                (df.type == "cell") &
+                (df["functional classifier"] == "slow_motion_integrator") &
+                (df.hemisphere == hemi) &
+                (df.lda == lda_flag)
+            )
+
+            # Myelinated (no LDA, but match format)
+            add_group(
+                f"myelinated_{hemi_str}",
+                (df.type == "cell") &
+                (df["functional classifier"] == "myelinated") &
+                (df.hemisphere == hemi)
+            )
+
+    return groups
+
+COLOR_CELL_TYPE_DICT_LR_LDA = {
+# ===== Motion Integrators (Ipsi) =====
+"motion_integrator_ipsilateral_left_native":  (254/255,179/255, 38/255,0.7),
+"motion_integrator_ipsilateral_left_predicted": (254/255,220/255, 80/255,0.7),
+"motion_integrator_ipsilateral_right_native": (254/255,179/255, 38/255,0.7),
+"motion_integrator_ipsilateral_right_predicted": (254/255,220/255, 80/255,0.7),
+
+# ===== Motion Integrators (Contra) =====
+"motion_integrator_contralateral_left_native":  (232/255, 77/255,138/255,0.7),
+"motion_integrator_contralateral_left_predicted": (255/255,105/255,180/255,0.7),
+"motion_integrator_contralateral_right_native": (232/255, 77/255,138/255,0.7),
+"motion_integrator_contralateral_right_predicted": (255/255,105/255,180/255,0.7),
+
+# ===== Motion Onset =====
+"motion_onset_left_native":  (100/255,197/255,235/255,0.7),
+"motion_onset_left_predicted": (160/255,220/255,250/255,0.7),
+"motion_onset_right_native": (100/255,197/255,235/255,0.7),
+"motion_onset_right_predicted": (160/255,220/255,250/255,0.7),
+
+# ===== Slow Motion Integrator =====
+"slow_motion_integrator_left_native":  (127/255, 88/255,175/255,0.7),
+"slow_motion_integrator_left_predicted": (180/255,130/255,210/255,0.7),
+"slow_motion_integrator_right_native": (127/255, 88/255,175/255,0.7),
+"slow_motion_integrator_right_predicted": (180/255,130/255,210/255,0.7),
+
+# ===== Myelinated =====
+"myelinated_left": (80/255,220/255,100/255,0.7),
+"myelinated_right": (80/255,220/255,100/255,0.7),
+
+# ===== Axons (no LDA split) =====
+"axon_rostral_left": (1,1,1,0.7),
+"axon_rostral_right": (1,1,1,0.7),
+"axon_caudal_left": (0,0,0,0.7),
+"axon_caudal_right": (0,0,0,0.7),
+}
+
+def plot_LDA_split_connectivity_matrix(
+    df: pd.DataFrame,
+    root_folder: Union[str, Path],
+    output_folder: Union[str, Path],
+    title: str,
+    suffix: str = "",
+):
+    """
+    Convenience wrapper that:
+        1. Creates hemisphere + LDA split functional groups
+        2. Creates ID → functional_type mapping
+        3. Builds directional connectivity matrix
+        4. Filters it
+        5. Plots using Inhibitory–Excitatory scheme but with
+           grey-only shading for axons.
+
+    Produces a raster-mode IE matrix with all functional + predicted classes.
+    """
+
+    # 1. Build LDA-split groups
+    nucleus_groups = create_nucleus_id_groups_hemisphere_LDA(df)
+    func_types = generate_functional_types(nucleus_groups)
+
+    # 2. Combine all IDs
+    all_ids = np.concatenate([v for v in nucleus_groups.values()])
+
+    # 3. Build matrix
+    matrix = generate_directional_connectivity_matrix_general(
+        root_folder=root_folder,
+        seg_ids=all_ids,
+        df_w_hemisphere=df,
+    )
+
+    # 4. Filter
+    filtered_matrix, filtered_types = filter_connectivity_matrix(
+        matrix, func_types
+    )
+
+    # 5. Build category order dynamically
+    # Ordered by hemisphere left→right and functional block
+    category_order = sorted(func_types.values(),
+                            key=lambda x: (("_right" in x), x))
+
+    # 6. Plot
+    plot_connectivity_matrix(
+        filtered_matrix,
+        filtered_types,
+        output_path=output_folder,
+        category_order=category_order,
+        df=df,
+        title=f"{title}{suffix}",
+        display_type="Inhibitory_Excitatory",
+        plot_type="raster",
+        color_cell_type_dict=COLOR_CELL_TYPE_DICT_LR_LDA,
+    )

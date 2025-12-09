@@ -104,8 +104,13 @@ def integrate_lda_predictions_into_metadata(
         )
     )
 
-    # Add an LDA status column: default is 'native', changed to 'predicted' when updated
-    metadata_df["lda"] = "native"
+    # Add an LDA status column placed *immediately after* the 'hemisphere' column
+    if "hemisphere" in metadata_df.columns:
+        hemisphere_idx = metadata_df.columns.get_loc("hemisphere")
+        metadata_df.insert(hemisphere_idx + 1, "lda", "native")
+    else:
+        # Fallback: append at end if hemisphere isn't present
+        metadata_df["lda"] = "native"
 
     # Standardize ID columns as strings for matching
     metadata_df["nucleus_id"] = metadata_df["nucleus_id"].astype(str).str.strip()
