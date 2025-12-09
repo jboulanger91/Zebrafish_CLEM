@@ -15,28 +15,35 @@ def integrate_lda_predictions_into_metadata(
     This function:
       1. Loads the original metadata CSV (one row per reconstructed neuron / axon).
       2. Loads LDA prediction results from an Excel file.
-      3. For cells that are currently "not functionally imaged" (and not myelinated),
+      3. Normalizes functional classifier names in the metadata to the canonical set:
+            - integrator_*      → motion_integrator
+            - dynamic_threshold → motion_onset
+            - motor_command     → slow_motion_integrator
+      4. For cells that are currently "not functionally imaged" (and not myelinated),
          it looks up LDA predictions and, if they pass all tests, updates:
-             - 'functional classifier'
+             - 'functional classifier' (using the canonical names above)
              - 'functional_id'  (assigned a new integer ID)
              - 'lda'            ('native' → 'predicted')
-      4. Saves the updated metadata to a new CSV and returns it.
+      5. Saves the updated metadata to a new CSV and returns it.
 
     Matching logic
     --------------
-    - Metadata: rows with
-        type == 'cell'
-        functional_id == 'not functionally imaged'
-        functional classifier != 'myelinated'
+    - Metadata: candidate rows satisfy
+          type == 'cell'
+          functional_id == 'not functionally imaged'
+          functional classifier != 'myelinated'
     - LDA table: matched by
-        metadata['nucleus_id'] <-> lda_predictions['cell_name'] (with 'cell_' stripped)
+          metadata['nucleus_id']  <->  lda_predictions['cell_name'] (with 'cell_' stripped)
     - LDA prediction is accepted only if `passed_tests` is TRUE.
 
-    Functional classifier updates
-    -----------------------------
-    - prediction in {'integrator_ipsilateral', 'integrator_contralateral'} → 'integrator'
-    - prediction in {'dynamic_threshold', 'motor_command'}                 → that string
-    - 'lda' column is set to 'predicted' for updated rows.
+    Functional classifier updates from LDA
+    --------------------------------------
+    - prediction in {'integrator_ipsilateral', 'integrator_contralateral', 'integrator'}
+            → 'motion_integrator'
+    - prediction == 'dynamic_threshold'
+            → 'motion_onset'
+    - prediction == 'motor_command'
+            → 'slow_motion_integrator'
 
     Parameters
     ----------
@@ -72,14 +79,29 @@ def integrate_lda_predictions_into_metadata(
     lda_predictions = pd.read_excel(lda_excel)
 
     # ------------------------------------------------------------------
-    # 2. Standardize naming / create LDA status column
+    # 2. Normalize functional classifiers & create LDA status column
     # ------------------------------------------------------------------
-    # Normalize functional classifier names to snake_case where needed
-    metadata_df["functional classifier"] = metadata_df["functional classifier"].replace(
-        {
-            "dynamic threshold": "dynamic_threshold",
-            "motor command": "motor_command",
-        }
+    # Normalize metadata functional classifiers to canonical labels
+    metadata_df["functional classifier"] = (
+        metadata_df["functional classifier"]
+        .astype(str)
+        .str.strip()
+        .replace(
+            {
+                # Everything “integrator_*” becomes motion_integrator
+                "integrator_contralateral": "motion_integrator",
+                "integrator_ipsilateral": "motion_integrator",
+                "integrator": "motion_integrator",
+
+                # dynamic threshold → motion onset
+                "dynamic_threshold": "motion_onset",
+                "dynamic threshold": "motion_onset",
+
+                # motor command → slow motion integrator
+                "motor_command": "slow_motion_integrator",
+                "motor command": "slow_motion_integrator",
+            }
+        )
     )
 
     # Add an LDA status column: default is 'native', changed to 'predicted' when updated
@@ -95,7 +117,7 @@ def integrate_lda_predictions_into_metadata(
     )
 
     # ------------------------------------------------------------------
-    # 3. How many cells are candidates for prediction?
+    # 3. Identify cells that are candidates for LDA-based annotation
     # ------------------------------------------------------------------
     mask_candidates = (
         (metadata_df["type"] == "cell")
@@ -126,7 +148,7 @@ def integrate_lda_predictions_into_metadata(
             continue  # no prediction for this cell
 
         # Extract prediction and test status from the first match
-        predicted_functional_id = matching_row.iloc[0]["prediction"]
+        predicted_functional_id = str(matching_row.iloc[0]["prediction"]).strip()
         pooled_tests = matching_row.iloc[0]["passed_tests"]
 
         # Only accept predictions where all tests pass
@@ -134,26 +156,40 @@ def integrate_lda_predictions_into_metadata(
             continue
 
         # --------------------------------------------------------------
-        # Update functional classifier based on the prediction
+        # Map LDA prediction to canonical functional classifier
         # --------------------------------------------------------------
-        if predicted_functional_id in {"integrator_ipsilateral", "integrator_contralateral"}:
-            metadata_df.at[idx, "functional classifier"] = "integrator"
-        elif predicted_functional_id in {"dynamic_threshold", "motor_command"}:
-            metadata_df.at[idx, "functional classifier"] = predicted_functional_id
+        if predicted_functional_id in {
+            "integrator_ipsilateral",
+            "integrator_contralateral",
+            "integrator",
+        }:
+            new_fc = "motion_integrator"
+        elif predicted_functional_id == "dynamic_threshold":
+            new_fc = "motion_onset"
+        elif predicted_functional_id == "motor_command":
+            new_fc = "slow_motion_integrator"
+        else:
+            # Unknown / unsupported prediction → skip
+            if verbose:
+                print(
+                    f"[LDA] nucleus_id={nucleus}: unsupported prediction "
+                    f"'{predicted_functional_id}', skipping."
+                )
+            continue
 
-        # Mark as LDA-predicted
+        # Apply updates to the metadata table
+        metadata_df.at[idx, "functional classifier"] = new_fc
         metadata_df.at[idx, "lda"] = "predicted"
-
-        # Assign a new integer functional_id
         metadata_df.at[idx, "functional_id"] = functional_id_counter
-        functional_id_counter += 1
 
         if verbose:
             print(
                 f"[LDA] nucleus_id={nucleus} → "
-                f"functional_id={functional_id_counter - 1}, "
-                f"prediction={predicted_functional_id}, tests_passed=TRUE"
+                f"functional_id={functional_id_counter}, "
+                f"prediction={predicted_functional_id} → {new_fc}, tests_passed=TRUE"
             )
+
+        functional_id_counter += 1
 
     # ------------------------------------------------------------------
     # 5. Save updated metadata
@@ -163,3 +199,25 @@ def integrate_lda_predictions_into_metadata(
         print(f"Updated metadata with LDA predictions saved to: {output_csv}")
 
     return metadata_df
+
+
+# Example call
+updated_df = integrate_lda_predictions_into_metadata(
+    metadata_csv=(
+        "/Users/jonathanboulanger-weill/Harvard University Dropbox/"
+        "Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/"
+        "1. Downloading_neuronal_morphologies_and_metadata/all_reconstructed_neurons.csv"
+    ),
+    lda_excel=(
+        "/Users/jonathanboulanger-weill/Harvard University Dropbox/"
+        "Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/"
+        "4. Morphology_based_prediction_of_neuronal_functional_types/LDA_predictions.xlsx"
+    ),
+    output_csv=(
+        "/Users/jonathanboulanger-weill/Harvard University Dropbox/"
+        "Jonathan Boulanger-Weill/Projects/Zebrafish_CLEM/"
+        "4. Morphology_based_prediction_of_neuronal_functional_types/"
+        "all_reconstructed_neurons_with_LDA_predictions.csv"
+    ),
+    verbose=True,
+)
