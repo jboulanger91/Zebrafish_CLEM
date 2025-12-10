@@ -1,4 +1,4 @@
-# LDA-Based Functional Prediction
+## LDA-Based Functional Prediction
 
 This module integrates morphology-based LDA predictions into the master metadata table.
 It updates neurons originally labeled *not functionally imaged* with predicted functional
