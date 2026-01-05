@@ -4,6 +4,8 @@
 
 This repository hosts collaborative analyses on the structure–function relationships in the zebrafish hindbrain, integrating synaptic connectivity, morphology-based predictions, and network modeling.
 
+The dataset can be visualized with Neuroglancer. Follow the instruction to get access using this website: https://jboulanger91.github.io/fish1.5-release/
+
 ---
 
 ## Repository Structure
