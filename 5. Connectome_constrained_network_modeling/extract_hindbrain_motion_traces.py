@@ -8,15 +8,19 @@ Extract hindbrain neurons belonging to motion-related functional clusters
 (slow motion integrator, motion onset, motion integrator), compute each
 neuron's preferred-direction *raw* trace (no normalization), and export:
 
-  - One CSV per cluster type containing ONLY the mean preferred trace:
-        time_s, mean_preferred_raw
+  - One CSV per cluster type containing the INDIVIDUAL per-neuron preferred traces
+    in wide format:
+        time_s, neuron_<id>, neuron_<id>, ...
+
+Also saves:
+  - One PDF with 3 side-by-side square subplots (all traces + mean in black)
 
 Also prints how many functional (cluster) types were exported.
 """
 
 import os
 import re
-from typing import Dict, Tuple, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -63,7 +67,7 @@ CELLTYPE_TO_TITLE: Dict[str, str] = {
 VALID_CLUSTERS = [0, 1, 2]  # keep order for plotting
 
 # Optional colors (your palette)
-CELLTYPE_TO_COLOR: Dict[str, tuple] = {
+CELLTYPE_TO_COLOR: Dict[str, Tuple[float, float, float]] = {
     "motion_integrator": (232 / 255, 77 / 255, 138 / 255),
     "motion_onset": (100 / 255, 197 / 255, 235 / 255),
     "slow_motion_integrator": (127 / 255, 88 / 255, 175 / 255),
@@ -147,10 +151,12 @@ def extract_preferred_raw_traces(
       - Return preferred RAW (smoothed) trace
 
     Returns:
-      traces: (N, T) array
-      time:   (T,) seconds
+      traces:   (N, T) array
+      used_ids: list of neuron IDs actually used (same order as traces)
+      time:     (T,) seconds
     """
     traces = []
+    used_ids = []
 
     with h5py.File(hdf5_path, "r") as h5:
         for nid in cell_ids:
@@ -181,27 +187,38 @@ def extract_preferred_raw_traces(
                 continue
 
             traces.append(pref.astype(float))
+            used_ids.append(int(nid))
 
     if not traces:
-        return np.zeros((0, 0), dtype=float), np.zeros((0,), dtype=float)
+        return np.zeros((0, 0), dtype=float), [], np.zeros((0,), dtype=float)
 
     # enforce consistent length across neurons
     T = min(len(t) for t in traces)
     traces = np.vstack([t[:T] for t in traces])
     time = np.arange(T) * DT
-    return traces, time
+    return traces, used_ids, time
 
 
-def export_mean_trace_csv(
+def export_individual_traces_wide_csv(
     traces: np.ndarray,
+    used_ids: List[int],
     time: np.ndarray,
     out_csv: str,
 ) -> None:
-    """Save ONLY the mean preferred raw trace."""
-    mean_tr = np.nanmean(traces, axis=0)
-    df = pd.DataFrame({"time_s": time, "mean_preferred_raw": mean_tr})
+    """
+    Save INDIVIDUAL per-neuron preferred-raw traces in WIDE format:
+        time_s, neuron_<id>, neuron_<id>, ...
+    """
+    if traces.size == 0:
+        print(f"[WARN] No traces to export: {out_csv}")
+        return
+
+    df = pd.DataFrame({"time_s": time})
+    for i, nid in enumerate(used_ids):
+        df[f"neuron_{nid}"] = traces[i, :]
+
     df.to_csv(out_csv, index=False)
-    print(f"[INFO] Saved mean trace CSV: {out_csv}")
+    print(f"[INFO] Saved individual traces CSV (wide): {out_csv}")
 
 
 def plot_three_clusters_side_by_side(
@@ -222,11 +239,13 @@ def plot_three_clusters_side_by_side(
         traces = traces_by_celltype.get(cell_type)
         time = time_by_celltype.get(cell_type)
 
-        ax.set_box_aspect(1)  # ⬅️ square subplot
+        ax.set_box_aspect(1)
 
         if traces is None or traces.size == 0:
             ax.set_title(f"{title}\n(n=0)")
             ax.set_xlabel("Time (s)")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
             continue
 
         color = CELLTYPE_TO_COLOR.get(cell_type, (0.5, 0.5, 0.5))
@@ -249,7 +268,6 @@ def plot_three_clusters_side_by_side(
     fig.tight_layout()
     fig.savefig(out_pdf, format="pdf", bbox_inches="tight")
     plt.close(fig)
-
     print(f"[INFO] Saved 3-panel PDF: {out_pdf}")
 
 
@@ -281,7 +299,7 @@ def main() -> None:
             time_by_celltype[cell_type] = np.zeros((0,))
             continue
 
-        traces, time = extract_preferred_raw_traces(ids, HDF5_PATH)
+        traces, used_ids, time = extract_preferred_raw_traces(ids, HDF5_PATH)
         traces_by_celltype[cell_type] = traces
         time_by_celltype[cell_type] = time
 
@@ -289,10 +307,12 @@ def main() -> None:
             print(f"[WARN] {cell_type}: no usable traces -> skipping")
             continue
 
-        out_csv = os.path.join(out_base, f"{cell_type}_hindbrain_mean_preferred_raw.csv")
-        export_mean_trace_csv(traces, time, out_csv)
+        # Per-neuron (wide) CSV: time_s + one column per neuron
+        out_csv = os.path.join(out_base, f"{cell_type}_hindbrain_preferred_raw_individual_traces.csv")
+        export_individual_traces_wide_csv(traces, used_ids, time, out_csv)
+
         exported_types += 1
-        print(f"[INFO] {cell_type}: exported mean (n={traces.shape[0]} neurons)")
+        print(f"[INFO] {cell_type}: exported individual traces (n={traces.shape[0]} neurons)")
 
     # 3-panel figure (single file)
     out_pdf = os.path.join(out_base, "hindbrain_preferred_raw_traces_3panel.pdf")
