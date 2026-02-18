@@ -4,8 +4,9 @@
 
 # Ignore these folders
 1. Downloading_neuronal_morphologies_and_metadata/traced_axons_neurons/
+
 5. Design_tools/avg_activity_traces_proofread_neurons
 5. Design_tools/activity_traces_all_clustered_neurons
 5. Design_tools/cluster_size_interpolation
-5. Design_tools/scripts
+
 6. Design_tools/
