@@ -4,9 +4,7 @@
 
 This repository hosts collaborative analyses on the structure–function relationships in the zebrafish hindbrain, integrating synaptic connectivity, morphology-based predictions, and network modeling.
 
-The dataset can be visualized with Neuroglancer [here](https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6294688695844864). You need to log in with a Gmail account. 
-
-For more details regarding proofreading and programatic access to the dataset please visit : https://jboulanger91.github.io/fish1.5-release/
+The dataset can be visualized with Neuroglancer [here](https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6294688695844864). You need to log in with a Gmail account. For more details regarding proofreading and programatic access to the dataset please visit : https://jboulanger91.github.io/fish1.5-release/
 
 ---
 
