@@ -1,0 +1,15 @@
+# Data path configuration
+# Format: username /absolute/path/to/data/directory
+#
+# The data directory should contain: clem_zfish1/, em_zfish1/, paGFP/,
+# kim_functional_data/, prediction/, make_figures_FK_output/
+#
+# Configure interactively:
+#   python scripts/setup_data_paths.py
+#
+# Or set the HBSF_ROOT environment variable instead:
+#   export HBSF_ROOT=/path/to/hbsf
+#   (data is expected at $HBSF_ROOT/data/)
+#
+# Example:
+# jdoe /home/jdoe/Desktop/hbsf/data
