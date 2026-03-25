@@ -118,5 +118,3 @@ pytest functional_type_prediction/classifier_prediction/tests/ -v
 | cMI | `motion_integrator_contralateral` | integrator |
 | MON | `motion_onset` | dynamic_threshold |
 | SMI | `slow_motion_integrator` | motor_command |
-
-Legacy names in metadata files are automatically mapped to modern nomenclature during data loading.
