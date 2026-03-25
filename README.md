@@ -1,115 +1,119 @@
-# Zebrafish Hindbrain Functional Connectomics
+# Morphology-Based Prediction of Neuronal Functional Types
 
-![Description of the image](home_img.png)
+Code for predicting functional cell types from neuronal morphology in the zebrafish hindbrain, as described in [Boulanger-Weill, Kämpf et al. (2025)](https://www.biorxiv.org/content/10.1101/2025.03.14.643363v2). This module is part of the [Zebrafish_CLEM](https://github.com/jboulanger91/Zebrafish_CLEM) repository.
 
-This repository hosts collaborative analyses on the structure–function relationships in the zebrafish hindbrain, integrating synaptic connectivity, morphology-based predictions, and network modeling.
+The pipeline classifies neurons into four functional types — motion integrator ipsilateral (iMI), motion integrator contralateral (cMI), motion onset (MON), and slow motion integrator (SMI) — using morphological features extracted from SWC skeleton tracings across three imaging modalities: photoactivation (PA), correlative light-electron microscopy (CLEM), and electron microscopy (EM).
 
-The dataset can be visualized with Neuroglancer [here](https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6294688695844864). You need to log in with a Gmail account. For more details regarding proofreading and programatic access to the dataset please visit : https://jboulanger91.github.io/fish1.5-release/
+## Overview
 
----
+The classifier uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal morphological features from a set of 68, achieving 83.6% leave-one-out cross-validation accuracy on CLEM neurons. Predictions are verified via NBLAST morphological similarity analysis and outlier detection.
 
-## Repository Structure
+The EM connectome can be explored interactively via [Neuroglancer](https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6294688695844864) (requires Gmail login). For proofreading details and programmatic access see: https://jboulanger91.github.io/fish1.5-release/
 
-### 1. Downloading neuronal morphologies and metadata
+## Directory Structure
 
-Pipeline for reconstructing and organizing neuronal morphologies, synapse positions, and connected segments from the clem_zfish1 dataset. This includes:
+| Directory | Description |
+|---|---|
+| `src/myio/` | Data I/O: load PA/CLEM/EM cell tables, SWC morphologies, meshes |
+| `src/morphology/` | Morphology processing: NBLAST similarity, SWC repair, branch finding, neurite fragmentation |
+| `src/viz/` | Visualization: color palettes, classification plots, feature plots, figure helpers |
+| `src/util/` | Utilities: data path resolution, output paths, cell path construction |
+| `functional_type_prediction/` | LDA classifier pipeline: feature selection, cross-validation, prediction, verification |
+| `scripts/` | Data path setup |
+| `tests/` | Unit and integration tests (pytest) |
+| `config/` | Conda environment and data path configuration |
 
-- Downloading and organizing meshes (nucleus, soma, axon, dendrites)  
-- Exporting Neuroglancer-resolution synapse tables (8×8×30 nm)  
-- Generating per-neuron metadata (IDs, reconstruction status, functional labels if available)  
-- Optional extraction of ΔF/F dynamics for functionally imaged neurons  
+## Setup
 
-Outputs are per-neuron/axon folders containing:
+### 1. Install dependencies
 
-- `*_metadata.txt` (metadata)  
-- `*_axon.obj`, `*_dendrite.obj`, `*_soma.obj`, `*.obj` (meshes)  
-- `*_presynapses.csv`, `*_postsynapses.csv` (synapse tables)  
-- , `*_dynamics.pdf`, `*_dynamics.hdf5` (optional functional data)
+```bash
+# Conda (recommended)
+conda env create -f config/environment.yml
+conda activate hbsf
 
-**Main script:** `download_axons_neurons_pipeline.py`  
-**Helper module:** `download_axons_neurons_helper.py`  
-**Environment file:** `env_clem_zfish1_global.yaml`  
+# Or pip
+pip install -r requirements.txt
+```
 
----
+**Important:** The pipeline requires `scikit-learn==1.5.2`. Version 1.6+ produces different RFE results due to internal changes in feature ranking.
 
-### 2. Reference brain registration
+### 2. Configure data paths
 
-Pipeline for mapping neuronal morphologies and synapse coordinates from the **clem_zfish1** dataset into a standardized zebrafish reference brain. This step applies ANTs deformation fields to warp neuron meshes and synapse locations into a shared anatomical space, then generates skeletonized neuron reconstructions.
+```bash
+python scripts/setup_data_paths.py
+```
 
-This includes:
+This creates `config/path_configuration.txt`, mapping your username to the local directory containing the structural data (available on [Zenodo](https://doi.org/10.5281/zenodo.19220629)). The path is resolved at runtime by `src.util.get_base_path.get_base_path()`.
 
-- Mapping soma, axon, and dendrite meshes into reference space  
-- Warping presynaptic and postsynaptic coordinates  
-- Generating mapped OBJ meshes and synapse OBJ spheres  
-- Skeletonizing neurons or axons using TEASAR  
-- Healing skeleton gaps and embedding synapse node labels  
-- Producing aligned SWC skeletons for further analysis  
+### 3. Run the classifier pipeline
 
-Outputs are per-neuron folders containing:
+```bash
+python functional_type_prediction/classifier_prediction/pipelines/pipeline_main.py
+```
 
-- `*_axon_mapped.obj`, `*_dendrite_mapped.obj`, `*_soma_mapped.obj`, `*_mapped.obj` (mapped meshes)  
-- `*_presynapses_mapped.csv`, `*_postsynapses_mapped.csv` (mapped synapse tables)  
-- `*_presynapses_mapped.obj`, `*_postsynapses_mapped.obj` (synapse OBJ sphere files)  
-- `*_mapped.swc`, `*.swc` (skeletonized neurons with synapse annotations)  
+This executes the full pipeline:
+1. Load cell metadata and SWC skeletons from all modalities
+2. Extract 68 morphological features (cable length, Strahler order, Sholl analysis, branch angles, spatial extent, etc.)
+3. Select 13 optimal features via RFE with AdaBoost
+4. Train LDA classifier on 120 labeled neurons (47 PA + 73 CLEM)
+5. Predict functional types for 337 unlabeled neurons (215 EM + 122 CLEM)
+6. Verify predictions via NBLAST similarity and outlier detection
 
-**Main script:** `register_and_skeletonize.py`  
-**Helper module:** `register_and_skeletonize_cells_helpers.py`  
-**Environment file:** `env_register_and_skeletonize.yaml`  
+## Data
 
----
+The structural data is hosted on Zenodo: [10.5281/zenodo.19220629](https://doi.org/10.5281/zenodo.19220629)
 
-### 3. Connectivity Matrices and Network Diagram Generation
+Contents:
+- `metadata.xlsx` — Cell inventory with functional labels and training flags
+- `paGFP/` — 47 photoactivation neurons (SWC skeletons, functional dynamics)
+- `clem_zfish1/` — 301 CLEM neurons (registered SWC skeletons, OBJ meshes, synapse locations)
+- `em_zfish1/` — 215 EM neurons (registered SWC skeletons, meshes)
 
-This folder contains the pipelines used to compute **synaptic connectivity matrices** and to generate **two-layer network diagrams** from the **clem_zfish1** zebrafish hindbrain connectome. These analyses integrate CAVE‑derived synapse tables, **registered neuron meshes**, and functional classifications.
+All coordinates are registered to the Z-Brain atlas reference frame (Randlett et al., 2015). SWC node labels: 1=soma, 2=axon, 3=dendrite, 4=presynapse, 5=postsynapse.
 
-Both pipelines require the mapped-neuron outputs generated in **Step 2 (Reference brain registration)**.
+## Output
 
-#### 3.1 Connectivity Matrices
+All outputs are written to `~/Desktop/hbsf_output/classifier_pipeline/`, configurable via:
 
-This pipeline constructs directional **pre→post synaptic connectivity matrices** between functional/morphological neuron and axon classes.
+```bash
+export HBSF_OUTPUT_ROOT=/custom/output/path
+```
 
-Outputs:
-- Pooled connectivity matrix (PDF)
-- Left/right–split connectivity matrix (PDF)
-- Left/right–split excitatory/inhibitory matrix (PDF)
+Output includes: RFE plots, confusion matrices, prediction spreadsheets with probability scores, and verification metrics.
 
-**Main script:** `make_connectivity_matrices.py`  
-**Helper module:** `connectivity_matrices_helper.py`  
-**Environment:** `env_clem_zfish1_global.yaml`
+## Testing
 
-#### 3.2 Two‑Layer Network Diagrams
+```bash
+# Unit tests (no data required)
+pytest tests/ -v
 
-This pipeline generates compact, population‑level schematic connectivity diagrams for:
+# Regression tests (requires data + baselines)
+pytest functional_type_prediction/classifier_prediction/tests/ -v
+```
 
-- cMI — contralateral motion integrators  
-- MON — motion onset neurons  
-- MC/SMI — slow‑motion integrators  
-- iMI+ — excitatory ipsilateral motion integrators  
-- iMI− — inhibitory ipsilateral motion integrators  
-- iMI_all — pooled ipsilateral motion integrators  
+## Functional Type Nomenclature
 
-These diagrams require **registered neuron meshes**, because hemisphere assignment and cross‑side vs. same‑side connectivity depend on mapped spatial coordinates.
+| Abbreviation | Full Name | Legacy Name |
+|---|---|---|
+| iMI | `motion_integrator_ipsilateral` | integrator |
+| cMI | `motion_integrator_contralateral` | integrator |
+| MON | `motion_onset` | dynamic_threshold |
+| SMI | `slow_motion_integrator` | motor_command |
 
-Outputs:
-- One four‑panel PDF per population (ipsi/contra × inputs/outputs)
-- A detailed text connectivity table per population
+Legacy names in metadata files are automatically mapped to modern nomenclature during loading.
 
-**Main script:** `make_connectivity_diagrams.py`  
-**Helper module:** `connectivity_diagrams_helper.py`   
-**Environment:** `env_clem_zfish1_global.yaml`
+## Related Repositories
 
----
+- [Zebrafish_CLEM](https://github.com/jboulanger91/Zebrafish_CLEM) — Parent repository: neuron downloading, registration, connectivity analysis, network modeling
+- [fish1.5-release](https://jboulanger91.github.io/fish1.5-release/) — EM connectome documentation and CAVE API access
 
-### 4. Morphology-based prediction of neuronal functional types
-Includes scripts to predict functional properties (e.g., motion integrator, motion onset neurons) from morphology.
+## Citation
 
-**Environment file:** `env.yaml`
+If you use this code, please cite:
 
----
+> Boulanger-Weill J\*, Kämpf F\*, et al. (2025). *A cellular-resolution structure-function map of the zebrafish hindbrain.* bioRxiv. [doi:10.1101/2025.03.14.643363](https://doi.org/10.1101/2025.03.14.643363)
 
-### 5. Connectome-constrained network modeling
-Computational models that simulate network dynamics under realistic connectome constraints.
+## License
 
-**Environment file:** `env.yaml`
-
----
+MIT License. See `LICENSE` for full text.
