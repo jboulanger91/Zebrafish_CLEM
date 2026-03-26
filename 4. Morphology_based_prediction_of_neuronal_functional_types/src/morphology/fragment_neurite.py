@@ -755,7 +755,7 @@ if __name__ == "__main__":
     # Load all three modalities
     print("Loading EM cells...")
     cells_em = load_cells_predictor_pipeline(
-        path_to_data=path_to_data, modalities=["em"], load_repaired=True,
+        path_to_data=path_to_data, modalities=["em"],
     )
     cells_em.loc[:, "swc"] = [
         navis.prune_twigs(x, 20, recursive=True) for x in cells_em["swc"]
@@ -763,7 +763,7 @@ if __name__ == "__main__":
 
     print("Loading CLEM cells...")
     cells_clem = load_cells_predictor_pipeline(
-        path_to_data=path_to_data, modalities=["clem"], load_repaired=True,
+        path_to_data=path_to_data, modalities=["clem"],
     )
     cells_clem.loc[:, "swc"] = [
         navis.prune_twigs(x, 20, recursive=True) for x in cells_clem["swc"]

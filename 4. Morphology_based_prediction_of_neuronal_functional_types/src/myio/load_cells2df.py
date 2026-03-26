@@ -9,7 +9,7 @@ project, loading and combining cell data from multiple imaging modalities:
 
 The pipeline handles:
 1. Loading cell tables from each modality
-2. Loading 3D morphology data (SWC skeletons, OBJ meshes)
+2. Loading SWC skeletons
 3. Mirroring cells to left hemisphere for consistent analysis
 4. Extracting cell type labels (function, morphology, neurotransmitter)
 5. Filtering incomplete reconstructions
@@ -150,7 +150,10 @@ def _load_modality_tables(
     ----------
     modalities : list of str
         List of modality names to load. Valid options:
-        'pa', 'clem', 'clem_predict', 'clem241211', 'clem_predict241211', 'em'
+        'pa', 'clem', 'clem_predict', 'em'.
+        Both 'clem' and 'clem_predict' load the full CLEM table;
+        the training/prediction split is handled downstream by
+        _filter_and_finalize via the used_for_training column.
     path_to_data : Path
         Base path to the CLEM paper data directory.
 
@@ -165,17 +168,8 @@ def _load_modality_tables(
         pa_data_dir = path_to_data / "paGFP"
         tables.append(load_pa_table(get_cell_inventory_xlsx(), pa_data_dir))
 
-    if "clem" in modalities or "clem241211" in modalities:
-        clem_data_dir = (
-            path_to_data / "clem_zfish1" / "new_batch_111224" / "functionally_imaged_111224"
-        )
-        tables.append(load_clem_table(get_cell_inventory_xlsx(), clem_data_dir))
-
-    if "clem_predict" in modalities or "clem_predict241211" in modalities:
-        clem_predict_dir = (
-            path_to_data / "clem_zfish1" / "new_batch_111224" / "non_functionally_imaged_111224"
-        )
-        tables.append(load_clem_table(get_cell_inventory_xlsx(), clem_predict_dir))
+    if "clem" in modalities or "clem_predict" in modalities:
+        tables.append(load_clem_table(get_cell_inventory_xlsx()))
 
     if "em" in modalities:
         em_data_dir = path_to_data / "em_zfish1"
@@ -187,37 +181,26 @@ def _load_modality_tables(
     return pd.concat(tables, ignore_index=True)
 
 
-def _load_meshes_for_cells(
+def _load_skeletons_for_cells(
     df: pd.DataFrame,
-    load_repaired: bool = False,
-    load_both: bool = False,
 ) -> pd.DataFrame:
-    """Load 3D mesh and SWC skeleton data for all cells.
+    """Load SWC skeleton data for all cells.
 
     Parameters
     ----------
     df : pd.DataFrame
         Cell DataFrame with metadata.
-    load_repaired : bool
-        Load repaired SWC files if available. Default False.
-    load_both : bool
-        Load both original and repaired files. Default False.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with loaded mesh data.
+        DataFrame with loaded SWC data.
     """
     for i, cell in df.iterrows():
-        df.loc[i, :] = load_mesh(
-            cell,
-            swc=True,
-            load_repaired=load_repaired,
-            load_both=load_both,
-        )
+        df.loc[i, :] = load_mesh(cell, swc=True)
         if isinstance(df.loc[i, "swc"], float):
             print(f"{cell.cell_name} is not a TreeNeuron")
-    return df  # DONE
+    return df
 
 
 def _mirror_cells(df: pd.DataFrame, brain_width: float = BRAIN_WIDTH_UM) -> pd.DataFrame:
@@ -226,7 +209,7 @@ def _mirror_cells(df: pd.DataFrame, brain_width: float = BRAIN_WIDTH_UM) -> pd.D
     Parameters
     ----------
     df : pd.DataFrame
-        Cell DataFrame with mesh and SWC data.
+        Cell DataFrame with SWC data.
     brain_width : float
         Brain width in microns.
 
@@ -236,20 +219,6 @@ def _mirror_cells(df: pd.DataFrame, brain_width: float = BRAIN_WIDTH_UM) -> pd.D
         DataFrame with mirrored cells.
     """
     for i, cell in df.iterrows():
-        # Skip specific problematic cells
-        #if cell.cell_name == "cell_576460752665417287":
-        #    continue
-
-        # Mirror meshes if soma is in right hemisphere
-        soma_mesh = cell.get("soma_mesh")
-        if (
-            soma_mesh is not None
-            and not isinstance(soma_mesh, float)
-            and np.mean(soma_mesh._vertices[:, 0]) > (brain_width / 2)
-        ):
-            _mirror_cell_meshes(cell, df, i, brain_width)
-
-        # Mirror SWC if root is in right hemisphere
         if "swc" in cell.index:
             swc = cell["swc"]
             if (
@@ -260,32 +229,6 @@ def _mirror_cells(df: pd.DataFrame, brain_width: float = BRAIN_WIDTH_UM) -> pd.D
                     _mirror_cell_swc(df, i, brain_width)
 
     return df
-
-
-def _mirror_cell_meshes(
-    cell: pd.Series,
-    df: pd.DataFrame,
-    idx: int,
-    brain_width: float,
-) -> None:
-    """Mirror mesh data for a single cell."""
-    df.loc[idx, "soma_mesh"]._vertices = navis.transforms.mirror(
-        cell["soma_mesh"]._vertices, brain_width, "x"
-    )
-
-    modality = cell.get("imaging_modality", "")
-
-    if modality in ("clem", "em"):
-        if cell.get("axon_mesh") is not None and not isinstance(cell["axon_mesh"], float):
-            df.loc[idx, "axon_mesh"]._vertices = navis.transforms.mirror(
-                cell["axon_mesh"]._vertices, brain_width, "x"
-            )
-        if cell.get("dendrite_mesh") is not None and not isinstance(cell["dendrite_mesh"], float):
-            df.loc[idx, "dendrite_mesh"]._vertices = navis.transforms.mirror(
-                cell["dendrite_mesh"]._vertices, brain_width, "x"
-            )
-
-    print(f"MESHES of cell {cell['cell_name']} mirrored")
 
 
 def _mirror_cell_swc(df: pd.DataFrame, idx: int, brain_width: float) -> None:
@@ -453,8 +396,6 @@ def load_cells_predictor_pipeline(
     modalities: list[str] | None = None,
     mirror: bool = True,
     path_to_data: Path | None = None,
-    load_repaired: bool = False,
-    load_both: bool = False,
     filter_incomplete_clem: bool = True,
     load_morphology: bool = True,
     label_column: str = "kmeans_function",
@@ -463,7 +404,7 @@ def load_cells_predictor_pipeline(
 
     This is the main pipeline function that:
     1. Loads cell metadata tables from specified modalities
-    2. Loads 3D morphology data (meshes and SWC skeletons)
+    2. Loads SWC skeletons
     3. Optionally mirrors cells to left hemisphere
     4. Extracts cell type labels (function, morphology, neurotransmitter)
     5. Filters incomplete reconstructions
@@ -473,24 +414,18 @@ def load_cells_predictor_pipeline(
     modalities : list of str
         Modalities to load. Options:
         - 'pa': Photoactivation cells
-        - 'clem': CLEM functionally imaged
-        - 'clem_predict': CLEM non-functionally imaged (for prediction)
-        - 'clem241211': CLEM new batch (Dec 2024) functionally imaged
-        - 'clem_predict241211': CLEM new batch non-functionally imaged
+        - 'clem', 'clem_predict': CLEM cells (loads full CLEM table;
+          training/prediction split handled downstream)
         - 'em': Electron microscopy
     mirror : bool
         Mirror cells in right hemisphere to left. Default True.
     path_to_data : Path, optional
         Base path to data directory. Uses get_base_path() if None.
-    load_repaired : bool
-        Load repaired SWC files. Default False.
-    load_both : bool
-        Load both original and repaired files. Default False.
     filter_incomplete_clem : bool
         Filter out incomplete CLEM reconstructions. Default True (enabled
         by default; set to False in kmeans scripts to use all data for clustering).
     load_morphology : bool
-        Load 3D morphology data (meshes and SWC skeletons). Default True.
+        Load SWC skeletons. Default True.
         Set to False for faster loading when only metadata is needed.
     label_column : str
         Column in the xlsx to use as the functional label source.
@@ -504,8 +439,7 @@ def load_cells_predictor_pipeline(
         - cell_name: Unique cell identifier
         - imaging_modality: 'photoactivation', 'clem', or 'em'
         - swc: navis.TreeNeuron skeleton
-        - soma_mesh, axon_mesh, dendrite_mesh: 3D meshes
-        - function: Functional type (MI, MON, SMI,  to_predict)
+        - function: Functional type (MI, MON, SMI, to_predict)
         - morphology: ipsilateral or contralateral
         - neurotransmitter: inhibitory or excitatory
 
@@ -523,7 +457,6 @@ def load_cells_predictor_pipeline(
 
     >>> clem_predict = load_cells_predictor_pipeline(
     ...     modalities=['clem_predict'],
-    ...     load_repaired=True
     ... )
     """
     if modalities is None:
@@ -535,17 +468,17 @@ def load_cells_predictor_pipeline(
     if all_cells.empty:
         return all_cells
 
-    # Initialize mesh columns
-    for col in ["soma_mesh", "dendrite_mesh", "axon_mesh", "swc"]:
-        all_cells[col] = np.nan
-        all_cells[col] = all_cells[col].astype(object)
+    # Initialize SWC column
+    all_cells["swc"] = np.nan
+    all_cells["swc"] = all_cells["swc"].astype(object)
 
-    # Load mesh data (skip if load_morphology=False for faster metadata-only loading)
+    # Load SWC data (skip if load_morphology=False for faster metadata-only loading)
     if load_morphology:
-        all_cells = _load_meshes_for_cells(all_cells, load_repaired, load_both)
+        all_cells = _load_skeletons_for_cells(all_cells)
+
         # Mirror cells to left hemisphere (only if morphology was loaded)
         if mirror:
-            all_cells = _mirror_cells(all_cells) 
+            all_cells = _mirror_cells(all_cells)
     # Drop empty rows
     all_cells = all_cells.dropna(how="all")
     all_cells = _filter_and_finalize(
@@ -568,5 +501,5 @@ def load_cells_predictor_pipeline(
 # ------------------------------------------------------------------
 
 if __name__ == "__main__":
-    all_cells = load_cells_predictor_pipeline(modalities=["clem_predict"], load_repaired=True)
+    all_cells = load_cells_predictor_pipeline(modalities=["clem_predict"])
     print(f"Loaded {len(all_cells)} cells")

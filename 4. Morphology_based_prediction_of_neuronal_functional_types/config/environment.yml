@@ -1,9 +1,9 @@
 # Conda environment for hindbrain structure-function analysis
 # Create with: conda env create -f environment.yml
-# Activate with: conda activate hbsf
+# Activate with: conda activate morph2func
 # Last verified: 2026-02-20 with Python 3.12.9
 
-name: hbsf
+name: morph2func
 channels:
   - conda-forge
   - defaults

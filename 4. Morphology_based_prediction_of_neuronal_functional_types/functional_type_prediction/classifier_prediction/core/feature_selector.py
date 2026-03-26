@@ -603,5 +603,5 @@ class RFESelector:
         print(f"    Saving RFE plot to: {rfe_path / filename}.png|pdf")
         plt.savefig(rfe_path / f"{filename}.png")
         plt.savefig(rfe_path / f"{filename}.pdf")
-        plt.show()
+        plt.close()
 

@@ -39,7 +39,7 @@ def _tqdm_joblib(tqdm_object):
         tqdm_object.close()
 
 # Add src directory to path for morphology imports
-_REPO_ROOT = Path(__file__).resolve().parents[3]  # hbsf_new/
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # morph2func/
 _SRC = _REPO_ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))  # Needed for bare morphology.* imports
@@ -149,27 +149,40 @@ def _compute_branch_features(swc, cell_name, cell_branches_df):
 
     # Fragment features
     fragmented_neuron = navis.split_into_fragments(swc, swc.n_leafs)
-    result["first_branch_longest_neurite"] = navis.longest_neurite(
-        fragmented_neuron[1]
-    ).cable_length
-    result["first_branch_total_branch_length"] = fragmented_neuron[1].cable_length
+    if len(fragmented_neuron) > 1:
+        result["first_branch_longest_neurite"] = navis.longest_neurite(
+            fragmented_neuron[1]
+        ).cable_length
+        result["first_branch_total_branch_length"] = fragmented_neuron[1].cable_length
+    else:
+        result["first_branch_longest_neurite"] = 0
+        result["first_branch_total_branch_length"] = 0
 
     # Cable to first branch
     temp = navis.prune_twigs(swc, 5, recursive=True)
-    temp_node_id = temp.nodes.loc[temp.nodes.type == 'branch', 'node_id'].iloc[0]
-    temp = navis.cut_skeleton(temp, temp_node_id)
-    result["cable_length_2_first_branch"] = temp[1].cable_length
-    result["z_distance_first_2_first_branch"] = (
-        temp[1].nodes.iloc[0].z - temp[1].nodes.iloc[-1].z
-    )
+    branch_nodes = temp.nodes.loc[temp.nodes.type == 'branch', 'node_id']
+    if len(branch_nodes) > 0:
+        temp_node_id = branch_nodes.iloc[0]
+        temp = navis.cut_skeleton(temp, temp_node_id)
+        result["cable_length_2_first_branch"] = temp[1].cable_length
+        result["z_distance_first_2_first_branch"] = (
+            temp[1].nodes.iloc[0].z - temp[1].nodes.iloc[-1].z
+        )
+    else:
+        result["cable_length_2_first_branch"] = 0
+        result["z_distance_first_2_first_branch"] = 0
 
     # Biggest non-main branch
     non_main = cell_branches_df[
         (~cell_branches_df['main_path']) & (cell_branches_df['end_type'] != 'end')
     ]
-    sorted_non_main = non_main.sort_values('total_branch_length', ascending=False)
-    result["biggest_branch_longest_neurite"] = sorted_non_main['longest_neurite_in_branch'].iloc[0]
-    result["biggest_branch_total_branch_length"] = non_main['total_branch_length'].iloc[0]
+    if len(non_main) > 0:
+        sorted_non_main = non_main.sort_values('total_branch_length', ascending=False)
+        result["biggest_branch_longest_neurite"] = sorted_non_main['longest_neurite_in_branch'].iloc[0]
+        result["biggest_branch_total_branch_length"] = non_main['total_branch_length'].iloc[0]
+    else:
+        result["biggest_branch_longest_neurite"] = 0
+        result["biggest_branch_total_branch_length"] = 0
 
     # Longest connected path
     result["longest_connected_path"] = cell_branches_df['longest_connected_path'].iloc[0]

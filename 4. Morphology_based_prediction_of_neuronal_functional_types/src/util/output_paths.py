@@ -5,9 +5,9 @@ their output directory.  This ensures every generated file lands under a
 single, predictable root, grouped by the module/script that created it.
 
 The output root is determined by (in order of priority):
-1. The ``HBSF_OUTPUT_ROOT`` environment variable, if set.
-2. ``~/Desktop/hbsf_output/`` on macOS (where ``~/Desktop`` exists).
-3. ``~/hbsf_output/`` on Linux, Windows, or any system without a Desktop.
+1. The ``MORPH2FUNC_OUTPUT_ROOT`` environment variable, if set.
+2. ``~/Desktop/morph2func_output/`` on macOS (where ``~/Desktop`` exists).
+3. ``~/morph2func_output/`` on Linux, Windows, or any system without a Desktop.
 
 Usage::
 
@@ -33,16 +33,16 @@ def _resolve_output_root() -> Path:
     except (FileNotFoundError, ImportError):
         pass
 
-    # 2. Legacy: HBSF_OUTPUT_ROOT environment variable
-    env = os.environ.get("HBSF_OUTPUT_ROOT")
+    # 2. Legacy: MORPH2FUNC_OUTPUT_ROOT environment variable
+    env = os.environ.get("MORPH2FUNC_OUTPUT_ROOT")
     if env:
         return Path(env)
 
     # 3. Platform defaults
     desktop = Path.home() / "Desktop"
     if sys.platform == "darwin" and desktop.is_dir():
-        return desktop / "hbsf_output"
-    return Path.home() / "hbsf_output"
+        return desktop / "morph2func_output"
+    return Path.home() / "morph2func_output"
 
 
 OUTPUT_ROOT: Path = _resolve_output_root()

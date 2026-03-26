@@ -85,17 +85,18 @@ class PredictionPipeline:
             'motion_integrator_contralateral',
             'motion_integrator_ipsilateral', 'slow_motion_integrator']
         """
+        # Order must match sklearn's alphabetical class ordering
         self.class_names = class_names or [
-            "motion_onset",
             "motion_integrator_contralateral",
             "motion_integrator_ipsilateral",
+            "motion_onset",
             "slow_motion_integrator",
         ]
-        self.proba_columns = ["MON_proba", "cMI_proba", "iMI_proba", "SMI_proba"]
+        self.proba_columns = ["cMI_proba", "iMI_proba", "MON_proba", "SMI_proba"]
         self.proba_scaled_columns = [
-            "MON_proba_scaled",
             "cMI_proba_scaled",
             "iMI_proba_scaled",
+            "MON_proba_scaled",
             "SMI_proba_scaled",
         ]
         self.clf = None

@@ -6,16 +6,16 @@ locating that root and its standard subdirectories.
 
 Resolution order for the project root:
 
-1. ``HBSF_ROOT`` environment variable (if set).
-2. ``~/Desktop/hbsf/`` on macOS (if the directory exists).
-3. ``~/hbsf/`` on any platform (if the directory exists).
+1. ``MORPH2FUNC_ROOT`` environment variable (if set).
+2. ``~/Desktop/morph2func/`` on macOS (if the directory exists).
+3. ``~/morph2func/`` on any platform (if the directory exists).
 4. Backward-compatible: derive from ``config/path_configuration.txt``.
 
 Standard subdirectory layout::
 
-    {HBSF_ROOT}/
-      data/          # read-only scientific input data (or hbsf_input/)
-      output/        # all generated output and intermediates (or hbsf_output/)
+    {MORPH2FUNC_ROOT}/
+      data/          # read-only scientific input data (or morph2func_input/)
+      output/        # all generated output and intermediates (or morph2func_output/)
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Subdirectory names, preferred first
-_DATA_DIR_NAMES = ("data", "hbsf_input")
-_OUTPUT_DIR_NAMES = ("hbsf_output", "output")
+_DATA_DIR_NAMES = ("data", "morph2func_input")
+_OUTPUT_DIR_NAMES = ("morph2func_output", "output")
 
 
 def get_project_root() -> Path:
@@ -36,14 +36,14 @@ def get_project_root() -> Path:
 
     Returns
     -------
-        Path to the project root (e.g. ``~/Desktop/hbsf``).
+        Path to the project root (e.g. ``~/Desktop/morph2func``).
 
     Raises
     ------
         FileNotFoundError: If no project root can be resolved.
     """
     # 1. Environment variable
-    env = os.environ.get("HBSF_ROOT")
+    env = os.environ.get("MORPH2FUNC_ROOT")
     if env:
         root = Path(env).expanduser()
         if root.is_dir():
@@ -51,12 +51,12 @@ def get_project_root() -> Path:
 
     # 2. macOS Desktop convention
     if sys.platform == "darwin":
-        candidate = Path.home() / "Desktop" / "hbsf"
+        candidate = Path.home() / "Desktop" / "morph2func"
         if candidate.is_dir():
             return candidate
 
     # 3. Home directory fallback
-    candidate = Path.home() / "hbsf"
+    candidate = Path.home() / "morph2func"
     if candidate.is_dir():
         return candidate
 
@@ -74,8 +74,8 @@ def _derive_root_from_config() -> Path:
     config_path = _REPO_ROOT / "config" / "path_configuration.txt"
     if not config_path.exists():
         msg = (
-            "Cannot determine HBSF project root. Set the HBSF_ROOT "
-            "environment variable or create ~/Desktop/hbsf/."
+            "Cannot determine morph2func project root. Set the MORPH2FUNC_ROOT "
+            "environment variable or create ~/Desktop/morph2func/."
         )
         raise FileNotFoundError(msg)
 
@@ -96,15 +96,15 @@ def _derive_root_from_config() -> Path:
 
     msg = (
         f"No path configured for user '{current_user}'. "
-        "Set HBSF_ROOT or run: python scripts/setup_data_paths.py"
+        "Set MORPH2FUNC_ROOT or run: python scripts/setup_data_paths.py"
     )
     raise FileNotFoundError(msg)
 
 
 def get_data_dir() -> Path:
-    """Return the input data directory (``{HBSF_ROOT}/data/``).
+    """Return the input data directory (``{MORPH2FUNC_ROOT}/data/``).
 
-    Checks for ``data/`` first, then ``hbsf_input/`` for backward
+    Checks for ``data/`` first, then ``morph2func_input/`` for backward
     compatibility.
 
     Returns
@@ -123,9 +123,9 @@ def get_data_dir() -> Path:
 
 
 def get_output_root() -> Path:
-    """Return the output directory root (``{HBSF_ROOT}/output/``).
+    """Return the output directory root (``{MORPH2FUNC_ROOT}/output/``).
 
-    Checks for ``output/`` first, then ``hbsf_output/`` for backward
+    Checks for ``output/`` first, then ``morph2func_output/`` for backward
     compatibility.  Creates the directory if it doesn't exist.
 
     Returns
@@ -143,7 +143,7 @@ def get_output_root() -> Path:
     return default
 
 
-# Default cell inventory filename (override with HBSF_CELL_INVENTORY env var)
+# Default cell inventory filename (override with MORPH2FUNC_CELL_INVENTORY env var)
 _DEFAULT_CELL_INVENTORY = "metadata.xlsx"
 
 
@@ -151,14 +151,14 @@ def get_cell_inventory_xlsx() -> Path:
     """Return the path to the cell inventory xlsx.
 
     Resolution order:
-    1. ``HBSF_CELL_INVENTORY`` environment variable (full path).
+    1. ``MORPH2FUNC_CELL_INVENTORY`` environment variable (full path).
     2. ``{data_dir}/{_DEFAULT_CELL_INVENTORY}``.
 
     Returns
     -------
         Path to the cell inventory xlsx file.
     """
-    env = os.environ.get("HBSF_CELL_INVENTORY")
+    env = os.environ.get("MORPH2FUNC_CELL_INVENTORY")
     if env:
         return Path(env).expanduser()
     return get_data_dir() / _DEFAULT_CELL_INVENTORY

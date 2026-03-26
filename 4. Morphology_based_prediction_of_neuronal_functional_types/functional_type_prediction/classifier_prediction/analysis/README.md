@@ -13,7 +13,7 @@ This package contains standalone analysis scripts used for model evaluation, fea
 | `feature_importance.py` | Computes permutation importance for RFE-selected features. Shuffles each feature K=50 times and measures the drop in weighted F1 score. Produces a mean permuted accuracy plot, a sorted importance bar chart, and a CSV. | `classifier_pipeline/feature_importance/` |
 | `find_best_feature_selector.py` | Evaluates RFE with multiple classifier estimators to find the best feature subset and count. Generates per-estimator RFE curve plots. | `classifier_pipeline/find_feature_selector/` |
 | `find_optimal_proba_cutoff.py` | Sweeps probability cutoff thresholds (0.01–0.99) to find the optimal confidence threshold. For each cutoff, runs cross-validation and records accuracy and retained cell count. Produces a dual-axis accuracy vs. coverage plot. | `classifier_pipeline/proba_cutoff/` |
-| `calculate_published_metrics.py` | Reproduces metrics matching the published classification results. Runs LDA confusion matrices for three feature types (`pv`, `ps`, `ff`) using Leave-Pair-Out cross-validation. | `classifier_pipeline/published_metrics/` |
+| `calculate_published_metrics.py` | Reproduces metrics matching the published classification results. Runs LDA confusion matrices for three feature types (`pv`, `ps`, `ff`) using Leave-One-Out cross-validation. | `classifier_pipeline/published_metrics/` |
 
 ## Dependencies
 
@@ -23,7 +23,7 @@ This package contains standalone analysis scripts used for model evaluation, fea
 
 ## Output Location
 
-All scripts save to subdirectories of `~/Desktop/hbsf_output/classifier_pipeline/` via `get_output_dir()`. No scripts use interactive display (`plt.show()`); all use the non-interactive `Agg` backend.
+All scripts save to subdirectories of `~/Desktop/morph2func_output/classifier_pipeline/` via `get_output_dir()`. No scripts use interactive display (`plt.show()`); all use the non-interactive `Agg` backend.
 
 ## How to Run
 

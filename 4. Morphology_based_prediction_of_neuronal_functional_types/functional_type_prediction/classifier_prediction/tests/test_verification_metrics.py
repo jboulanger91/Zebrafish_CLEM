@@ -142,7 +142,7 @@ if __name__ == "__main__":
     _data_path = get_base_path()
     with_neurotransmitter = class_predictor(_data_path)
     with_neurotransmitter.load_cells_df(
-        modalities=["pa", "clem241211", "em", "clem_predict241211"],
+        modalities=["pa", "clem", "em", "clem_predict"],
     )
     with_neurotransmitter.calculate_metrics(
         "test"

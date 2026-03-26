@@ -592,7 +592,7 @@ class ClassPredictor:
             )
 
         predict_df = self.prediction_predict_df.copy()
-        predict_df.loc[:, ["MON_proba", "cMI_proba", "iMI_proba", "SMI_proba"]] = probabilities
+        predict_df.loc[:, ["cMI_proba", "iMI_proba", "MON_proba", "SMI_proba"]] = probabilities
         predict_df["prediction"] = predictions
 
         # Compute confusion matrix via Leave-One-Out CV (method="lpo", p=1) to
@@ -623,7 +623,7 @@ class ClassPredictor:
         )
 
         predict_df.loc[
-            :, ["MON_proba_scaled", "cMI_proba_scaled", "iMI_proba_scaled", "SMI_proba_scaled"]
+            :, ["cMI_proba_scaled", "iMI_proba_scaled", "MON_proba_scaled", "SMI_proba_scaled"]
         ] = scaled_probabilities
         predict_df["prediction_scaled"] = scaled_predictions
 
@@ -1357,7 +1357,7 @@ class ClassPredictor:
                     np.arange(1, features_train.shape[1] + 2, 3),
                 )
             plt.subplots_adjust(left=0.05, right=0.95, top=0.80, bottom=0.1)
-            plt.show()
+            plt.close()
 
         # Store results as instance variables
         self.reduced_features_idx = bool_features_2_use
@@ -1642,7 +1642,7 @@ class ClassPredictor:
         fig.suptitle(suptitle, fontsize="xx-large")
         plt.savefig(save_dir / f"{suptitle}.png")
         plt.savefig(save_dir / f"{suptitle}.pdf")
-        plt.show()
+        plt.close()
         print(" Confusion matrices saved\n")
 
     def check_swc_validity(self, df):
@@ -1819,7 +1819,7 @@ class ClassPredictor:
             )
 
         # Store predictions
-        self.prediction_predict_df.loc[:, ["MON_proba", "cMI_proba", "iMI_proba", "SMI_proba"]] = (
+        self.prediction_predict_df.loc[:, ["cMI_proba", "iMI_proba", "MON_proba", "SMI_proba"]] = (
             probabilities
         )
         self.prediction_predict_df["prediction"] = predictions
@@ -1850,7 +1850,7 @@ class ClassPredictor:
 
         # Store scaled results
         self.prediction_predict_df.loc[
-            :, ["MON_proba_scaled", "cMI_proba_scaled", "iMI_proba_scaled", "SMI_proba_scaled"]
+            :, ["cMI_proba_scaled", "iMI_proba_scaled", "MON_proba_scaled", "SMI_proba_scaled"]
         ] = scaled_probabilities
         self.prediction_predict_df["prediction_scaled"] = scaled_predictions
 

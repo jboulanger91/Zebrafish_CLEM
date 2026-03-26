@@ -55,27 +55,43 @@ matplotlib.use('Agg')  # Use non-GUI backend that saves to files only
 np.set_printoptions(suppress=True)
 
 
-def main():
-    """Main execution function for feature selection analysis.
+def main(
+    data_path=None,
+    features_file=None,
+    modalities=None,
+    train_mod="all",
+    test_mod="clem",
+    cv_method="ss",
+    metric="f1",
+):
+    """Run RFE feature selection analysis with multiple classifiers.
 
-    This function:
-    1. Initializes the class predictor with data path
-    2. Loads cell data from multiple imaging modalities
-    3. Calculates or loads morphological metrics
-    4. Filters out incomplete neurons
-    5. Applies manual morphology annotations
-    6. Performs RFE feature selection with multiple classifiers
-
-    The analysis compares performance with and without neurotransmitter information
-    to determine which features are most important for classification.
+    Parameters
+    ----------
+    data_path : Path, optional
+        Base data directory. Uses get_base_path() if None.
+    features_file : str, optional
+        HDF5 features file name. Default: FINAL_CLEM_CLEMPREDICT_EM_with_clem241211_withgregor250220.
+    modalities : list of str, optional
+        Imaging modalities to load. Default: pa, clem, em, clem_predict.
+    train_mod : str
+        Training modality for RFE. Default: 'all'.
+    test_mod : str
+        Test modality for RFE. Default: 'clem'.
+    cv_method : str
+        CV method for RFE ('ss' or 'lpo'). Default: 'ss'.
+    metric : str
+        Optimization metric ('f1', 'accuracy'). Default: 'f1'.
     """
-    print("=" * 80)
-    print("Feature Selection Analysis for Zebrafish Hindbrain Neurons")
-    print("=" * 80)
-
-    # Data path resolved from config/path_configuration.txt
-    # Was: /Users/.../hindbrain_structure_function/nextcloud
-    data_path = get_base_path()
+    if data_path is None:
+        data_path = get_base_path()
+    if modalities is None:
+        modalities = ["pa", "clem", "em", "clem_predict"]
+    if features_file is None:
+        features_file = (
+            "FINAL_CLEM_CLEMPREDICT_EM_with_clem241211"
+            "_withgregor250220"
+        )
 
     if not data_path.exists():
         raise FileNotFoundError(
@@ -83,59 +99,34 @@ def main():
             f"Please check config/path_configuration.txt."
         )
 
-    # Feature set identifier
-    # FINAL_CLEM_CLEMPREDICT_EM_with_clem241211_withgregor250220
-    # comparison_test3_refactored
-    feature_set_name = (
-        'FINAL_CLEM_CLEMPREDICT_EM_with_clem241211'
-        '_withgregor250220'
-    )
-
-    # ========================================================================
-    # Analysis WITH neurotransmitter information
-    # ========================================================================
-    print("\n" + "=" * 80)
-    print("Running Feature Selection WITH Neurotransmitter Information")
+    print("=" * 80)
+    print("Feature Selection Analysis for Zebrafish Hindbrain Neurons")
     print("=" * 80)
 
-    # Initialize predictor
-    with_neurotransmitter = class_predictor(data_path)
-
-    # Load cell data from multiple modalities
+    predictor = class_predictor(data_path)
     print("\nLoading cell data...")
-    with_neurotransmitter.load_cells_df(
-        modalities=['pa', 'clem241211', 'em', 'clem_predict241211']
-    )
+    predictor.load_cells_df(modalities=modalities)
 
-    # Calculate morphological metrics (cached if already computed)
     print("\nCalculating/loading morphological metrics...")
-    with_neurotransmitter.calculate_metrics(feature_set_name)
+    predictor.calculate_metrics(features_file)
 
-    # Load computed features
     print("\nLoading features...")
-    with_neurotransmitter.load_cells_features(
-        feature_set_name,
-        drop_neurotransmitter=False
-    )
+    predictor.load_cells_features(features_file, drop_neurotransmitter=False)
 
-    # Perform RFE feature selection
     print("\nPerforming Recursive Feature Elimination (RFE)...")
-    print("This will test multiple classifiers and save plots to classifier_pipeline/find_feature_selector/")
-    with_neurotransmitter.select_features_RFE(
-        train_mod='all',
-        test_mod='clem',
-        cv_method_rfe='ss',  # ShuffleSplit cross-validation
-        metric='f1',          # Optimize for F1 score
-        estimator=None, #AdaBoostClassifier(random_state=0)
-        output_subdir='find_feature_selector',
+    predictor.select_features_RFE(
+        train_mod=train_mod,
+        test_mod=test_mod,
+        cv_method_rfe=cv_method,
+        metric=metric,
+        estimator=None,
+        output_subdir="find_feature_selector",
     )
 
     print("\n" + "=" * 80)
     print("Feature selection analysis complete!")
+    print("Results saved to: classifier_pipeline/find_feature_selector/")
     print("=" * 80)
-    print("\nResults saved to: classifier_pipeline/find_feature_selector/")
-    print("\nCheck the plots to see which estimator and number of features")
-    print("gave the best F1 score for CLEM neuron classification.")
 
 
 

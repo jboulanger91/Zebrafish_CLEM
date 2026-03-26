@@ -129,8 +129,7 @@ def plot_confusion_matrix(
         fmt = "d"
 
     # Plot heatmap
-    sns.heatmap(
-        cm_display,
+    heatmap_kwargs = dict(
         annot=True,
         fmt=fmt,
         cmap=cmap,
@@ -141,15 +140,19 @@ def plot_confusion_matrix(
         ax=ax,
         annot_kws={"fontsize": fontsize},
     )
+    if normalize:
+        heatmap_kwargs["vmin"] = 0.0
+        heatmap_kwargs["vmax"] = 1.0
+    sns.heatmap(cm_display, **heatmap_kwargs)
 
     # Set labels
     ax.set_xlabel("Predicted Label", fontsize=fontsize + 2)
     ax.set_ylabel("True Label", fontsize=fontsize + 2)
     ax.set_title(title, fontsize=fontsize + 4, pad=10)
 
-    # Highlight diagonal (correct predictions)
-    for i in range(len(class_names)):
-        ax.add_patch(Rectangle((i, i), 1, 1, fill=False, edgecolor="green", lw=2))
+    # Highlight diagonal (correct predictions) — disabled by default
+    # for i in range(len(class_names)):
+    #     ax.add_patch(Rectangle((i, i), 1, 1, fill=False, edgecolor="green", lw=2))
 
     # Optionally highlight borders
     if spines_red:

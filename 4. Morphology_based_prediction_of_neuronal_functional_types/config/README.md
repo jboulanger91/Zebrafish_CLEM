@@ -7,7 +7,7 @@ Configuration files for data path resolution and environment setup.
 | File | Description |
 |---|---|
 | `path_configuration.txt` | User-to-data-path mapping for locating the `CLEM_paper_data` directory on each developer's machine |
-| `environment.yml` | Conda environment specification (`hbsf` environment) |
+| `environment.yml` | Conda environment specification (`morph2func` environment) |
 
 ## path_configuration.txt
 
@@ -37,11 +37,11 @@ The configuration file is searched for at `config/path_configuration.txt`.
 
 ## environment.yml
 
-Conda environment definition for the `hbsf` environment. Install with:
+Conda environment definition for the `morph2func` environment. Install with:
 
 ```bash
 conda env create -f config/environment.yml
-conda activate hbsf
+conda activate morph2func
 ```
 
 ### Key Dependencies

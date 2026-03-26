@@ -4,7 +4,7 @@
 
 The `src.util` module provides centralized utility functions shared across the
 entire zebrafish hindbrain structure-function codebase. Its primary
-responsibility is resolving paths from a **unified project root** (`HBSF_ROOT`),
+responsibility is resolving paths from a **unified project root** (`MORPH2FUNC_ROOT`),
 where input data, output files, and configuration all live under a single
 parent folder.
 
@@ -13,43 +13,43 @@ parent folder.
 | File | Description | Key Functions / Classes |
 |------|-------------|------------------------|
 | `__init__.py` | Package init; re-exports `get_base_path`, `get_project_root`, `get_data_dir`, `get_output_root`, `NotSetup`. | -- |
-| `project_root.py` | **Unified project root resolution.** All paths derive from a single root directory. Resolution order: (1) `HBSF_ROOT` env var, (2) `~/Desktop/hbsf/` on macOS, (3) `~/hbsf/`, (4) fallback from `config/path_configuration.txt`. | `get_project_root() -> Path`, `get_data_dir() -> Path`, `get_output_root() -> Path` |
+| `project_root.py` | **Unified project root resolution.** All paths derive from a single root directory. Resolution order: (1) `MORPH2FUNC_ROOT` env var, (2) `~/Desktop/morph2func/` on macOS, (3) `~/morph2func/`, (4) fallback from `config/path_configuration.txt`. | `get_project_root() -> Path`, `get_data_dir() -> Path`, `get_output_root() -> Path` |
 | `get_base_path.py` | Resolves the input data path. Delegates to `get_data_dir()` from `project_root.py`, falls back to legacy config file lookup. | `get_base_path() -> Path`, `NotSetup` (exception) |
-| `output_paths.py` | Centralized output path configuration. Delegates to `get_output_root()` from `project_root.py`, falls back to `HBSF_OUTPUT_ROOT` env var or platform defaults. | `get_output_dir(module, *subdirs) -> Path`, `OUTPUT_ROOT` (module-level Path) |
+| `output_paths.py` | Centralized output path configuration. Delegates to `get_output_root()` from `project_root.py`, falls back to `MORPH2FUNC_OUTPUT_ROOT` env var or platform defaults. | `get_output_dir(module, *subdirs) -> Path`, `OUTPUT_ROOT` (module-level Path) |
 
 ## Key Exports
 
 ```python
-get_project_root     # Unified project root (HBSF_ROOT)
-get_data_dir         # Input data directory ({HBSF_ROOT}/data/)
-get_output_root      # Output root directory ({HBSF_ROOT}/output/)
+get_project_root     # Unified project root (MORPH2FUNC_ROOT)
+get_data_dir         # Input data directory ({MORPH2FUNC_ROOT}/data/)
+get_output_root      # Output root directory ({MORPH2FUNC_ROOT}/output/)
 get_base_path        # Input data path (delegates to get_data_dir)
 NotSetup             # Exception raised when base path is not configured
 get_output_dir       # Centralized output directory (import from src.util.output_paths)
 ```
 
-## `HBSF_ROOT` Environment Variable
+## `MORPH2FUNC_ROOT` Environment Variable
 
-All paths derive from a single project root. Set `HBSF_ROOT` to override
+All paths derive from a single project root. Set `MORPH2FUNC_ROOT` to override
 automatic detection:
 
 ```bash
-export HBSF_ROOT=~/Desktop/hbsf
+export MORPH2FUNC_ROOT=~/Desktop/morph2func
 ```
 
 Expected layout:
 ```
-{HBSF_ROOT}/
-  data/          # (or hbsf_input/) read-only scientific data
-  output/        # (or hbsf_output/) all generated output
+{MORPH2FUNC_ROOT}/
+  data/          # (or morph2func_input/) read-only scientific data
+  output/        # (or morph2func_output/) all generated output
 ```
 
-When `HBSF_ROOT` is not set, the root is auto-detected:
-- **macOS**: `~/Desktop/hbsf/` (if it exists)
-- **Linux / Windows**: `~/hbsf/` (if it exists)
+When `MORPH2FUNC_ROOT` is not set, the root is auto-detected:
+- **macOS**: `~/Desktop/morph2func/` (if it exists)
+- **Linux / Windows**: `~/morph2func/` (if it exists)
 - **Fallback**: derived from `config/path_configuration.txt`
 
-The legacy `HBSF_OUTPUT_ROOT` env var is still supported as a fallback for
+The legacy `MORPH2FUNC_OUTPUT_ROOT` env var is still supported as a fallback for
 output path resolution.
 
 Usage example:
@@ -57,7 +57,7 @@ Usage example:
 ```python
 from src.util.output_paths import get_output_dir
 
-# Returns {HBSF_ROOT}/output/classifier_pipeline/confusion_matrices/
+# Returns {MORPH2FUNC_ROOT}/output/classifier_pipeline/confusion_matrices/
 out = get_output_dir("classifier_pipeline", "confusion_matrices")
 ```
 

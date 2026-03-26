@@ -60,7 +60,7 @@ External dependencies: scikit-learn, navis, pandas, numpy, matplotlib, seaborn, 
 
 ## Output Location
 
-All outputs are written under `~/Desktop/hbsf_output/classifier_pipeline/` via `get_output_dir("classifier_pipeline", ...)`. Subdirectories include `confusion_matrices/`, `RFE/`, `predictions/`, `verification/`, and `test_verification_metrics/`.
+All outputs are written under `~/Desktop/morph2func_output/classifier_pipeline/` via `get_output_dir("classifier_pipeline", ...)`. Subdirectories include `confusion_matrices/`, `RFE/`, `predictions/`, `verification/`, and `test_verification_metrics/`.
 
 ## How to Run
 

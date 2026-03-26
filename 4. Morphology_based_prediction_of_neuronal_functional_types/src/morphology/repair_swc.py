@@ -263,7 +263,6 @@ if __name__ == '__main__':
         path_to_data=path_to_data,
         modalities=['em'],
         mirror=False,
-        load_repaired=False,
     )
     all_cells = all_cells.dropna(subset='swc', axis=0)
 
@@ -274,11 +273,9 @@ if __name__ == '__main__':
         file_prefix = get_cell_file_prefix(cell.imaging_modality, cell.cell_name)
 
         if cell['imaging_modality'] in ('clem', 'EM'):
-            temp_path = cell_dir / 'mapped'
-            os.makedirs(temp_path, exist_ok=True)
             repair_neuron(
                 cell['swc'],
-                path=temp_path / f"{file_prefix}_repaired_mapped.swc",
+                path=cell_dir / f"{file_prefix}_repaired_mapped.swc",
             )
 
         elif cell['imaging_modality'] == 'photoactivation':

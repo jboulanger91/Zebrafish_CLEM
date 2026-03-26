@@ -43,7 +43,7 @@ The production pipeline (`classifier_prediction/pipelines/pipeline_main.py`) exe
 All pipeline outputs are written to subdirectories under:
 
 ```
-~/Desktop/hbsf_output/classifier_pipeline/
+~/Desktop/morph2func_output/classifier_pipeline/
 ```
 
 This path is resolved by `get_output_dir("classifier_pipeline", ...)` from `src/util/output_paths.py`.

@@ -33,7 +33,7 @@ This package contains production-ready scripts that wire together the `core/` li
 The default configuration in `PipelineConfig`:
 
 - **Features file:** `FINAL_CLEM_CLEMPREDICT_EM_with_clem241211_withgregor250220`
-- **Modalities:** `['pa', 'clem241211', 'em', 'clem_predict241211']`
+- **Modalities:** `['pa', 'clem', 'em', 'clem_predict']`
 - **Classifier:** `LinearDiscriminantAnalysis(solver='lsqr', shrinkage='auto')`
 - **RFE estimator:** `AdaBoostClassifier(random_state=0)`
 - **CV method:** Leave-P-Out (`'lpo'`)
@@ -48,7 +48,7 @@ The default configuration in `PipelineConfig`:
 
 ## Output Location
 
-Pipeline outputs (prediction Excel files, confusion matrix plots, RFE curves, verification results) are written to `~/Desktop/hbsf_output/classifier_pipeline/` via `get_output_dir("classifier_pipeline", ...)`.
+Pipeline outputs (prediction Excel files, confusion matrix plots, RFE curves, verification results) are written to `~/Desktop/morph2func_output/classifier_pipeline/` via `get_output_dir("classifier_pipeline", ...)`.
 
 ## How to Run
 

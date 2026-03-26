@@ -62,7 +62,7 @@ def _append_placeholder_profile(username: str, config_path: Path) -> None:
 def get_base_path() -> Path:
     """Return the configured dataset base path for the current OS user.
 
-    Tries the unified project root first (``{HBSF_ROOT}/data/``), then
+    Tries the unified project root first (``{MORPH2FUNC_ROOT}/data/``), then
     falls back to the legacy ``config/path_configuration.txt`` lookup.
 
     Raises

@@ -389,7 +389,6 @@ class DataLoader:
         cells_with_to_predict = load_cells_predictor_pipeline(
             path_to_data=Path(self.path),
             modalities=modalities,
-            load_repaired=True,
             label_column=label_column,
         )
         print(f"   Loaded {len(cells_with_to_predict)} cells")

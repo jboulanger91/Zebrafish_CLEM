@@ -70,7 +70,7 @@ def pipeline_results():
     # Combines: load_cells_df, calculate_metrics, load_cells_features, preprocessing
     data = predictor.load_data(
         features_file=FEATURES_FILE,
-        modalities=["pa", "clem241211", "em", "clem_predict241211"],
+        modalities=["pa", "clem", "em", "clem_predict"],
         use_stored_features=True,
     )
 
@@ -152,7 +152,7 @@ def predictor_after_load_cells():
 
     pred = class_predictor(DATA_PATH)
     pred.load_cells_df(
-        modalities=["pa", "clem241211", "em", "clem_predict241211"],
+        modalities=["pa", "clem", "em", "clem_predict"],
     )
     return pred
 

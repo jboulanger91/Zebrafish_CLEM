@@ -15,7 +15,7 @@ from src.util.cell_paths import get_cell_data_dir
 from src.util.get_base_path import get_base_path
 
 
-def load_clem_table(xlsx_path: Path | str, clem_data_dir: Path | str) -> pd.DataFrame:
+def load_clem_table(xlsx_path: Path | str) -> pd.DataFrame:
     """Load CLEM cell metadata from the cell inventory xlsx.
 
     Reads the CLEM sheet from metadata.xlsx, sets function/
@@ -26,9 +26,6 @@ def load_clem_table(xlsx_path: Path | str, clem_data_dir: Path | str) -> pd.Data
     ----------
     xlsx_path : Path or str
         Path to metadata.xlsx.
-    clem_data_dir : Path or str
-        Path to the CLEM data directory containing cell subdirectories
-        (e.g. functionally_imaged_111224 or non_functionally_imaged_111224).
 
     Returns
     -------
@@ -36,7 +33,6 @@ def load_clem_table(xlsx_path: Path | str, clem_data_dir: Path | str) -> pd.Data
         Cleaned DataFrame with cell metadata and cell_data_dir column.
     """
     xlsx_path = Path(xlsx_path)
-    clem_data_dir = Path(clem_data_dir)
 
     clem_table = pd.read_excel(xlsx_path, sheet_name="CLEM")
 
@@ -81,11 +77,7 @@ if __name__ == "__main__":
     _REPO_ROOT = Path(__file__).resolve().parents[2]
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-    from src.util.get_base_path import get_base_path
     from src.util.project_root import get_cell_inventory_xlsx
 
-    my_df = load_clem_table(
-        get_cell_inventory_xlsx(),
-        get_base_path() / "clem_zfish1" / "new_batch_111224" / "functionally_imaged_111224",
-    )
+    my_df = load_clem_table(get_cell_inventory_xlsx())
     print(f"Success! Loaded {len(my_df)} rows" if my_df is not None else "No data found")

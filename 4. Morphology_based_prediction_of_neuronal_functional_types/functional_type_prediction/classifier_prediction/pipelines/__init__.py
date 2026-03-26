@@ -5,7 +5,7 @@ cell type prediction workflows.
 
 Scripts
 -------
-pipeline_main : Main production pipeline (previously pipeline_with_clem241211_withgregor250220.py)
+pipeline_main : Main production pipeline
   - Integrates all modular components
   - Validates against reference files
   - Includes Gregor's Feb 2025 EM data

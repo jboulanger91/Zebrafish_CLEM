@@ -46,22 +46,18 @@ class TestGetCellDataDir:
         result = get_cell_data_dir(tmp_path, "photoactivation", "20210315.1")
         assert result == cell_dir
 
-    def test_clem_functionally_imaged(self, tmp_path):
-        cell_dir = (
-            tmp_path / "clem_zfish1" / "new_batch_111224"
-            / "functionally_imaged_111224" / "clem_zfish1_cell_123"
-        )
+    def test_clem(self, tmp_path):
+        """CLEM cell found directly under clem_zfish1/."""
+        cell_dir = tmp_path / "clem_zfish1" / "clem_zfish1_cell_123"
         cell_dir.mkdir(parents=True)
         result = get_cell_data_dir(tmp_path, "clem", "cell_123")
         assert result == cell_dir
 
-    def test_clem_non_functionally_imaged(self, tmp_path):
-        cell_dir = (
-            tmp_path / "clem_zfish1" / "new_batch_111224"
-            / "non_functionally_imaged_111224" / "clem_zfish1_cell_456"
-        )
+    def test_clem_axon(self, tmp_path):
+        """CLEM axon segment found directly under clem_zfish1/."""
+        cell_dir = tmp_path / "clem_zfish1" / "clem_zfish1_axon_456"
         cell_dir.mkdir(parents=True)
-        result = get_cell_data_dir(tmp_path, "clem", "cell_456")
+        result = get_cell_data_dir(tmp_path, "clem", "clem_zfish1_axon_456")
         assert result == cell_dir
 
     def test_em(self, tmp_path):
@@ -74,21 +70,3 @@ class TestGetCellDataDir:
         (tmp_path / "clem_zfish1").mkdir()
         result = get_cell_data_dir(tmp_path, "clem", "cell_nonexistent")
         assert result is None
-
-    def test_clem_prefers_functionally_imaged(self, tmp_path):
-        """When cell exists in both batch dirs, functionally_imaged wins."""
-        for subdir in ("functionally_imaged_111224", "non_functionally_imaged_111224"):
-            d = (
-                tmp_path / "clem_zfish1" / "new_batch_111224"
-                / subdir / "clem_zfish1_cell_both"
-            )
-            d.mkdir(parents=True)
-        result = get_cell_data_dir(tmp_path, "clem", "cell_both")
-        assert "functionally_imaged_111224" in str(result)
-
-    def test_clem_all_cells(self, tmp_path):
-        """CLEM cell found in all_cells directory."""
-        cell_dir = tmp_path / "clem_zfish1" / "all_cells" / "clem_zfish1_cell_999"
-        cell_dir.mkdir(parents=True)
-        result = get_cell_data_dir(tmp_path, "clem", "cell_999")
-        assert result == cell_dir

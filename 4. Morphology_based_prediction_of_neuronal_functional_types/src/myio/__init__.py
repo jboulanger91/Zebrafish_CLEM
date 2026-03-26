@@ -2,7 +2,7 @@
 
 This module provides functions for:
 - Loading cell metadata tables (photoactivation, CLEM, EM)
-- Loading 3D morphology data (SWC skeletons, OBJ meshes)
+- Loading SWC skeletons
 
 Imaging modalities:
 - PA (photoactivation): Single-cell labeling using photoactivatable GFP

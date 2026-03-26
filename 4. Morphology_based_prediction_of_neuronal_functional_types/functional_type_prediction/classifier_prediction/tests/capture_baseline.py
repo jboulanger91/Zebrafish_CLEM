@@ -62,7 +62,7 @@ def capture_baseline():
     print("\n[1/7] Loading cells...")
     pred = class_predictor(DATA_PATH)
     pred.load_cells_df(
-        modalities=["pa", "clem241211", "em", "clem_predict241211"],
+        modalities=["pa", "clem", "em", "clem_predict"],
     )
 
     baseline["after_load_cells"] = {

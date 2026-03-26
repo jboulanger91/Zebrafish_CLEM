@@ -128,13 +128,13 @@ class TestTableLoaders:
         assert "pa_data_dir" in sig.parameters
 
     def test_load_clem_table_callable_and_has_expected_params(self):
-        """load_clem_table is callable and accepts xlsx_path and clem_data_dir."""
+        """load_clem_table is callable and accepts xlsx_path."""
         from src.myio import load_clem_table
 
         assert callable(load_clem_table)
         sig = inspect.signature(load_clem_table)
         assert "xlsx_path" in sig.parameters
-        assert "clem_data_dir" in sig.parameters
+        assert "clem_data_dir" not in sig.parameters
 
     def test_load_em_table_callable_and_has_expected_params(self):
         """load_em_table is callable and accepts xlsx_path and em_data_dir."""
@@ -164,7 +164,7 @@ class TestMeshLoaders:
     """Tests for load_mesh."""
 
     def test_load_mesh_has_expected_params(self):
-        """load_mesh accepts cell, swc, load_both, load_repaired."""
+        """load_mesh accepts cell, swc."""
         from src.myio import load_mesh
 
         assert callable(load_mesh)
@@ -172,8 +172,6 @@ class TestMeshLoaders:
         param_names = list(sig.parameters.keys())
         assert "cell" in param_names
         assert "swc" in param_names
-        assert "load_both" in param_names
-        assert "load_repaired" in param_names
 
 
 # =========================================================================
@@ -196,8 +194,6 @@ class TestIntegration:
             "modalities",
             "mirror",
             "path_to_data",
-            "load_repaired",
-            "load_both",
             "filter_incomplete_clem",
             "load_morphology",
         ]
@@ -209,7 +205,6 @@ class TestIntegration:
         # Check key defaults
         assert sig.parameters["mirror"].default is True
         assert sig.parameters["load_morphology"].default is True
-        assert sig.parameters["load_repaired"].default is False
 
     def test_loader_functions_have_return_annotations_or_documented_types(self):
         """All core loader functions have return type annotations."""

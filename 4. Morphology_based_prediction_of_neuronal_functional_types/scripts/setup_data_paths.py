@@ -13,16 +13,24 @@ Usage (GUI):
 Usage (verify):
     python scripts/setup_data_paths.py --verify
 
+Usage (download):
+    python scripts/setup_data_paths.py --download
+    python scripts/setup_data_paths.py --download --dest ~/Desktop/morph2func/morph2func_input
+
 Reference:
     Reads/writes: config/path_configuration.txt
     Used by: src.util.get_base_path.get_base_path()
+    Zenodo: https://zenodo.org/records/19235597
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
+import urllib.request
+import zipfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -33,6 +41,18 @@ CONFIG_FILE = REPO_ROOT / "config" / "path_configuration.txt"
 
 # Directories we expect inside a valid CLEM_paper_data root
 EXPECTED_SUBDIRS = ["clem_zfish1", "em_zfish1", "paGFP"]
+
+# Zenodo record for the structural data
+ZENODO_RECORD_ID = "19235597"
+ZENODO_FILES = [
+    ("metadata.xlsx", 93_647),
+    ("custom_nblast_matrix.csv", 1_304),
+    ("baselines.zip", 148_741),
+    ("paGFP.zip", 4_752_958),
+    ("em_zfish1.zip", 50_413_892),
+    ("clem_zfish1.zip", 60_150_911),
+]
+DEFAULT_DEST = Path.home() / "Desktop" / "morph2func" / "morph2func_input"
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +125,117 @@ def get_user_path(user: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Download from Zenodo
+# ---------------------------------------------------------------------------
+
+def _download_file(url: str, dest: Path, expected_size: int) -> None:
+    """Download a single file with progress reporting."""
+    if dest.exists() and dest.stat().st_size == expected_size:
+        print(f"  {dest.name}: already exists ({expected_size:,} bytes), skipping")
+        return
+
+    print(f"  {dest.name} ({expected_size / 1_048_576:.1f} MB) ... ", end="", flush=True)
+
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "morph2func-setup/1.0"})
+        with urllib.request.urlopen(req) as resp, open(tmp, "wb") as f:
+            downloaded = 0
+            while True:
+                chunk = resp.read(262_144)  # 256 KB chunks
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                pct = downloaded / expected_size * 100 if expected_size else 0
+                print(f"\r  {dest.name} ({expected_size / 1_048_576:.1f} MB) ... {pct:.0f}%", end="", flush=True)
+        tmp.rename(dest)
+        print(" done")
+    except Exception as exc:
+        print(f" FAILED: {exc}")
+        if tmp.exists():
+            tmp.unlink()
+        raise
+
+
+def _unzip_and_remove(zip_path: Path, dest_dir: Path) -> None:
+    """Unzip a file into dest_dir and remove the zip."""
+    print(f"  Extracting {zip_path.name} ... ", end="", flush=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(dest_dir)
+    zip_path.unlink()
+    print("done")
+
+
+def run_download(dest: Path | None = None) -> None:
+    """Download structural data from Zenodo and set up directory structure."""
+    dest = dest or DEFAULT_DEST
+
+    print("=" * 60)
+    print("  Download Structural Data from Zenodo")
+    print(f"  Record: https://zenodo.org/records/{ZENODO_RECORD_ID}")
+    print(f"  Destination: {dest}")
+    print("=" * 60)
+    print()
+
+    total_bytes = sum(size for _, size in ZENODO_FILES)
+    print(f"Total download: {total_bytes / 1_048_576:.1f} MB ({len(ZENODO_FILES)} files)")
+    print()
+
+    if dest.exists():
+        valid, msg = validate_path(str(dest))
+        if valid:
+            print(f"Data directory already exists and looks valid:")
+            print(f"  {msg}")
+            confirm = input("\nRe-download and overwrite? [y/N]: ").strip().lower()
+            if confirm != "y":
+                print("Skipping download.")
+                _configure_after_download(dest)
+                return
+
+    dest.mkdir(parents=True, exist_ok=True)
+
+    print("\nDownloading files:")
+    download_url = f"https://zenodo.org/api/records/{ZENODO_RECORD_ID}/files"
+    for filename, expected_size in ZENODO_FILES:
+        url = f"{download_url}/{filename}/content"
+        _download_file(url, dest / filename, expected_size)
+
+    print("\nExtracting archives:")
+    for filename, _ in ZENODO_FILES:
+        if filename.endswith(".zip"):
+            _unzip_and_remove(dest / filename, dest)
+
+    print()
+    valid, msg = validate_path(str(dest))
+    if valid:
+        print(f"Validation: {msg}")
+    else:
+        print(f"WARNING: {msg}")
+
+    _configure_after_download(dest)
+
+
+def _configure_after_download(dest: Path) -> None:
+    """Configure path_configuration.txt after download."""
+    user = get_current_user()
+    entries = load_config()
+    entries[user] = str(dest)
+    save_config(entries)
+    print(f"\nConfigured: {user} -> {dest}")
+    print(f"Config file: {CONFIG_FILE}")
+    print("\nSetup complete! You can now run the pipeline:")
+    print("  python functional_type_prediction/classifier_prediction/pipelines/pipeline_main.py")
+
+
+# ---------------------------------------------------------------------------
 # Terminal UI
 # ---------------------------------------------------------------------------
 
 def run_terminal() -> None:
     """Interactive terminal setup for data path configuration."""
     print("=" * 60)
-    print("  Data Path Setup -- hbsf_new")
+    print("  Data Path Setup -- morph2func")
     print(f"  Config file: {CONFIG_FILE}")
     print("=" * 60)
     print()
@@ -219,16 +343,12 @@ def run_terminal() -> None:
         print("  CLEM_paper_data/")
         print("    metadata.xlsx              (cell inventory: PA, CLEM, EM sheets)")
         print("    clem_zfish1/")
-        print("      transforms/              (registration transforms)")
-        print("      new_batch_111224/        (CLEM neuron data)")
-        print("      lda_predictions/         (LDA prediction results)")
+        print("      clem_zfish1_cell_*/      (per-neuron CLEM data directories)")
+
         print("    em_zfish1/")
         print("      em_fish1_*/              (per-neuron EM data directories)")
         print("    paGFP/")
         print("      20YYMMDD.N/             (per-session PA cell directories)")
-        print("      pa_functional_data.h5   (unified PA functional data)")
-        print("    kim_functional_data/")
-        print("      activity_recordings/    (population imaging data)")
 
     elif choice == "q":
         print("Bye.")
@@ -251,7 +371,7 @@ def run_gui() -> None:
         sys.exit(1)
 
     root = tk.Tk()
-    root.title("Data Path Setup -- hbsf_new")
+    root.title("Data Path Setup -- morph2func")
     root.geometry("580x480")
     root.resizable(False, False)
 
@@ -402,12 +522,14 @@ def run_gui() -> None:
 def main() -> None:
     """Parse args and dispatch to terminal or GUI."""
     parser = argparse.ArgumentParser(
-        description="Configure data paths for hbsf_new.",
+        description="Configure data paths for morph2func.",
         epilog=(
             "Examples:\n"
             "  python scripts/setup_data_paths.py          # interactive terminal\n"
             "  python scripts/setup_data_paths.py --gui    # GUI mode\n"
-            "  python scripts/setup_data_paths.py --verify # check current path\n"
+            "  python scripts/setup_data_paths.py --verify     # check current path\n"
+            "  python scripts/setup_data_paths.py --download   # download data from Zenodo\n"
+            "  python scripts/setup_data_paths.py --download --dest /path/to/data\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -419,9 +541,19 @@ def main() -> None:
         "--verify", action="store_true",
         help="Verify the current user's configured path and exit.",
     )
+    parser.add_argument(
+        "--download", action="store_true",
+        help="Download structural data from Zenodo and configure paths.",
+    )
+    parser.add_argument(
+        "--dest", type=Path, default=None,
+        help=f"Destination directory for download (default: {DEFAULT_DEST}).",
+    )
     args = parser.parse_args()
 
-    if args.gui:
+    if args.download:
+        run_download(args.dest)
+    elif args.gui:
         run_gui()
     elif args.verify:
         user = get_current_user()

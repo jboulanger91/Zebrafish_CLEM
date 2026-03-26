@@ -69,11 +69,11 @@ matplotlib.use("Agg")  # Non-interactive backend
 #
 # DATA FLOW SUMMARY (with current settings):
 # -----------------------------------------------
-# 1. load_cells_predictor_pipeline  -> 556 cells loaded from metadata
+# 1. load_cells_predictor_pipeline  -> 563 cells loaded from metadata
 #    - 10 incomplete CLEM cells with function labels FILTERED OUT
 #      (all have incomplete axon or dendrites)
-#    -> 556 cells (filter happens during load)
-# 2. prepare_data_for_metrics       -> 553 after removing 3 duplicates
+#    -> 553 cells after filtering
+# 2. prepare_data_for_metrics       -> 553 (0 duplicates removed)
 # 3. Remove cells with 'axon' in name -> 513 cells enter feature calculation
 #    Breakdown: 251 CLEM, 215 EM, 47 PA
 #    - 120 training (with function): 84 MI, 21 MON, 15 SMI
@@ -85,15 +85,16 @@ class PipelineConfig:
     """Pipeline configuration settings.
 
     These defaults reproduce the published results: 13 RFE features,
-    81.71% weighted F1, and 100% match against reference predictions.
+    82.1% weighted F1 (ShuffleSplit), 83.56% leave-one-out accuracy,
+    and 100% match against reference predictions.
     """
 
-    # Data paths (resolved via config/path_configuration.txt or HBSF_ROOT env)
+    # Data paths (resolved via config/path_configuration.txt or MORPH2FUNC_ROOT env)
     DATA_PATH = get_base_path()
-    FEATURES_FILE = "FINAL_CLEM_CLEMPREDICT_EM_with_clem241211_withgregor250220"
+    FEATURES_FILE = "kooola"
 
     # --- Data loading ---
-    MODALITIES = ["pa", "clem241211", "em", "clem_predict241211"]
+    MODALITIES = ["pa", "clem", "em", "clem_predict"]
     USE_STORED_FEATURES = True      # Use existing HDF5 features if available
     FORCE_RECALCULATION = False
     DROP_NEUROTRANSMITTER = False  # Keep neurotransmitter as a feature
@@ -108,7 +109,7 @@ class PipelineConfig:
     RFE_METRIC = "f1"                                # Optimization metric
 
     # --- Cross-validation and classification ---
-    CV_METHOD = "lpo"  # Leave-pair-out cross-validation
+    CV_METHOD = "lpo"  # Leave-one-out cross-validation (LeavePOut with p=1)
     CV_PLOT = True
     CLASSIFIER = LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")
 
@@ -302,7 +303,7 @@ def print_prediction_summary(predictions):
 
 
 def compare_to_reference(predictions, config: PipelineConfig = None, save_comparison: bool = True):
-    """Compare predictions to FINAL reference files.
+    """Compare predictions to baseline reference files.
 
     Args:
         predictions: PredictionResults container from pipeline
@@ -320,17 +321,9 @@ def compare_to_reference(predictions, config: PipelineConfig = None, save_compar
     print("COMPARISON TO REFERENCE FILES")
     print("=" * 80)
 
-    # Reference file paths
-    clem_ref_path = (
-        config.DATA_PATH
-        / "clem_zfish1"
-        / "clem_cell_prediction_optimize_all_predict_2025-02-27_16-52-09 FINAL.xlsx"
-    )
-    em_ref_path = (
-        config.DATA_PATH
-        / "em_zfish1"
-        / "em_cell_prediction_optimize_all_predict_2025-02-27_16-52-09_AdaBoost_FINAL.xlsx"
-    )
+    # Reference file paths (baseline predictions with modern nomenclature)
+    clem_ref_path = config.DATA_PATH / "baselines" / "clem_baseline_predictions.xlsx"
+    em_ref_path = config.DATA_PATH / "baselines" / "em_baseline_predictions.xlsx"
 
     results = {}
     pred_df = predictions.cells
@@ -534,9 +527,7 @@ def compare_to_reference(predictions, config: PipelineConfig = None, save_compar
     if save_comparison and results:
         output_dir = get_output_dir("classifier_pipeline", "predictions", "comparison")
 
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_file = output_dir / f"prediction_comparison_{timestamp}.xlsx"
+        output_file = output_dir / "prediction_comparison.xlsx"
 
         with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
             # Summary sheet
@@ -594,7 +585,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--no-compare", action="store_true",
-        help="Skip comparison to reference FINAL files",
+        help="Skip comparison to baseline reference files",
     )
     parser.add_argument(
         "--summary-only", action="store_true",
@@ -615,6 +606,6 @@ if __name__ == "__main__":
     print_data_summary(results["data"])
     print_prediction_summary(results["predictions"])
 
-    # Compare to reference FINAL files
+    # Compare to baseline reference files
     if not args.no_compare and not args.summary_only:
         compare_to_reference(results["predictions"], config)

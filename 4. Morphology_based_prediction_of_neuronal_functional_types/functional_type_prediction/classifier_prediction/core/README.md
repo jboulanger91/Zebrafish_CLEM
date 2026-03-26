@@ -117,4 +117,4 @@ All items below are importable from `core`:
 
 ## Output Location
 
-Modules that produce output files write to subdirectories under `~/Desktop/hbsf_output/classifier_pipeline/` via `get_output_dir()`.
+Modules that produce output files write to subdirectories under `~/Desktop/morph2func_output/classifier_pipeline/` via `get_output_dir()`.

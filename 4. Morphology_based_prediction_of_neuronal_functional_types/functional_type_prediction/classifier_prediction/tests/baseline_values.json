@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-03-25T10:32:31.431363",
+  "captured_at": "2026-03-25T13:30:45.904946",
   "features_file": "test",
   "after_load_cells": {
     "total_cells": 120,
@@ -50,9 +50,6 @@
       "prediction_probability",
       "has_data",
       "morphology.1",
-      "soma_mesh",
-      "dendrite_mesh",
-      "axon_mesh",
       "swc",
       "is_neg_control",
       "function",
