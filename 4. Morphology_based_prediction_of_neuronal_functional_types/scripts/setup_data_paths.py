@@ -128,14 +128,31 @@ def get_user_path(user: str) -> str | None:
 # Download from Zenodo
 # ---------------------------------------------------------------------------
 
+def _progress_bar(current: int, total: int, width: int = 30) -> str:
+    """Return a progress bar string like [========>           ] 42%."""
+    if total <= 0:
+        return ""
+    frac = min(current / total, 1.0)
+    filled = int(width * frac)
+    bar = "=" * filled
+    if filled < width:
+        bar += ">"
+        bar += " " * (width - filled - 1)
+    else:
+        bar = "=" * width
+    pct = frac * 100
+    mb_done = current / 1_048_576
+    mb_total = total / 1_048_576
+    return f"[{bar}] {pct:5.1f}%  {mb_done:.1f}/{mb_total:.1f} MB"
+
+
 def _download_file(url: str, dest: Path, expected_size: int) -> None:
-    """Download a single file with progress reporting."""
+    """Download a single file with progress bar."""
     if dest.exists() and dest.stat().st_size == expected_size:
-        print(f"  {dest.name}: already exists ({expected_size:,} bytes), skipping")
+        print(f"  {dest.name}: already exists, skipping")
         return
 
-    print(f"  {dest.name} ({expected_size / 1_048_576:.1f} MB) ... ", end="", flush=True)
-
+    label = dest.name
     tmp = dest.with_suffix(dest.suffix + ".part")
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "morph2func-setup/1.0"})
@@ -147,12 +164,12 @@ def _download_file(url: str, dest: Path, expected_size: int) -> None:
                     break
                 f.write(chunk)
                 downloaded += len(chunk)
-                pct = downloaded / expected_size * 100 if expected_size else 0
-                print(f"\r  {dest.name} ({expected_size / 1_048_576:.1f} MB) ... {pct:.0f}%", end="", flush=True)
+                bar = _progress_bar(downloaded, expected_size)
+                print(f"\r  {label:30s} {bar}", end="", flush=True)
+        print()
         tmp.rename(dest)
-        print(" done")
     except Exception as exc:
-        print(f" FAILED: {exc}")
+        print(f"\r  {label:30s} FAILED: {exc}")
         if tmp.exists():
             tmp.unlink()
         raise

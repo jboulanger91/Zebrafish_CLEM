@@ -704,6 +704,43 @@ def build_parser():
     return parser
 
 
+def _in_morph2func_env() -> bool:
+    """Check if the current Python is running inside the morph2func conda env."""
+    env_name = os.environ.get("CONDA_DEFAULT_ENV", "")
+    if env_name == "morph2func":
+        return True
+    # Also check the executable path
+    return "morph2func" in sys.executable
+
+
+def _reexec_in_env() -> int:
+    """Re-execute the current command inside the morph2func conda env."""
+    conda = _find_conda()
+    if not conda:
+        print("ERROR: conda not found. Install miniforge/miniconda first.")
+        print("  https://github.com/conda-forge/miniforge")
+        return 1
+
+    # Check env exists
+    result = subprocess.run(
+        [conda, "env", "list"], capture_output=True, text=True,
+    )
+    if "morph2func" not in result.stdout:
+        print("Environment 'morph2func' not found.")
+        print("Create it first with: python cli.py env --create")
+        return 1
+
+    # Re-exec: conda run -n morph2func python cli.py <original args>
+    cmd = [conda, "run", "--no-capture-output", "-n", "morph2func",
+           "python", str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
+    print(f"Activating morph2func environment...")
+    return subprocess.run(cmd).returncode
+
+
+# Commands that don't need the morph2func env
+_NO_ENV_COMMANDS = {"env", None}
+
+
 def main():
     """Entry point."""
     parser = build_parser()
@@ -712,6 +749,10 @@ def main():
     if not args.command:
         parser.print_help()
         return 0
+
+    # Auto-activate: if not in morph2func env and command needs it, re-exec
+    if args.command not in _NO_ENV_COMMANDS and not _in_morph2func_env():
+        return _reexec_in_env()
 
     try:
         return args.func(args)
