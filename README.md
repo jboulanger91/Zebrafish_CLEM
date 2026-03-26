@@ -102,7 +102,7 @@ Outputs:
 
 ### 4. Morphology-based prediction of neuronal functional types
 
-Pipeline for classifying neurons into four functional types (iMI, cMI, MON, SMI) from morphological features extracted from SWC skeleton tracings. Uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal features from 68, achieving 83.6% leave-one-out cross-validation accuracy on CLEM neurons. Running with default parameters reproduces the exact results reported in the paper.
+Pipeline for classifying neurons into four functional types (iMI, cMI, MON, SMI) from morphological features extracted from SWC skeleton tracings. Uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal features from 68, achieving 82.1% leave-one-out cross-validation F1 score on CLEM neurons. Running with default parameters reproduces the exact results reported in the paper.
 
 This includes:
 
