@@ -34,9 +34,11 @@ for _p in [str(_REPO_ROOT), str(_SRC), str(_CLASSIFIER_DIR)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# Non-interactive matplotlib backend
-import matplotlib
-matplotlib.use("Agg")
+
+def _configure_matplotlib():
+    """Set non-interactive backend. Called before pipeline/analysis commands."""
+    import matplotlib
+    matplotlib.use("Agg")
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +272,7 @@ def cmd_env(args):
 
 def cmd_run(args):
     """Run the full classifier pipeline."""
+    _configure_matplotlib()
     from functional_type_prediction.classifier_prediction.pipelines.pipeline_main import (
         PipelineConfig, run_pipeline, compare_to_reference,
     )
@@ -318,6 +321,7 @@ def cmd_run(args):
 
 def cmd_analysis_published_metrics(args):
     """Run published metrics (confusion matrices for pv, ps, ff)."""
+    _configure_matplotlib()
     from functional_type_prediction.classifier_prediction.analysis.calculate_published_metrics import (
         run_published_metrics,
     )
@@ -332,6 +336,7 @@ def cmd_analysis_published_metrics(args):
 
 def cmd_analysis_feature_importance(args):
     """Run permutation importance analysis."""
+    _configure_matplotlib()
     from functional_type_prediction.classifier_prediction.analysis.feature_importance import (
         run_feature_importance,
     )
@@ -350,6 +355,7 @@ def cmd_analysis_feature_importance(args):
 
 def cmd_analysis_feature_selector(args):
     """Run RFE feature selection with multiple estimators."""
+    _configure_matplotlib()
     from functional_type_prediction.classifier_prediction.analysis.find_best_feature_selector import (
         main as run_feature_selector,
     )
@@ -368,6 +374,7 @@ def cmd_analysis_feature_selector(args):
 
 def cmd_analysis_proba_cutoff(args):
     """Run probability cutoff optimization."""
+    _configure_matplotlib()
     from functional_type_prediction.classifier_prediction.analysis.find_optimal_proba_cutoff import (
         run_proba_cutoff,
     )

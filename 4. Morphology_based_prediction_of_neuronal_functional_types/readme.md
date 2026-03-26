@@ -116,12 +116,6 @@ Legacy names in metadata files are automatically mapped to modern nomenclature d
 - [fish1.5-release](https://jboulanger91.github.io/fish1.5-release/) - EM connectome documentation and CAVE API access
 - [Neuroglancer](https://spelunker.cave-explorer.org/#!middleauth+https://global.daf-apis.com/nglstate/api/v1/6294688695844864) - Interactive EM connectome explorer (requires Gmail login)
 
-## Citation
-
-If you use this code, please cite:
-
-> Boulanger-Weill J\* et al. (2025). *A cellular-resolution structure-function map of the zebrafish hindbrain.* bioRxiv. [doi:10.1101/2025.03.14.643363](https://doi.org/10.1101/2025.03.14.643363)
-
 ## License
 
 MIT License. See `LICENSE` for full text.
