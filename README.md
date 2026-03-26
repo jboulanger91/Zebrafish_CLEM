@@ -101,9 +101,29 @@ Outputs:
 ---
 
 ### 4. Morphology-based prediction of neuronal functional types
-Includes scripts to predict functional properties (e.g., motion integrator, motion onset neurons) from morphology.
 
-**Environment file:** `env.yaml`
+Pipeline for classifying neurons into four functional types (iMI, cMI, MON, SMI) from morphological features extracted from SWC skeleton tracings. Uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal features from 68, achieving 83.6% leave-one-out cross-validation accuracy on CLEM neurons. Running with default parameters reproduces the exact results reported in the paper.
+
+This includes:
+
+- Extracting 68 morphological features (cable length, Strahler order, Sholl analysis, branch angles, spatial extent, etc.)
+- Selecting 13 optimal features via RFE with AdaBoost
+- Training LDA classifier on 120 labeled neurons (47 PA + 73 CLEM)
+- Predicting functional types for 337 unlabeled neurons (215 EM + 122 CLEM)
+- Verifying predictions via NBLAST morphological similarity and outlier detection
+- Comparison to persistence vectors ([Li et al., 2017](https://doi.org/10.1371/journal.pcbi.1005653)) and form factors ([Choi, Kim and Hyeon, 2023](https://doi.org/10.1016/j.celrep.2023.112746))
+
+Structural data is available on [Zenodo](https://doi.org/10.5281/zenodo.19235597) and downloaded automatically by the CLI.
+
+```bash
+python cli.py env --create        # Create environment (conda or venv)
+python cli.py setup --download    # Download data from Zenodo (~116 MB)
+python cli.py run                 # Train classifier and predict cell types
+python cli.py all                 # Run everything end-to-end
+```
+
+**Main script:** `cli.py`
+**Environment file:** `requirements.txt`
 
 ---
 
