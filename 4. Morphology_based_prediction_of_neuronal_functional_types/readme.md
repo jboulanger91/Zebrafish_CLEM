@@ -51,7 +51,7 @@ python cli.py <command> --help    # Show options for a specific command
 | `python cli.py run --force-recalculation` | Recalculate morphological features from SWC files |
 | `python cli.py run --features-file NAME` | Use a specific HDF5 features file |
 | `python cli.py run --modalities pa clem` | Load only specific modalities |
-| `python cli.py analysis published-metrics` | Reproduce published confusion matrices |
+| `python cli.py analysis published-metrics` | Reproduce published confusion matrices using persistence vectors ([Li et al., 2017](https://doi.org/10.1371/journal.pcbi.1005653)) and form factors ([Choi, Kim and Hyeon, 2023](https://doi.org/10.1016/j.celrep.2023.112746)) |
 | `python cli.py analysis feature-importance` | Compute permutation importance for selected features |
 | `python cli.py analysis feature-selector` | Find optimal feature selector via RFE with multiple estimators |
 | `python cli.py analysis proba-cutoff` | Optimize probability cutoff (accuracy vs. coverage) |

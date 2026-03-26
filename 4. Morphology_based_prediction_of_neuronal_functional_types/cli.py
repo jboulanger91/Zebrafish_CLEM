@@ -192,22 +192,109 @@ def cmd_setup(args):
 # Subcommand: env
 # ---------------------------------------------------------------------------
 
+def _find_env_python() -> str | None:
+    """Find the morph2func environment's Python, whether conda or venv."""
+    # Check conda env
+    conda = _find_conda()
+    if conda:
+        result = subprocess.run(
+            [conda, "env", "list"], capture_output=True, text=True,
+        )
+        if "morph2func" in result.stdout:
+            return "conda"
+
+    # Check venv
+    venv_dir = _REPO_ROOT / "morph2func_env"
+    if venv_dir.is_dir():
+        if platform.system() == "Windows":
+            py = venv_dir / "Scripts" / "python.exe"
+        else:
+            py = venv_dir / "bin" / "python"
+        if py.exists():
+            return "venv"
+
+    return None
+
+
+def _create_with_conda(req_txt: Path) -> int:
+    """Create environment using conda + pip."""
+    conda = _find_conda()
+    env_name = "morph2func"
+
+    print(f"Creating conda environment '{env_name}'...")
+    print(f"Platform: {platform.system()} {platform.machine()}")
+    print()
+
+    result = subprocess.run(
+        [conda, "create", "-n", env_name, "python=3.12", "-y"],
+    )
+    if result.returncode != 0:
+        return result.returncode
+
+    print(f"\nInstalling packages from {req_txt}...")
+    result = subprocess.run(
+        [conda, "run", "-n", env_name, "pip", "install", "-r", str(req_txt)],
+    )
+    if result.returncode == 0:
+        print(f"\nEnvironment created. Activate with:")
+        print(f"  conda activate {env_name}")
+    return result.returncode
+
+
+def _create_with_venv(req_txt: Path) -> int:
+    """Create environment using Python venv + pip."""
+    import venv as _venv
+
+    venv_dir = _REPO_ROOT / "morph2func_env"
+    env_name = "morph2func_env"
+
+    print(f"conda not found, using Python venv instead.")
+    print(f"Creating venv at {venv_dir}...")
+    print(f"Platform: {platform.system()} {platform.machine()}")
+    print()
+
+    # Check Python version
+    if sys.version_info < (3, 12):
+        print(f"ERROR: Python 3.12+ required, found {sys.version}")
+        print("Install Python 3.12+ or install conda:")
+        print("  https://github.com/conda-forge/miniforge")
+        return 1
+
+    # Create venv
+    _venv.create(str(venv_dir), with_pip=True, clear=True)
+
+    # Find pip in the new venv
+    if platform.system() == "Windows":
+        pip = str(venv_dir / "Scripts" / "pip")
+        py = str(venv_dir / "Scripts" / "python")
+    else:
+        pip = str(venv_dir / "bin" / "pip")
+        py = str(venv_dir / "bin" / "python")
+
+    print(f"Installing packages from {req_txt}...")
+    result = subprocess.run([pip, "install", "-r", str(req_txt)])
+    if result.returncode == 0:
+        if platform.system() == "Windows":
+            activate = f"{venv_dir}\\Scripts\\activate"
+        else:
+            activate = f"source {venv_dir}/bin/activate"
+        print(f"\nEnvironment created. Activate with:")
+        print(f"  {activate}")
+    return result.returncode
+
+
 def cmd_env(args):
-    """Create or verify the conda environment."""
-    env_yml = _REPO_ROOT / "config" / "environment.yml"
+    """Create or verify the environment (conda or venv)."""
     req_txt = _REPO_ROOT / "requirements.txt"
     env_name = "morph2func"
 
     if args.verify:
-        # Check if environment exists
-        result = subprocess.run(
-            ["conda", "env", "list"], capture_output=True, text=True,
-        )
-        if env_name in result.stdout:
-            print(f"Environment '{env_name}' exists.")
-            # Check scikit-learn version
+        env_type = _find_env_python()
+        if env_type == "conda":
+            print(f"Conda environment '{env_name}' exists.")
+            conda = _find_conda()
             check = subprocess.run(
-                ["conda", "run", "-n", env_name, "python", "-c",
+                [conda, "run", "-n", env_name, "python", "-c",
                  "import sklearn; print(sklearn.__version__)"],
                 capture_output=True, text=True,
             )
@@ -218,50 +305,51 @@ def cmd_env(args):
                     print(f"WARNING: scikit-learn {skl_ver} may produce different RFE results. 1.5.2 required.")
                     return 1
             return 0
+        elif env_type == "venv":
+            venv_dir = _REPO_ROOT / "morph2func_env"
+            if platform.system() == "Windows":
+                py = str(venv_dir / "Scripts" / "python")
+            else:
+                py = str(venv_dir / "bin" / "python")
+            print(f"Venv environment exists at {venv_dir}")
+            check = subprocess.run(
+                [py, "-c", "import sklearn; print(sklearn.__version__)"],
+                capture_output=True, text=True,
+            )
+            if check.returncode == 0:
+                skl_ver = check.stdout.strip()
+                print(f"scikit-learn version: {skl_ver}")
+                if not skl_ver.startswith("1.5"):
+                    print(f"WARNING: scikit-learn {skl_ver} may produce different RFE results. 1.5.2 required.")
+                    return 1
+            return 0
         else:
-            print(f"Environment '{env_name}' not found.")
+            print(f"No environment found.")
             print(f"Create with: python cli.py env --create")
             return 1
 
     if args.create:
-        conda = _find_conda()
-        if not conda:
-            print("ERROR: conda not found. Install miniforge/miniconda first.")
-            print("  https://github.com/conda-forge/miniforge")
-            return 1
-
-        print(f"Creating conda environment '{env_name}'...")
-        print(f"Platform: {platform.system()} {platform.machine()}")
-        print()
-
-        # Step 1: create env with Python 3.12
-        result = subprocess.run(
-            [conda, "create", "-n", env_name, "python=3.12", "-y"],
-        )
-        if result.returncode != 0:
-            return result.returncode
-
-        # Step 2: install packages from requirements.txt
         if not req_txt.exists():
             print(f"ERROR: {req_txt} not found.")
             return 1
 
-        print(f"\nInstalling packages from {req_txt}...")
-        result = subprocess.run(
-            [conda, "run", "-n", env_name, "pip", "install", "-r", str(req_txt)],
-        )
-        if result.returncode == 0:
-            print(f"\nEnvironment created. Activate with:")
-            print(f"  conda activate {env_name}")
-        return result.returncode
+        # Try conda first, fall back to venv
+        conda = _find_conda()
+        if conda:
+            return _create_with_conda(req_txt)
+        else:
+            return _create_with_venv(req_txt)
 
     # Default: show status
+    env_type = _find_env_python()
+    conda = _find_conda()
     print(f"Requirements:    {req_txt}")
-    print(f"Environment:     {env_name}")
+    print(f"Conda:           {'found' if conda else 'not found (will use venv)'}")
+    print(f"Environment:     {env_type or 'not created'}")
     print(f"Platform:        {platform.system()} {platform.machine()}")
     print()
     print("Commands:")
-    print(f"  python cli.py env --create   Create conda env + pip install requirements.txt")
+    print(f"  python cli.py env --create   Create environment (conda if available, otherwise venv)")
     print(f"  python cli.py env --verify   Check environment is set up correctly")
     return 0
 
@@ -709,36 +797,41 @@ def build_parser():
 
 
 def _in_morph2func_env() -> bool:
-    """Check if the current Python is running inside the morph2func conda env."""
-    env_name = os.environ.get("CONDA_DEFAULT_ENV", "")
-    if env_name == "morph2func":
+    """Check if running inside the morph2func environment (conda or venv)."""
+    # Conda env
+    if os.environ.get("CONDA_DEFAULT_ENV", "") == "morph2func":
         return True
-    # Also check the executable path
-    return "morph2func" in sys.executable
+    # Venv or conda — check executable path
+    if "morph2func" in sys.executable:
+        return True
+    return False
 
 
 def _reexec_in_env() -> int:
-    """Re-execute the current command inside the morph2func conda env."""
-    conda = _find_conda()
-    if not conda:
-        print("ERROR: conda not found. Install miniforge/miniconda first.")
-        print("  https://github.com/conda-forge/miniforge")
-        return 1
+    """Re-execute the current command inside the morph2func environment."""
+    env_type = _find_env_python()
 
-    # Check env exists
-    result = subprocess.run(
-        [conda, "env", "list"], capture_output=True, text=True,
-    )
-    if "morph2func" not in result.stdout:
-        print("Environment 'morph2func' not found.")
-        print("Create it first with: python cli.py env --create")
-        return 1
+    if env_type == "conda":
+        conda = _find_conda()
+        cmd = [conda, "run", "--no-capture-output", "-n", "morph2func",
+               "python", str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
+        print("Activating morph2func conda environment...")
+        return subprocess.run(cmd).returncode
 
-    # Re-exec: conda run -n morph2func python cli.py <original args>
-    cmd = [conda, "run", "--no-capture-output", "-n", "morph2func",
-           "python", str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
-    print(f"Activating morph2func environment...")
-    return subprocess.run(cmd).returncode
+    elif env_type == "venv":
+        venv_dir = _REPO_ROOT / "morph2func_env"
+        if platform.system() == "Windows":
+            py = str(venv_dir / "Scripts" / "python")
+        else:
+            py = str(venv_dir / "bin" / "python")
+        cmd = [py, str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
+        print("Activating morph2func venv environment...")
+        return subprocess.run(cmd).returncode
+
+    else:
+        print("No morph2func environment found.")
+        print("Create one with: python cli.py env --create")
+        return 1
 
 
 # Commands that don't need the morph2func env
