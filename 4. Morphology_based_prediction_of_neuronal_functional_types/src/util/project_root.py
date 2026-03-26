@@ -27,7 +27,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Subdirectory names, preferred first
-_DATA_DIR_NAMES = ("data", "morph2func_input")
+_DATA_DIR_NAMES = ("morph2func_input", "data")
 _OUTPUT_DIR_NAMES = ("morph2func_output", "output")
 
 

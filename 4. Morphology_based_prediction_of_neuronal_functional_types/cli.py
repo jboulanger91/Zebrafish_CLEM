@@ -460,23 +460,27 @@ def cmd_all(args):
         from scripts.setup_data_paths import get_current_user, get_user_path, validate_path
         user = get_current_user()
         current = get_user_path(user)
+        need_download = False
         if current:
             valid, msg = validate_path(current)
             if valid:
                 print(f"  Data path OK: {current}")
             else:
-                print(f"  Data path issue: {msg}")
-                print("  Run: python cli.py setup --download")
-                return 1
+                print(f"  Data incomplete: {msg}")
+                need_download = True
         else:
-            print("  No data path configured. Running download...")
-            args.download = True
-            args.dest = None
-            args.gui = False
-            args.verify = False
-            rc = cmd_setup(args)
-            if rc != 0:
-                return rc
+            print("  No data path configured.")
+            need_download = True
+
+        if need_download:
+            print("  Downloading data from Zenodo...")
+            from scripts.setup_data_paths import run_download
+            run_download()
+            # Re-validate after download
+            current = get_user_path(user)
+            if not current:
+                print("  ERROR: Download failed to configure data path.")
+                return 1
         print()
 
     print("=" * 60)
