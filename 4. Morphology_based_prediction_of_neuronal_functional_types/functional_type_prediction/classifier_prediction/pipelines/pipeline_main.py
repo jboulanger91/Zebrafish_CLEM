@@ -202,7 +202,6 @@ def run_pipeline(config: PipelineConfig = None):
             best_score=0.0,
             scores_by_n_features=[],
             estimator_name="published",
-            method="published",
         )
         print(f"   Using {rfe.best_n_features} published features: {PUBLISHED_FEATURE_NAMES}")
     else:

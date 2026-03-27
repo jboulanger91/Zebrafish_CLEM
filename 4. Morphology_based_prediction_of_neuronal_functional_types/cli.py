@@ -264,7 +264,7 @@ def _create_with_conda(req_txt: Path) -> int:
     result = subprocess.run(
         [conda, "create", "-n", env_name, "python=3.12",
          "numpy=2.0.2", "scipy=1.15.2", "libblas=*=*openblas",
-         "matplotlib", "pykdtree", "-y", "-c", "conda-forge"],
+         "matplotlib", "-y", "-c", "conda-forge"],
     )
     if result.returncode != 0:
         return result.returncode
@@ -370,10 +370,7 @@ def cmd_env(args):
             "    ('threadpoolctl','threadpoolctl')]:\n"
             "    try:\n"
             "        import importlib; m = importlib.import_module(mod)\n"
-            "        try: versions[pkg] = m.__version__\n"
-            "        except AttributeError:\n"
-            "            from importlib.metadata import version as _v\n"
-            "            versions[pkg] = _v(pkg)\n"
+            "        versions[pkg] = m.__version__\n"
             "    except: versions[pkg] = 'NOT INSTALLED'\n"
             "try:\n"
             "    import numpy, re\n"
@@ -585,17 +582,6 @@ def cmd_run(args):
     if config.FORCE_RECALCULATION:
         config.USE_STORED_FEATURES = False
 
-    # On non-macOS platforms, RFE ShuffleSplit produces different curves due to
-    # floating-point ordering differences across BLAS/platform combinations.
-    # Auto-enable published features and baseline features for reproducibility.
-    if platform.system() != "Darwin" and not getattr(args, "no_auto_platform", False):
-        if not args.use_baseline_features and not args.force_recalculation:
-            print(f"  Platform: {platform.system()} (non-macOS) — auto-enabling --use-baseline-features")
-            args.use_baseline_features = True
-        if not args.use_published_features:
-            print(f"  Platform: {platform.system()} (non-macOS) — auto-enabling --use-published-features")
-            args.use_published_features = True
-
     if args.use_baseline_features:
         config.FEATURES_FILE = "baseline"
         config.USE_STORED_FEATURES = True
@@ -603,6 +589,21 @@ def cmd_run(args):
 
     if args.use_published_features:
         config.USE_PUBLISHED_FEATURES = True
+
+    # Auto-enable baseline features + published features on non-Apple Silicon
+    # platforms for reproducibility. macOS ARM64 is the reference platform
+    # where the paper results were produced; other platforms have different
+    # BLAS implementations that cause different RFE/feature computation results.
+    no_auto = getattr(args, "no_auto_platform", False)
+    if not no_auto and not (sys.platform == "darwin" and platform.machine() == "arm64"):
+        if not args.use_baseline_features and not config.FORCE_RECALCULATION:
+            print("  [Auto] Non-Apple-Silicon platform detected.")
+            print("         Using baseline features + published feature selection")
+            print("         for paper-reproducible results.")
+            print("         Disable with --no-auto-platform\n")
+            config.FEATURES_FILE = "baseline"
+            config.USE_STORED_FEATURES = True
+            config.USE_PUBLISHED_FEATURES = True
 
     results = run_pipeline(config)
 
@@ -1024,8 +1025,9 @@ def build_parser():
                        help="Skip RFE and use the 13 published feature indices directly. "
                             "Guarantees identical feature selection across all platforms.")
     run_g.add_argument("--no-auto-platform", action="store_true",
-                       help="Disable automatic --use-baseline-features and --use-published-features "
-                            "on non-macOS platforms. Use this to run RFE natively on Windows/Linux.")
+                       help="Disable automatic baseline/published features on non-Apple-Silicon "
+                            "platforms. By default, non-macOS-ARM64 platforms auto-enable "
+                            "--use-baseline-features and --use-published-features for reproducibility.")
     run_p.set_defaults(func=cmd_run)
 
     # --- analysis ---
@@ -1121,8 +1123,7 @@ def build_parser():
     all_g.add_argument("--use-published-features", action="store_true",
                        help="Skip RFE, use the 13 published feature indices.")
     all_g.add_argument("--no-auto-platform", action="store_true",
-                       help="Disable automatic --use-baseline-features and --use-published-features "
-                            "on non-macOS platforms.")
+                       help="Disable auto baseline/published features on non-Apple-Silicon.")
     # Analysis-specific args
     all_g2 = all_p.add_argument_group("analysis options")
     all_g2.add_argument("--permutations", type=int, default=50, help="Feature importance permutations. Default: 50.")
@@ -1141,12 +1142,9 @@ def build_parser():
 
 def _in_morph2func_env() -> bool:
     """Check if running inside the morph2func environment (conda or venv)."""
-    # Conda env — verify both the env var AND that this Python is actually
-    # from the conda prefix (env var can be stale if env is broken/incomplete)
+    # Conda env
     if os.environ.get("CONDA_DEFAULT_ENV", "") == "morph2func":
-        conda_prefix = os.environ.get("CONDA_PREFIX", "")
-        if conda_prefix and Path(sys.executable).is_relative_to(Path(conda_prefix)):
-            return True
+        return True
     # Venv or conda — check executable path
     if "morph2func" in sys.executable:
         return True

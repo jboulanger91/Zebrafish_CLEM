@@ -19,12 +19,6 @@ Running `python cli.py run` with no arguments reproduces the exact results repor
 
 **Note:** On Linux/WSL, use `./cli.py` or `python3 cli.py` instead of `python cli.py`. The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results. If conda is not available, `env --create` falls back to a Python venv.
 
-## Cross-Platform Reproducibility
-
-RFE feature selection uses ShuffleSplit cross-validation, which produces different train/test splits on Windows and Linux (including ARM) compared to macOS, even with identical random seeds. This is caused by platform-specific floating-point ordering differences in BLAS (OpenBLAS/MKL/Accelerate) that propagate through scikit-learn's shuffling. The selected features and downstream predictions can therefore differ across platforms.
-
-To ensure reproducible results, the CLI automatically enables `--use-baseline-features` and `--use-published-features` on non-macOS platforms. This uses the pre-computed features and the 13 published feature indices from the paper, bypassing RFE entirely. To disable this and run RFE natively, pass `--no-auto-platform`.
-
 ## Overview
 
 The classifier uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal morphological features from a set of 68, achieving 82.1% leave-one-out cross-validation F1 score on CLEM neurons. Predictions are verified via NBLAST morphological similarity analysis and outlier detection.
@@ -92,6 +86,25 @@ Contents:
 CLEM and EM cells each have two SWC files: the original (`*.swc`, in native EM coordinates) and a registered version (`*_mapped.swc`, in [Z-Brain atlas](https://zebrafishexplorer.zib.de/home/) reference frame, [Randlett et al., 2015](https://www.nature.com/articles/nmeth.3581)). PA cells have a single SWC already in Z-Brain coordinates. The pipeline uses the registered skeletons. Units are microns. SWC node labels: 1=soma, 2=axon, 3=dendrite, 4=presynapse, 5=postsynapse.
 
 Output includes: RFE plots, confusion matrices, prediction spreadsheets with probability scores, and verification metrics.
+
+## Cross-Platform Reproducibility
+
+The paper results were produced on macOS Apple Silicon (ARM64). On this platform, `python cli.py run` reproduces the exact published results with no additional flags.
+
+On other platforms (Windows, Linux, Intel Mac), feature extraction and RFE feature selection produce slightly different results due to platform-specific floating-point differences in BLAS libraries. To ensure reproducibility, the CLI **automatically** uses pre-computed baseline features and the 13 published feature indices on non-Apple-Silicon platforms. This is transparent and requires no user action.
+
+To disable this and run feature extraction/RFE natively on your platform:
+
+```bash
+python cli.py run --no-auto-platform
+```
+
+To verify your environment and features against the reference:
+
+```bash
+python cli.py env --verify     # Compare package versions and BLAS
+python cli.py verify           # Compare generated features against baseline
+```
 
 ## Functional Type Nomenclature
 
