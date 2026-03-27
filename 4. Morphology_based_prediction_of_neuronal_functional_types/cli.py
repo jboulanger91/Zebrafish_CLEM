@@ -369,16 +369,27 @@ def cmd_env(args):
             "        versions[pkg] = m.__version__\n"
             "    except: versions[pkg] = 'NOT INSTALLED'\n"
             "try:\n"
-            "    import numpy\n"
+            "    import numpy, re\n"
             "    buf = io.StringIO()\n"
             "    with contextlib.redirect_stdout(buf):\n"
             "        numpy.show_config()\n"
-            "    cfg = buf.getvalue().lower()\n"
-            "    if 'openblas' in cfg: versions['blas'] = 'openblas'\n"
-            "    elif 'accelerate' in cfg: versions['blas'] = 'accelerate'\n"
-            "    elif 'mkl' in cfg: versions['blas'] = 'mkl'\n"
-            "    elif 'scipy-openblas' in cfg: versions['blas'] = 'scipy-openblas'\n"
-            "    else: versions['blas'] = 'unknown'\n"
+            "    cfg = buf.getvalue()\n"
+            "    cfg_lower = cfg.lower()\n"
+            "    blas_name = 'unknown'\n"
+            "    blas_ver = ''\n"
+            "    if 'scipy-openblas' in cfg_lower or 'scipy_openblas' in cfg_lower:\n"
+            "        blas_name = 'scipy-openblas'\n"
+            "    elif 'openblas' in cfg_lower: blas_name = 'openblas'\n"
+            "    elif 'accelerate' in cfg_lower: blas_name = 'accelerate'\n"
+            "    elif 'mkl' in cfg_lower: blas_name = 'mkl'\n"
+            "    m = re.search(r'OpenBLAS ([0-9]+\\.[0-9]+\\.[0-9]+)', cfg)\n"
+            "    if m: blas_ver = m.group(1)\n"
+            "    if not blas_ver:\n"
+            "        for line in cfg.splitlines():\n"
+            "            if 'blas' in line.lower() and 'version' in line.lower():\n"
+            "                vm = re.search(r'\"([0-9]+\\.[0-9]+\\.[0-9]+)\"', line)\n"
+            "                if vm: blas_ver = vm.group(1); break\n"
+            "    versions['blas'] = f'{blas_name} {blas_ver}'.strip() if blas_ver else blas_name\n"
             "except: versions['blas'] = 'unknown'\n"
             "versions['platform'] = f'{platform.system()} {platform.machine()}'\n"
             "print('MORPH2FUNC_ENV_CHECK:' + json.dumps(versions))\n"
@@ -462,11 +473,18 @@ def cmd_env(args):
             installed = versions.get(pkg, "NOT INSTALLED")
 
             if installed == "NOT INSTALLED":
-                status = "MISSING"
-                issues += 1
+                if pkg in critical:
+                    status = "MISSING"
+                    issues += 1
+                else:
+                    status = "MISSING"
+                    warnings += 1
             elif installed == ref_ver:
                 status = "OK"
             elif pkg == "python" and installed.startswith(ref_ver):
+                status = "OK"
+            elif pkg == "blas" and installed.startswith(ref_ver):
+                # "openblas 0.3.27" matches reference "openblas"
                 status = "OK"
             elif pkg in critical:
                 status = "CRITICAL"
