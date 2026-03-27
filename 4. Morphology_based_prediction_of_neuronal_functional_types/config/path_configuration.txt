@@ -1,17 +1,2 @@
-# Data path configuration
-# Format: username /absolute/path/to/data/directory
-#
-# The data directory should contain: clem_zfish1/, em_zfish1/, paGFP/,
-# kim_functional_data/, prediction/, make_figures_FK_output/
-#
-# Configure interactively:
-#   python scripts/setup_data_paths.py
-#
-# Or set the MORPH2FUNC_ROOT environment variable instead:
-#   export MORPH2FUNC_ROOT=/path/to/morph2func
-#   (data is expected at $MORPH2FUNC_ROOT/data/)
-#
-# Example:
-# jdoe /home/jdoe/Desktop/morph2func/data
-
 fkampf /Users/fkampf/Desktop/morph2func/morph2func_input
+User C:\Users\User\Desktop\morph2func\morph2func_input

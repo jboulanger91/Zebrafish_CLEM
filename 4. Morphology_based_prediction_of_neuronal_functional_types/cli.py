@@ -264,7 +264,7 @@ def _create_with_conda(req_txt: Path) -> int:
     result = subprocess.run(
         [conda, "create", "-n", env_name, "python=3.12",
          "numpy=2.0.2", "scipy=1.15.2", "libblas=*=*openblas",
-         "matplotlib", "-y", "-c", "conda-forge"],
+         "matplotlib", "pykdtree", "-y", "-c", "conda-forge"],
     )
     if result.returncode != 0:
         return result.returncode
@@ -370,7 +370,10 @@ def cmd_env(args):
             "    ('threadpoolctl','threadpoolctl')]:\n"
             "    try:\n"
             "        import importlib; m = importlib.import_module(mod)\n"
-            "        versions[pkg] = m.__version__\n"
+            "        try: versions[pkg] = m.__version__\n"
+            "        except AttributeError:\n"
+            "            from importlib.metadata import version as _v\n"
+            "            versions[pkg] = _v(pkg)\n"
             "    except: versions[pkg] = 'NOT INSTALLED'\n"
             "try:\n"
             "    import numpy, re\n"
@@ -1121,9 +1124,12 @@ def build_parser():
 
 def _in_morph2func_env() -> bool:
     """Check if running inside the morph2func environment (conda or venv)."""
-    # Conda env
+    # Conda env — verify both the env var AND that this Python is actually
+    # from the conda prefix (env var can be stale if env is broken/incomplete)
     if os.environ.get("CONDA_DEFAULT_ENV", "") == "morph2func":
-        return True
+        conda_prefix = os.environ.get("CONDA_PREFIX", "")
+        if conda_prefix and Path(sys.executable).is_relative_to(Path(conda_prefix)):
+            return True
     # Venv or conda — check executable path
     if "morph2func" in sys.executable:
         return True
