@@ -81,6 +81,25 @@ matplotlib.use("Agg")  # Non-interactive backend
 #    - All 73 CLEM training cells have reconstruction_complete = True
 #    - No incomplete CLEM neurons with functional identity in final dataset
 #
+# The 13 features selected by RFE in the published analysis.
+# Use --use-published-features to skip RFE and use these directly.
+PUBLISHED_FEATURE_NAMES = [
+    "morphology",
+    "cable_length",
+    "bbox_volume",
+    "x_extent",
+    "y_extent",
+    "x_avg",
+    "y_avg",
+    "x_location_index",
+    "fraction_contra",
+    "y_extent_ipsi",
+    "z_extent_ipsi",
+    "max_x_ipsi",
+    "max_y_ipsi",
+]
+
+
 class PipelineConfig:
     """Pipeline configuration settings.
 
@@ -170,17 +189,32 @@ def run_pipeline(config: PipelineConfig = None):
     # -------------------------------------------------------------------------
     # Step 3: Feature selection -> RFEResult container
     # -------------------------------------------------------------------------
-    print("\n[3/5] Selecting features (RFE)...")
-    rfe = predictor.select_features_rfe(
-        data=data,
-        train_mod=config.TRAIN_MODALITY,
-        test_mod=config.TEST_MODALITY,
-        cv_method_rfe=config.RFE_CV_METHOD,
-        estimator=config.RFE_ESTIMATOR,
-        metric=config.RFE_METRIC,
-    )
-    print(f"   Selected {rfe.best_n_features} features")
-    print(f"   Best F1 score: {rfe.best_score:.4f}")
+    use_published = getattr(config, "USE_PUBLISHED_FEATURES", False)
+    if use_published:
+        import numpy as np
+        from core.feature_selector import RFEResult
+        print("\n[3/5] Using published feature selection (skipping RFE)...")
+        mask = np.array([name in PUBLISHED_FEATURE_NAMES for name in data.feature_names])
+        rfe = RFEResult(
+            selected_features_idx=mask,
+            best_n_features=int(mask.sum()),
+            best_score=0.0,
+            scores_by_n_features=[],
+            estimator_name="published",
+        )
+        print(f"   Using {rfe.best_n_features} published features: {PUBLISHED_FEATURE_NAMES}")
+    else:
+        print("\n[3/5] Selecting features (RFE)...")
+        rfe = predictor.select_features_rfe(
+            data=data,
+            train_mod=config.TRAIN_MODALITY,
+            test_mod=config.TEST_MODALITY,
+            cv_method_rfe=config.RFE_CV_METHOD,
+            estimator=config.RFE_ESTIMATOR,
+            metric=config.RFE_METRIC,
+        )
+        print(f"   Selected {rfe.best_n_features} features")
+        print(f"   Best F1 score: {rfe.best_score:.4f}")
 
     # -------------------------------------------------------------------------
     # Step 4: Cross-validation -> CVResult container

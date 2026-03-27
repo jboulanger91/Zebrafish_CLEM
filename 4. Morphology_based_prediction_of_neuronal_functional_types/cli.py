@@ -257,9 +257,14 @@ def _create_with_conda(req_txt: Path) -> int:
     print(f"Platform: {platform.system()} {platform.machine()}")
     print()
 
+    # Install numpy with openblas from conda-forge to ensure consistent
+    # BLAS implementation across all platforms (macOS/Windows/Linux).
+    # Without this, macOS pip uses Accelerate and Windows pip uses scipy-openblas,
+    # which produce different floating-point results in RFE/LDA.
     result = subprocess.run(
-        [conda, "create", "-n", env_name, "python=3.12", "matplotlib", "-y",
-         "-c", "conda-forge"],
+        [conda, "create", "-n", env_name, "python=3.12",
+         "numpy=2.0.2", "scipy=1.15.2", "libblas=*=*openblas",
+         "matplotlib", "-y", "-c", "conda-forge"],
     )
     if result.returncode != 0:
         return result.returncode
@@ -433,6 +438,9 @@ def cmd_run(args):
         config.FEATURES_FILE = "baseline"
         config.USE_STORED_FEATURES = True
         config.FORCE_RECALCULATION = False
+
+    if args.use_published_features:
+        config.USE_PUBLISHED_FEATURES = True
 
     results = run_pipeline(config)
 
@@ -849,8 +857,10 @@ def build_parser():
     run_g.add_argument("--no-save", action="store_true", help="Do not save predictions or features to disk.")
     run_g.add_argument("--use-baseline-features", action="store_true",
                        help="Use pre-computed baseline features (from baselines/baseline_features.hdf5) "
-                            "instead of computing or loading locally generated features. "
-                            "Ensures identical results across all platforms.")
+                            "instead of computing or loading locally generated features.")
+    run_g.add_argument("--use-published-features", action="store_true",
+                       help="Skip RFE and use the 13 published feature indices directly. "
+                            "Guarantees identical feature selection across all platforms.")
     run_p.set_defaults(func=cmd_run)
 
     # --- analysis ---
@@ -943,6 +953,8 @@ def build_parser():
     all_g.add_argument("--no-save", action="store_true")
     all_g.add_argument("--use-baseline-features", action="store_true",
                        help="Use pre-computed baseline features for cross-platform reproducibility.")
+    all_g.add_argument("--use-published-features", action="store_true",
+                       help="Skip RFE, use the 13 published feature indices.")
     # Analysis-specific args
     all_g2 = all_p.add_argument_group("analysis options")
     all_g2.add_argument("--permutations", type=int, default=50, help="Feature importance permutations. Default: 50.")
