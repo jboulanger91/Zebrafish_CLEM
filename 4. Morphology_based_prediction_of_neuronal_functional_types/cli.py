@@ -37,13 +37,17 @@ for _p in [str(_REPO_ROOT), str(_SRC), str(_CLASSIFIER_DIR)]:
 
 def _configure_matplotlib():
     """Set non-interactive backend. Called before pipeline/analysis commands."""
-    import matplotlib
     try:
+        import matplotlib
         matplotlib.use("Agg")
     except ImportError:
-        # Agg backend missing (broken matplotlib install) — try reinstalling
+        print("ERROR: matplotlib not installed. Run: python cli.py env --create")
+        sys.exit(1)
+    except Exception:
+        # Agg backend missing (broken install)
+        import matplotlib
         print("WARNING: matplotlib Agg backend not found. Try: pip install --force-reinstall matplotlib")
-        matplotlib.use("pdf")  # PDF backend as fallback
+        matplotlib.use("pdf")
 
 
 def _suppress_resource_tracker_warnings():
@@ -222,11 +226,14 @@ def _find_env_python() -> str | None:
     # Check conda env
     conda = _find_conda()
     if conda:
-        result = subprocess.run(
-            [conda, "env", "list"], capture_output=True, text=True,
-        )
-        if "morph2func" in result.stdout:
-            return "conda"
+        try:
+            result = subprocess.run(
+                [conda, "env", "list"], capture_output=True, text=True,
+            )
+            if "morph2func" in result.stdout:
+                return "conda"
+        except (FileNotFoundError, OSError):
+            pass  # conda binary found but doesn't work
 
     # Check venv
     venv_dir = _REPO_ROOT / "morph2func_env"
@@ -553,15 +560,13 @@ def cmd_all(args):
     """Run everything: env check -> setup -> pipeline -> analysis."""
     if not args.skip_env:
         print("=" * 60)
-        print("  Step 0: Verify conda environment")
+        print("  Step 0: Verify environment")
         print("=" * 60)
-        result = subprocess.run(
-            ["conda", "env", "list"], capture_output=True, text=True,
-        )
-        if "morph2func" in result.stdout:
-            print("  Environment 'morph2func' exists.")
+        env_type = _find_env_python()
+        if env_type:
+            print(f"  Environment found ({env_type}).")
         else:
-            print("  Environment 'morph2func' not found. Creating...")
+            print("  No environment found. Creating...")
             args_env = argparse.Namespace(create=True, verify=False)
             rc = cmd_env(args_env)
             if rc != 0:
