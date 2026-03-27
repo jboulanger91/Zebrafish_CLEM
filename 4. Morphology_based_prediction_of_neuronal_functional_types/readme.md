@@ -19,6 +19,12 @@ Running `python cli.py run` with no arguments reproduces the exact results repor
 
 **Note:** On Linux/WSL, use `./cli.py` or `python3 cli.py` instead of `python cli.py`. The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results. If conda is not available, `env --create` falls back to a Python venv.
 
+## Cross-Platform Reproducibility
+
+RFE feature selection uses ShuffleSplit cross-validation, which produces different train/test splits on Windows and Linux (including ARM) compared to macOS, even with identical random seeds. This is caused by platform-specific floating-point ordering differences in BLAS (OpenBLAS/MKL/Accelerate) that propagate through scikit-learn's shuffling. The selected features and downstream predictions can therefore differ across platforms.
+
+To ensure reproducible results, the CLI automatically enables `--use-baseline-features` and `--use-published-features` on non-macOS platforms. This uses the pre-computed features and the 13 published feature indices from the paper, bypassing RFE entirely. To disable this and run RFE natively, pass `--no-auto-platform`.
+
 ## Overview
 
 The classifier uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal morphological features from a set of 68, achieving 82.1% leave-one-out cross-validation F1 score on CLEM neurons. Predictions are verified via NBLAST morphological similarity analysis and outlier detection.

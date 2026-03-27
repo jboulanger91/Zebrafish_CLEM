@@ -585,6 +585,17 @@ def cmd_run(args):
     if config.FORCE_RECALCULATION:
         config.USE_STORED_FEATURES = False
 
+    # On non-macOS platforms, RFE ShuffleSplit produces different curves due to
+    # floating-point ordering differences across BLAS/platform combinations.
+    # Auto-enable published features and baseline features for reproducibility.
+    if platform.system() != "Darwin" and not getattr(args, "no_auto_platform", False):
+        if not args.use_baseline_features and not args.force_recalculation:
+            print(f"  Platform: {platform.system()} (non-macOS) — auto-enabling --use-baseline-features")
+            args.use_baseline_features = True
+        if not args.use_published_features:
+            print(f"  Platform: {platform.system()} (non-macOS) — auto-enabling --use-published-features")
+            args.use_published_features = True
+
     if args.use_baseline_features:
         config.FEATURES_FILE = "baseline"
         config.USE_STORED_FEATURES = True
@@ -1012,6 +1023,9 @@ def build_parser():
     run_g.add_argument("--use-published-features", action="store_true",
                        help="Skip RFE and use the 13 published feature indices directly. "
                             "Guarantees identical feature selection across all platforms.")
+    run_g.add_argument("--no-auto-platform", action="store_true",
+                       help="Disable automatic --use-baseline-features and --use-published-features "
+                            "on non-macOS platforms. Use this to run RFE natively on Windows/Linux.")
     run_p.set_defaults(func=cmd_run)
 
     # --- analysis ---
@@ -1106,6 +1120,9 @@ def build_parser():
                        help="Use pre-computed baseline features for cross-platform reproducibility.")
     all_g.add_argument("--use-published-features", action="store_true",
                        help="Skip RFE, use the 13 published feature indices.")
+    all_g.add_argument("--no-auto-platform", action="store_true",
+                       help="Disable automatic --use-baseline-features and --use-published-features "
+                            "on non-macOS platforms.")
     # Analysis-specific args
     all_g2 = all_p.add_argument_group("analysis options")
     all_g2.add_argument("--permutations", type=int, default=50, help="Feature importance permutations. Default: 50.")
