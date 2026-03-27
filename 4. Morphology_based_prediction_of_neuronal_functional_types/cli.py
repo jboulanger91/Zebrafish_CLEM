@@ -348,7 +348,11 @@ def cmd_env(args):
             "blas": "openblas",
         }
 
-        env_type = _find_env_python()
+        # Check if already in the env first (avoids conda run issues on Windows)
+        if _in_morph2func_env():
+            env_type = "current"
+        else:
+            env_type = _find_env_python()
         if not env_type:
             print("No environment found.")
             print("Create with: python cli.py env --create")
