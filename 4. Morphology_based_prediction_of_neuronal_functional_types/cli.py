@@ -384,12 +384,34 @@ def cmd_env(args):
             "print('MORPH2FUNC_ENV_CHECK:' + json.dumps(versions))\n"
         )
 
-        if env_type == "conda":
-            conda = _find_conda()
+        if _in_morph2func_env():
+            # Already in the env — run directly
             result = subprocess.run(
-                [conda, "run", "-n", env_name, "python", "-c", check_script],
+                [sys.executable, "-c", check_script],
                 capture_output=True, text=True,
             )
+        elif env_type == "conda":
+            conda = _find_conda()
+            if platform.system() == "Windows":
+                # On Windows, find env Python directly to avoid conda run path issues
+                py_result = subprocess.run(
+                    [conda, "run", "-n", env_name, "python", "-c",
+                     "import sys; print(sys.executable)"],
+                    capture_output=True, text=True,
+                )
+                if py_result.returncode == 0:
+                    env_python = py_result.stdout.strip().splitlines()[-1]
+                    result = subprocess.run(
+                        [env_python, "-c", check_script],
+                        capture_output=True, text=True,
+                    )
+                else:
+                    result = py_result
+            else:
+                result = subprocess.run(
+                    [conda, "run", "-n", env_name, "python", "-c", check_script],
+                    capture_output=True, text=True,
+                )
         else:
             venv_dir = _REPO_ROOT / "morph2func_env"
             py = str(venv_dir / ("Scripts/python" if platform.system() == "Windows" else "bin/python"))
