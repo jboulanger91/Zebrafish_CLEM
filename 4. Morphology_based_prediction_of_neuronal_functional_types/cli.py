@@ -38,7 +38,12 @@ for _p in [str(_REPO_ROOT), str(_SRC), str(_CLASSIFIER_DIR)]:
 def _configure_matplotlib():
     """Set non-interactive backend. Called before pipeline/analysis commands."""
     import matplotlib
-    matplotlib.use("Agg")
+    try:
+        matplotlib.use("Agg")
+    except ImportError:
+        # Agg backend missing (broken matplotlib install) — try reinstalling
+        print("WARNING: matplotlib Agg backend not found. Try: pip install --force-reinstall matplotlib")
+        matplotlib.use("pdf")  # PDF backend as fallback
 
 
 def _suppress_resource_tracker_warnings():
@@ -248,7 +253,8 @@ def _create_with_conda(req_txt: Path) -> int:
     print()
 
     result = subprocess.run(
-        [conda, "create", "-n", env_name, "python=3.12", "-y"],
+        [conda, "create", "-n", env_name, "python=3.12", "matplotlib", "-y",
+         "-c", "conda-forge"],
     )
     if result.returncode != 0:
         return result.returncode
@@ -835,10 +841,11 @@ def _reexec_in_env() -> int:
 
     if env_type == "conda":
         conda = _find_conda()
+        # Run from repo dir with relative path to avoid spaces-in-path issues on Windows
         cmd = [conda, "run", "--no-capture-output", "-n", "morph2func",
-               "python", str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
+               "python", "cli.py"] + sys.argv[1:]
         print("Activating morph2func conda environment...")
-        return subprocess.run(cmd).returncode
+        return subprocess.run(cmd, cwd=str(_REPO_ROOT)).returncode
 
     elif env_type == "venv":
         venv_dir = _REPO_ROOT / "morph2func_env"
