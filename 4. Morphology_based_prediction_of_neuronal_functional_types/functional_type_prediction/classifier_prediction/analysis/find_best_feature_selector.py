@@ -57,7 +57,7 @@ np.set_printoptions(suppress=True)
 
 def main(
     data_path=None,
-    features_file='final',
+    features_file='baseline',
     modalities=None,
     train_mod="all",
     test_mod="clem",

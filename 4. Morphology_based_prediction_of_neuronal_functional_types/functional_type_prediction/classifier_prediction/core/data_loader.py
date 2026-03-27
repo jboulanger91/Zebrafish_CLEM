@@ -149,7 +149,8 @@ class DataLoader:
     def _resolve_features_path(self, file_name: str) -> Path:
         """Find the HDF5 features file.
 
-        Checks output directory first, then baselines/ under data root.
+        Checks output directory first (locally generated features),
+        then baselines/ under data root as fallback.
 
         Args:
             file_name: Base name of the features file (without ``_features.hdf5``).
@@ -164,7 +165,7 @@ class DataLoader:
             If the features file is not found.
         """
         hdf5_name = f"{file_name}_features.hdf5"
-        # Check output directory first
+        # Check output directory first (locally generated features)
         try:
             from src.util.output_paths import get_output_dir
 
@@ -175,7 +176,7 @@ class DataLoader:
                 return output_path
         except (ImportError, OSError):
             pass
-        # Check baselines/ under data root
+        # Fallback to baselines/ under data root
         baselines_path = self.path / "baselines" / hdf5_name
         if baselines_path.exists():
             return baselines_path

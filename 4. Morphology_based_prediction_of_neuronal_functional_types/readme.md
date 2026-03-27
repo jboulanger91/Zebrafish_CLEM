@@ -63,7 +63,7 @@ python cli.py <command> --help    # Show options for a specific command
 
 ## Data
 
-The structural data is hosted on Zenodo: [10.5281/zenodo.19235597](https://doi.org/10.5281/zenodo.19235597)
+The structural data is hosted on Zenodo: [10.5281/zenodo.19255740](https://doi.org/10.5281/zenodo.19255740)
 
 `python cli.py setup --download` downloads and extracts the data automatically. Default locations depend on your platform:
 

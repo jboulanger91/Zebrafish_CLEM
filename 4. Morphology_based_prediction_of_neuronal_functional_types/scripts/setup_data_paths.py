@@ -20,7 +20,7 @@ Usage (download):
 Reference:
     Reads/writes: config/path_configuration.txt
     Used by: src.util.get_base_path.get_base_path()
-    Zenodo: https://zenodo.org/records/19235597
+    Zenodo: https://zenodo.org/records/19255740
 """
 
 from __future__ import annotations
@@ -43,11 +43,11 @@ CONFIG_FILE = REPO_ROOT / "config" / "path_configuration.txt"
 EXPECTED_SUBDIRS = ["clem_zfish1", "em_zfish1", "paGFP"]
 
 # Zenodo record for the structural data
-ZENODO_RECORD_ID = "19235597"
+ZENODO_RECORD_ID = "19255740"
 ZENODO_FILES = [
     ("metadata.xlsx", 93_647),
     ("custom_nblast_matrix.csv", 1_304),
-    ("baselines.zip", 148_741),
+    ("baselines.zip", 268_823),
     ("paGFP.zip", 4_752_958),
     ("em_zfish1.zip", 50_413_892),
     ("clem_zfish1.zip", 60_150_911),

@@ -516,6 +516,85 @@ def cmd_analysis_proba_cutoff(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: verify
+# ---------------------------------------------------------------------------
+
+def cmd_verify(args):
+    """Verify generated features against baseline reference."""
+    _configure_matplotlib()
+    import numpy as np
+    import pandas as pd
+
+    data_path = _resolve_data_path(args)
+    features_file = args.features_file or "final"
+
+    # Find baseline reference (always baseline_features.hdf5)
+    baseline_path = data_path / "baselines" / "baseline_features.hdf5"
+    if not baseline_path.exists():
+        print(f"ERROR: Baseline not found: {baseline_path}")
+        return 1
+
+    # Find generated (uses the features_file name, default: final_features.hdf5)
+    from src.util.output_paths import get_output_dir
+    generated_path = get_output_dir("classifier_pipeline", "features") / f"{features_file}_features.hdf5"
+    if not generated_path.exists():
+        print(f"No generated features file at {generated_path}")
+        print("Run the pipeline first with --force-recalculation to generate features.")
+        return 1
+
+    print(f"Baseline:  {baseline_path}")
+    print(f"Generated: {generated_path}")
+    print()
+
+    baseline = pd.read_hdf(baseline_path, key="complete_df")
+    generated = pd.read_hdf(generated_path, key="complete_df")
+
+    print(f"Baseline shape:  {baseline.shape}")
+    print(f"Generated shape: {generated.shape}")
+
+    if baseline.shape != generated.shape:
+        print(f"\nERROR: Shape mismatch!")
+        return 1
+
+    # Compare numeric columns
+    num_cols = baseline.select_dtypes(include="number").columns
+    base_vals = baseline[num_cols].values
+    gen_vals = generated[num_cols].values
+    diff = np.abs(base_vals - gen_vals)
+
+    max_diff = np.nanmax(diff)
+    mean_diff = np.nanmean(diff)
+    exact = np.sum(diff == 0)
+    total = diff.size
+    close = np.sum(diff < 1e-6)
+
+    print(f"\nNumeric columns: {len(num_cols)}")
+    print(f"Total values:    {total}")
+    print(f"Exact matches:   {exact} ({exact/total*100:.1f}%)")
+    print(f"Close (<1e-6):   {close} ({close/total*100:.1f}%)")
+    print(f"Max abs diff:    {max_diff:.2e}")
+    print(f"Mean abs diff:   {mean_diff:.2e}")
+
+    if max_diff < 1e-6:
+        print("\nFeatures are identical to baseline.")
+        return 0
+    else:
+        print(f"\nFeatures differ from baseline.")
+        print("Columns with largest differences:")
+        col_diffs = []
+        for i, col in enumerate(num_cols):
+            col_max = np.nanmax(np.abs(base_vals[:, i] - gen_vals[:, i]))
+            if col_max > 1e-6:
+                col_diffs.append((col, col_max))
+        col_diffs.sort(key=lambda x: -x[1])
+        for col, d in col_diffs[:10]:
+            print(f"  {col:45s} {d:.2e}")
+        if len(col_diffs) > 10:
+            print(f"  ... and {len(col_diffs) - 10} more")
+        return 1
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: test
 # ---------------------------------------------------------------------------
 
@@ -776,6 +855,20 @@ def build_parser():
     pc_p.add_argument("--cutoff-max", type=float, default=0.99, help="Max cutoff to test. Default: 0.99.")
     pc_p.add_argument("--cutoff-step", type=float, default=0.01, help="Cutoff step size. Default: 0.01.")
     pc_p.set_defaults(func=cmd_analysis_proba_cutoff)
+
+    # --- verify ---
+    verify_p = subparsers.add_parser(
+        "verify", parents=[GLOBAL_PARENT, DATA_PARENT],
+        help="Verify generated features against baseline reference.",
+        description=(
+            "Compare locally generated features against the baseline HDF5.\n"
+            "Use this to check if feature computation on your platform matches\n"
+            "the reference (Mac Apple Silicon). Differences indicate platform-\n"
+            "dependent numerical variation in morphological feature extraction."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    verify_p.set_defaults(func=cmd_verify)
 
     # --- test ---
     test_p = subparsers.add_parser(
