@@ -17,7 +17,7 @@ python cli.py run                 # 3. Train classifier and predict cell types
 
 Running `python cli.py run` with no arguments reproduces the exact results reported in the paper. All parameters can be customized via CLI flags (see `python cli.py run --help`).
 
-**Note:** The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results. If conda is not available, `env --create` falls back to a Python venv.
+**Note:** On Linux/WSL, use `./cli.py` or `python3 cli.py` instead of `python cli.py`. The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results. If conda is not available, `env --create` falls back to a Python venv.
 
 ## Overview
 
