@@ -30,7 +30,7 @@ from core.class_predictor import class_predictor  # noqa: E402
 
 def run_published_metrics(
     data_path=None,
-    features_file="test",
+    features_file="final",
     modalities=None,
 ):
     """Run published metrics (confusion matrices for pv, ps, ff features).

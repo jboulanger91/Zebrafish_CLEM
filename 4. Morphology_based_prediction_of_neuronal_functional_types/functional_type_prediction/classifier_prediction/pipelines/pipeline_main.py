@@ -85,13 +85,13 @@ class PipelineConfig:
     """Pipeline configuration settings.
 
     These defaults reproduce the published results: 13 RFE features,
-    82.1% weighted F1 (ShuffleSplit), 83.56% leave-one-out accuracy,
+    82.1% weighted F1 (leave-one-out on CLEM),
     and 100% match against reference predictions.
     """
 
     # Data paths (resolved via config/path_configuration.txt or MORPH2FUNC_ROOT env)
     DATA_PATH = get_base_path()
-    FEATURES_FILE = "kooola"
+    FEATURES_FILE = "final"
 
     # --- Data loading ---
     MODALITIES = ["pa", "clem", "em", "clem_predict"]

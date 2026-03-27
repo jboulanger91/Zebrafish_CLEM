@@ -41,6 +41,28 @@ def _configure_matplotlib():
     matplotlib.use("Agg")
 
 
+def _suppress_resource_tracker_warnings():
+    """Suppress harmless multiprocessing ResourceTracker ChildProcessError on macOS/Python 3.12."""
+    import atexit
+    import warnings
+    def _silence():
+        warnings.filterwarnings("ignore", category=ChildProcessError)
+        # Monkey-patch ResourceTracker._stop_locked to swallow ChildProcessError
+        try:
+            import multiprocessing.resource_tracker as rt
+            _orig = rt.ResourceTracker._stop_locked
+            def _patched(self):
+                try:
+                    _orig(self)
+                except ChildProcessError:
+                    pass
+            rt.ResourceTracker._stop_locked = _patched
+        except Exception:
+            pass
+    atexit.register(_silence)
+    _silence()
+
+
 # ---------------------------------------------------------------------------
 # Shared parent parsers
 # ---------------------------------------------------------------------------
@@ -361,6 +383,7 @@ def cmd_env(args):
 def cmd_run(args):
     """Run the full classifier pipeline."""
     _configure_matplotlib()
+    _suppress_resource_tracker_warnings()
     from functional_type_prediction.classifier_prediction.pipelines.pipeline_main import (
         PipelineConfig, run_pipeline, compare_to_reference,
     )
@@ -691,8 +714,7 @@ def build_parser():
             "  Training cells:    120 (47 PA + 73 CLEM)\n"
             "  Predicted cells:   337 (122 CLEM + 215 EM)\n"
             "  Selected features: 13 of 68\n"
-            "  Expected F1:       82.1% (ShuffleSplit)\n"
-            "  Expected accuracy: 83.56% (LOO on CLEM)\n"
+            "  Expected F1:       82.1% (LOO on CLEM)\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

@@ -36,7 +36,7 @@ from core.class_predictor import class_predictor  # noqa: E402
 
 def run_feature_importance(
     data_path=None,
-    features_file="test",
+    features_file="final",
     modalities=None,
     train_mod="all",
     test_mod="clem",

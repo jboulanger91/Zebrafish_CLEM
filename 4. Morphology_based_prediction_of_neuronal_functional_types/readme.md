@@ -15,11 +15,13 @@ python cli.py setup --download    # 2. Download data from Zenodo (one-time, ~116
 python cli.py run                 # 3. Train classifier and predict cell types
 ```
 
-**Note:** Requires conda ([miniforge](https://github.com/conda-forge/miniforge) recommended). The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results.
+Running `python cli.py run` with no arguments reproduces the exact results reported in the paper. All parameters can be customized via CLI flags (see `python cli.py run --help`).
+
+**Note:** The pipeline pins `scikit-learn==1.5.2`; version 1.6+ produces different RFE results. If conda is not available, `env --create` falls back to a Python venv.
 
 ## Overview
 
-The classifier uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal morphological features from a set of 68, achieving 83.6% leave-one-out cross-validation accuracy on CLEM neurons. Predictions are verified via NBLAST morphological similarity analysis and outlier detection.
+The classifier uses Linear Discriminant Analysis (LDA) with Recursive Feature Elimination (RFE) to select 13 optimal morphological features from a set of 68, achieving 82.1% leave-one-out cross-validation F1 score on CLEM neurons. Predictions are verified via NBLAST morphological similarity analysis and outlier detection.
 
 ## Pipeline
 
