@@ -429,6 +429,11 @@ def cmd_run(args):
     if config.FORCE_RECALCULATION:
         config.USE_STORED_FEATURES = False
 
+    if args.use_baseline_features:
+        config.FEATURES_FILE = "baseline"
+        config.USE_STORED_FEATURES = True
+        config.FORCE_RECALCULATION = False
+
     results = run_pipeline(config)
 
     if not args.no_compare:
@@ -842,6 +847,10 @@ def build_parser():
     run_g.add_argument("--verification-tests", nargs="+", default=None, metavar="TEST", help="Verification tests: IF, LOF, OCSVM. Default: IF LOF.")
     run_g.add_argument("--no-compare", action="store_true", help="Skip comparison to baseline reference files.")
     run_g.add_argument("--no-save", action="store_true", help="Do not save predictions or features to disk.")
+    run_g.add_argument("--use-baseline-features", action="store_true",
+                       help="Use pre-computed baseline features (from baselines/baseline_features.hdf5) "
+                            "instead of computing or loading locally generated features. "
+                            "Ensures identical results across all platforms.")
     run_p.set_defaults(func=cmd_run)
 
     # --- analysis ---
@@ -932,6 +941,8 @@ def build_parser():
     all_g.add_argument("--verification-tests", nargs="+", default=None)
     all_g.add_argument("--no-compare", action="store_true")
     all_g.add_argument("--no-save", action="store_true")
+    all_g.add_argument("--use-baseline-features", action="store_true",
+                       help="Use pre-computed baseline features for cross-platform reproducibility.")
     # Analysis-specific args
     all_g2 = all_p.add_argument_group("analysis options")
     all_g2.add_argument("--permutations", type=int, default=50, help="Feature importance permutations. Default: 50.")
