@@ -327,44 +327,103 @@ def cmd_env(args):
     env_name = "morph2func"
 
     if args.verify:
+        # Reference environment (morph2func on Mac, used for paper results)
+        REFERENCE = {
+            "python": "3.12",
+            "numpy": "2.0.2",
+            "scipy": "1.15.2",
+            "scikit-learn": "1.5.2",
+            "pandas": "2.2.3",
+            "navis": "1.10.0",
+            "matplotlib": "3.10.1",
+            "h5py": "3.13.0",
+            "blas": "openblas",
+        }
+
         env_type = _find_env_python()
-        if env_type == "conda":
-            print(f"Conda environment '{env_name}' exists.")
-            conda = _find_conda()
-            check = subprocess.run(
-                [conda, "run", "-n", env_name, "python", "-c",
-                 "import sklearn; print(sklearn.__version__)"],
-                capture_output=True, text=True,
-            )
-            if check.returncode == 0:
-                skl_ver = check.stdout.strip()
-                print(f"scikit-learn version: {skl_ver}")
-                if not skl_ver.startswith("1.5"):
-                    print(f"WARNING: scikit-learn {skl_ver} may produce different RFE results. 1.5.2 required.")
-                    return 1
-            return 0
-        elif env_type == "venv":
-            venv_dir = _REPO_ROOT / "morph2func_env"
-            if platform.system() == "Windows":
-                py = str(venv_dir / "Scripts" / "python")
-            else:
-                py = str(venv_dir / "bin" / "python")
-            print(f"Venv environment exists at {venv_dir}")
-            check = subprocess.run(
-                [py, "-c", "import sklearn; print(sklearn.__version__)"],
-                capture_output=True, text=True,
-            )
-            if check.returncode == 0:
-                skl_ver = check.stdout.strip()
-                print(f"scikit-learn version: {skl_ver}")
-                if not skl_ver.startswith("1.5"):
-                    print(f"WARNING: scikit-learn {skl_ver} may produce different RFE results. 1.5.2 required.")
-                    return 1
-            return 0
-        else:
-            print(f"No environment found.")
-            print(f"Create with: python cli.py env --create")
+        if not env_type:
+            print("No environment found.")
+            print("Create with: python cli.py env --create")
             return 1
+
+        # Build check script
+        check_script = (
+            "import sys, platform, json\n"
+            "versions = {'python': '.'.join(map(str, sys.version_info[:2]))}\n"
+            "for pkg, mod in [('numpy','numpy'),('scipy','scipy'),('scikit-learn','sklearn'),"
+            "('pandas','pandas'),('navis','navis'),('matplotlib','matplotlib'),('h5py','h5py')]:\n"
+            "    try:\n"
+            "        import importlib; m = importlib.import_module(mod)\n"
+            "        versions[pkg] = m.__version__\n"
+            "    except: versions[pkg] = 'NOT INSTALLED'\n"
+            "try:\n"
+            "    import numpy; c = numpy.show_config(mode='dicts')\n"
+            "    versions['blas'] = c.get('Build Dependencies',{}).get('blas',{}).get('name','unknown')\n"
+            "except: versions['blas'] = 'unknown'\n"
+            "versions['platform'] = f'{platform.system()} {platform.machine()}'\n"
+            "print(json.dumps(versions))\n"
+        )
+
+        if env_type == "conda":
+            conda = _find_conda()
+            result = subprocess.run(
+                [conda, "run", "-n", env_name, "python", "-c", check_script],
+                capture_output=True, text=True,
+            )
+        else:
+            venv_dir = _REPO_ROOT / "morph2func_env"
+            py = str(venv_dir / ("Scripts/python" if platform.system() == "Windows" else "bin/python"))
+            result = subprocess.run(
+                [py, "-c", check_script], capture_output=True, text=True,
+            )
+
+        if result.returncode != 0:
+            print(f"ERROR: Could not check environment.\n{result.stderr}")
+            return 1
+
+        import json
+        try:
+            versions = json.loads(result.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            print(f"ERROR: Could not parse environment info.\n{result.stdout}")
+            return 1
+
+        # Compare
+        print(f"{'='*60}")
+        print(f"  Environment Comparison ({env_type})")
+        print(f"  Platform: {versions.get('platform', 'unknown')}")
+        print(f"{'='*60}")
+        print(f"  {'Package':<16} {'Installed':<16} {'Reference':<16} {'Status'}")
+        print(f"  {'-'*16} {'-'*16} {'-'*16} {'-'*8}")
+
+        issues = 0
+        for pkg, ref_ver in REFERENCE.items():
+            installed = versions.get(pkg, "NOT INSTALLED")
+            if installed == "NOT INSTALLED":
+                status = "MISSING"
+                issues += 1
+            elif pkg == "scikit-learn" and not installed.startswith("1.5"):
+                status = "WRONG"
+                issues += 1
+            elif pkg == "blas" and installed != ref_ver:
+                status = "DIFFERS"
+                issues += 1
+            elif pkg == "python" and not installed.startswith(ref_ver):
+                status = "WRONG"
+                issues += 1
+            elif pkg not in ("blas", "python", "scikit-learn") and installed != ref_ver:
+                status = "DIFFERS"
+            else:
+                status = "OK"
+            print(f"  {pkg:<16} {installed:<16} {ref_ver:<16} {status}")
+
+        print(f"{'='*60}")
+        if issues > 0:
+            print(f"  {issues} issue(s) found. Recreate env: python cli.py env --create")
+            return 1
+        else:
+            print(f"  All critical packages match reference.")
+            return 0
 
     if args.create:
         if not req_txt.exists():

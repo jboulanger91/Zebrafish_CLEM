@@ -11,6 +11,7 @@ Pipeline methods return typed containers for explicit data flow:
 Author: Florian Kämpf
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -205,6 +206,16 @@ def run_pipeline(config: PipelineConfig = None):
         print(f"   Using {rfe.best_n_features} published features: {PUBLISHED_FEATURE_NAMES}")
     else:
         print("\n[3/5] Selecting features (RFE)...")
+        # Force single-threaded BLAS during RFE for cross-platform reproducibility.
+        # Multi-threaded BLAS can produce different results due to non-deterministic
+        # floating-point reduction order across threads.
+        _orig_openblas = os.environ.get("OPENBLAS_NUM_THREADS")
+        _orig_omp = os.environ.get("OMP_NUM_THREADS")
+        _orig_mkl = os.environ.get("MKL_NUM_THREADS")
+        os.environ["OPENBLAS_NUM_THREADS"] = "1"
+        os.environ["OMP_NUM_THREADS"] = "1"
+        os.environ["MKL_NUM_THREADS"] = "1"
+
         rfe = predictor.select_features_rfe(
             data=data,
             train_mod=config.TRAIN_MODALITY,
@@ -213,6 +224,16 @@ def run_pipeline(config: PipelineConfig = None):
             estimator=config.RFE_ESTIMATOR,
             metric=config.RFE_METRIC,
         )
+
+        # Restore original thread settings
+        for key, val in [("OPENBLAS_NUM_THREADS", _orig_openblas),
+                         ("OMP_NUM_THREADS", _orig_omp),
+                         ("MKL_NUM_THREADS", _orig_mkl)]:
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
         print(f"   Selected {rfe.best_n_features} features")
         print(f"   Best F1 score: {rfe.best_score:.4f}")
 
