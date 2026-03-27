@@ -327,7 +327,9 @@ def cmd_env(args):
     env_name = "morph2func"
 
     if args.verify:
-        # Reference environment (morph2func on Mac, used for paper results)
+        # Reference environment (macOS ARM64, used to produce paper results)
+        # All versions must match exactly for reproducible RFE/LDA results.
+        # Source: morph2func conda env on Mac (Apple Silicon M2), March 2026
         REFERENCE = {
             "python": "3.12",
             "numpy": "2.0.2",
@@ -335,6 +337,12 @@ def cmd_env(args):
             "scikit-learn": "1.5.2",
             "pandas": "2.2.3",
             "navis": "1.10.0",
+            "pykdtree": "1.3.12",
+            "ncollpyde": "0.19.0",
+            "skeletor": "1.5.0",
+            "trimesh": "4.11.5",
+            "morphops": "0.1.13",
+            "threadpoolctl": "3.6.0",
             "matplotlib": "3.10.1",
             "h5py": "3.13.0",
             "blas": "openblas",
@@ -346,12 +354,16 @@ def cmd_env(args):
             print("Create with: python cli.py env --create")
             return 1
 
-        # Build check script
+        # Build check script that queries all reference packages
         check_script = (
             "import sys, platform, json\n"
             "versions = {'python': '.'.join(map(str, sys.version_info[:2]))}\n"
-            "for pkg, mod in [('numpy','numpy'),('scipy','scipy'),('scikit-learn','sklearn'),"
-            "('pandas','pandas'),('navis','navis'),('matplotlib','matplotlib'),('h5py','h5py')]:\n"
+            "for pkg, mod in [\n"
+            "    ('numpy','numpy'),('scipy','scipy'),('scikit-learn','sklearn'),\n"
+            "    ('pandas','pandas'),('navis','navis'),('matplotlib','matplotlib'),\n"
+            "    ('h5py','h5py'),('pykdtree','pykdtree'),('ncollpyde','ncollpyde'),\n"
+            "    ('skeletor','skeletor'),('trimesh','trimesh'),('morphops','morphops'),\n"
+            "    ('threadpoolctl','threadpoolctl')]:\n"
             "    try:\n"
             "        import importlib; m = importlib.import_module(mod)\n"
             "        versions[pkg] = m.__version__\n"
@@ -389,41 +401,56 @@ def cmd_env(args):
             return 1
 
         # Compare
-        print(f"{'='*60}")
-        print(f"  Environment Comparison ({env_type})")
-        print(f"  Platform: {versions.get('platform', 'unknown')}")
-        print(f"{'='*60}")
-        print(f"  {'Package':<16} {'Installed':<16} {'Reference':<16} {'Status'}")
-        print(f"  {'-'*16} {'-'*16} {'-'*16} {'-'*8}")
+        print(f"{'='*70}")
+        print(f"  Environment Comparison")
+        print(f"  Type:      {env_type}")
+        print(f"  Platform:  {versions.get('platform', 'unknown')}")
+        print(f"  Reference: macOS ARM64 (Apple Silicon M2, March 2026)")
+        print(f"{'='*70}")
+        print(f"  {'Package':<16} {'Installed':<16} {'Required':<16} {'Status'}")
+        print(f"  {'-'*16} {'-'*16} {'-'*16} {'-'*10}")
+
+        # Critical packages: must match exactly or pipeline produces wrong results
+        critical = {"scikit-learn", "blas", "python"}
+        # Numerical packages: should match for identical feature computation
+        numerical = {"numpy", "scipy", "pykdtree", "ncollpyde", "skeletor",
+                     "trimesh", "morphops", "navis", "threadpoolctl"}
 
         issues = 0
+        warnings = 0
         for pkg, ref_ver in REFERENCE.items():
             installed = versions.get(pkg, "NOT INSTALLED")
+
             if installed == "NOT INSTALLED":
                 status = "MISSING"
                 issues += 1
-            elif pkg == "scikit-learn" and not installed.startswith("1.5"):
-                status = "WRONG"
-                issues += 1
-            elif pkg == "blas" and installed != ref_ver:
-                status = "DIFFERS"
-                issues += 1
-            elif pkg == "python" and not installed.startswith(ref_ver):
-                status = "WRONG"
-                issues += 1
-            elif pkg not in ("blas", "python", "scikit-learn") and installed != ref_ver:
-                status = "DIFFERS"
-            else:
+            elif installed == ref_ver:
                 status = "OK"
+            elif pkg == "python" and installed.startswith(ref_ver):
+                status = "OK"
+            elif pkg in critical:
+                status = "CRITICAL"
+                issues += 1
+            elif pkg in numerical:
+                status = "MISMATCH"
+                warnings += 1
+            else:
+                status = "DIFFERS"
+
             print(f"  {pkg:<16} {installed:<16} {ref_ver:<16} {status}")
 
-        print(f"{'='*60}")
+        print(f"{'='*70}")
         if issues > 0:
-            print(f"  {issues} issue(s) found. Recreate env: python cli.py env --create")
-            return 1
-        else:
-            print(f"  All critical packages match reference.")
-            return 0
+            print(f"  {issues} CRITICAL issue(s): results will differ from paper.")
+            print(f"  Fix: python cli.py env --create (recreates environment)")
+        if warnings > 0:
+            print(f"  {warnings} MISMATCH(es): feature computation may differ slightly.")
+            print(f"  Use --use-baseline-features and --use-published-features")
+            print(f"  for exact paper reproduction.")
+        if issues == 0 and warnings == 0:
+            print(f"  All packages match reference. Results will be identical.")
+        print(f"{'='*70}")
+        return 1 if issues > 0 else 0
 
     if args.create:
         if not req_txt.exists():
