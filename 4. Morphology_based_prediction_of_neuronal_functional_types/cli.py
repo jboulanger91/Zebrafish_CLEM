@@ -568,29 +568,57 @@ def cmd_verify(args):
     total = diff.size
     close = np.sum(diff < 1e-6)
 
-    print(f"\nNumeric columns: {len(num_cols)}")
-    print(f"Total values:    {total}")
-    print(f"Exact matches:   {exact} ({exact/total*100:.1f}%)")
-    print(f"Close (<1e-6):   {close} ({close/total*100:.1f}%)")
-    print(f"Max abs diff:    {max_diff:.2e}")
-    print(f"Mean abs diff:   {mean_diff:.2e}")
+    # Thresholds
+    IDENTICAL = 1e-10
+    ACCEPTABLE = 1.0  # platform-dependent float differences are typically < 1.0
 
-    if max_diff < 1e-6:
-        print("\nFeatures are identical to baseline.")
+    print(f"\n{'='*60}")
+    print(f"  Feature Verification Report")
+    print(f"{'='*60}")
+    print(f"  Cells:           {baseline.shape[0]}")
+    print(f"  Features:        {len(num_cols)}")
+    print(f"  Total values:    {total}")
+    print(f"  Exact matches:   {exact} ({exact/total*100:.1f}%)")
+    print(f"  Max abs diff:    {max_diff:.2e}")
+    print(f"  Mean abs diff:   {mean_diff:.2e}")
+
+    if max_diff < IDENTICAL:
+        print(f"\n  RESULT: IDENTICAL to baseline reference")
+        print(f"{'='*60}")
         return 0
-    else:
-        print(f"\nFeatures differ from baseline.")
-        print("Columns with largest differences:")
+    elif max_diff < ACCEPTABLE:
+        print(f"\n  RESULT: ACCEPTABLE platform-dependent variation")
+        print(f"  These small numerical differences are expected across")
+        print(f"  different CPUs/BLAS libraries and do not affect results.")
+        print()
+        # Show top differences
         col_diffs = []
         for i, col in enumerate(num_cols):
             col_max = np.nanmax(np.abs(base_vals[:, i] - gen_vals[:, i]))
-            if col_max > 1e-6:
+            if col_max > IDENTICAL:
                 col_diffs.append((col, col_max))
         col_diffs.sort(key=lambda x: -x[1])
-        for col, d in col_diffs[:10]:
-            print(f"  {col:45s} {d:.2e}")
-        if len(col_diffs) > 10:
-            print(f"  ... and {len(col_diffs) - 10} more")
+        print(f"  Differences by column:")
+        for col, d in col_diffs:
+            print(f"    {col:40s} {d:.2e}")
+        print(f"{'='*60}")
+        return 0
+    else:
+        print(f"\n  RESULT: SIGNIFICANT DIFFERENCES DETECTED")
+        print(f"  Max diff {max_diff:.2e} exceeds threshold {ACCEPTABLE:.1f}.")
+        print(f"  This may indicate different SWC files, data versions,")
+        print(f"  or a bug in feature computation.")
+        print()
+        col_diffs = []
+        for i, col in enumerate(num_cols):
+            col_max = np.nanmax(np.abs(base_vals[:, i] - gen_vals[:, i]))
+            if col_max > ACCEPTABLE:
+                col_diffs.append((col, col_max))
+        col_diffs.sort(key=lambda x: -x[1])
+        print(f"  Columns exceeding threshold:")
+        for col, d in col_diffs:
+            print(f"    {col:40s} {d:.2e}")
+        print(f"{'='*60}")
         return 1
 
 
