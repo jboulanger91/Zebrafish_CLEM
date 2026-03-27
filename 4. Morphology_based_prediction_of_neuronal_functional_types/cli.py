@@ -356,7 +356,7 @@ def cmd_env(args):
 
         # Build check script that queries all reference packages
         check_script = (
-            "import sys, platform, json\n"
+            "import sys, platform, json, io, contextlib\n"
             "versions = {'python': '.'.join(map(str, sys.version_info[:2]))}\n"
             "for pkg, mod in [\n"
             "    ('numpy','numpy'),('scipy','scipy'),('scikit-learn','sklearn'),\n"
@@ -369,11 +369,19 @@ def cmd_env(args):
             "        versions[pkg] = m.__version__\n"
             "    except: versions[pkg] = 'NOT INSTALLED'\n"
             "try:\n"
-            "    import numpy; c = numpy.show_config(mode='dicts')\n"
-            "    versions['blas'] = c.get('Build Dependencies',{}).get('blas',{}).get('name','unknown')\n"
+            "    import numpy\n"
+            "    buf = io.StringIO()\n"
+            "    with contextlib.redirect_stdout(buf):\n"
+            "        numpy.show_config()\n"
+            "    cfg = buf.getvalue().lower()\n"
+            "    if 'openblas' in cfg: versions['blas'] = 'openblas'\n"
+            "    elif 'accelerate' in cfg: versions['blas'] = 'accelerate'\n"
+            "    elif 'mkl' in cfg: versions['blas'] = 'mkl'\n"
+            "    elif 'scipy-openblas' in cfg: versions['blas'] = 'scipy-openblas'\n"
+            "    else: versions['blas'] = 'unknown'\n"
             "except: versions['blas'] = 'unknown'\n"
             "versions['platform'] = f'{platform.system()} {platform.machine()}'\n"
-            "print(json.dumps(versions))\n"
+            "print('MORPH2FUNC_ENV_CHECK:' + json.dumps(versions))\n"
         )
 
         if env_type == "conda":
@@ -395,9 +403,19 @@ def cmd_env(args):
 
         import json
         try:
-            versions = json.loads(result.stdout.strip().splitlines()[-1])
-        except (json.JSONDecodeError, IndexError):
-            print(f"ERROR: Could not parse environment info.\n{result.stdout}")
+            # Find the marked line in output (conda run may add extra output)
+            json_line = None
+            for line in result.stdout.splitlines():
+                if line.startswith("MORPH2FUNC_ENV_CHECK:"):
+                    json_line = line.split(":", 1)[1]
+                    break
+            if not json_line:
+                raise ValueError("Marker not found in output")
+            versions = json.loads(json_line)
+        except (json.JSONDecodeError, ValueError, IndexError):
+            print(f"ERROR: Could not parse environment info.")
+            print(f"stdout: {result.stdout[:500]}")
+            print(f"stderr: {result.stderr[:500]}")
             return 1
 
         # Compare
