@@ -49,9 +49,7 @@ def _configure_matplotlib():
 def _suppress_resource_tracker_warnings():
     """Suppress harmless multiprocessing ResourceTracker ChildProcessError on macOS/Python 3.12."""
     import atexit
-    import warnings
     def _silence():
-        warnings.filterwarnings("ignore", category=ChildProcessError)
         # Monkey-patch ResourceTracker._stop_locked to swallow ChildProcessError
         try:
             import multiprocessing.resource_tracker as rt
@@ -841,7 +839,20 @@ def _reexec_in_env() -> int:
 
     if env_type == "conda":
         conda = _find_conda()
-        # Run from repo dir with relative path to avoid spaces-in-path issues on Windows
+        if platform.system() == "Windows":
+            # On Windows, conda run has issues with spaces in paths.
+            # Find the env's Python directly and call it.
+            result = subprocess.run(
+                [conda, "run", "-n", "morph2func", "python", "-c",
+                 "import sys; print(sys.executable)"],
+                capture_output=True, text=True,
+            )
+            if result.returncode == 0:
+                env_python = result.stdout.strip().splitlines()[-1]
+                cmd = [env_python, str(_REPO_ROOT / "cli.py")] + sys.argv[1:]
+                print("Activating morph2func conda environment...")
+                return subprocess.run(cmd).returncode
+        # macOS/Linux: conda run works fine
         cmd = [conda, "run", "--no-capture-output", "-n", "morph2func",
                "python", "cli.py"] + sys.argv[1:]
         print("Activating morph2func conda environment...")
