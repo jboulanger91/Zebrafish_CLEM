@@ -3,30 +3,46 @@ import pickle
 import torch
 import numpy as np
 from pathlib import Path
+from dotenv import dotenv_values
 
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
 
-from plot.style import RNNDSStyle
-from utils.ds_service import DSService
-from utils.operators import inv_softplus, get_hist
-from utils.rnn_service import RNNService
+from style import RNNDSStyle
+from utils.remap_unpickler import RemapUnpickler
+from utils.services.ds_service import DSService
+from utils.services.rnn_service import RNNService
+from utils.math.operators import inv_softplus, get_hist
 from utils.figure_helper import Figure
+from utils.load_model import load_model
+
+# ------------------------------------------------
+# Env and paths
+# ------------------------------------------------
+env = dotenv_values()
+path_dir = Path(env["PATH_DIR"])
+path_data = Path(env["PATH_DATA"])
+path_noise_estimation = Path(env["PATH_NOISE_ESTIMATION"])
+path_models_0 = Path(env["PATH_MODELS"])   # directory containing avgresponses_X.csv
+path_models_1 = Path(env["PATH_MODELS_LOADMASK"])   # directory containing avgresponses_X.csv
+path_save = Path(env["PATH_SAVE"])
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
 # ---- Paths -------------------------------------
-path_dir = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data")   # directory containing model_X.pkl
-path_noise_estimation = path_dir / "noise_estimation" / "contralateral_motion_integrator_preferred_noise_estimation.pkl"
-path_models = path_dir / "results" / "freepop" / "mask_traces_freepop_16" / "RNNFreePop_neurons102_tau0.1_input2step_softplus" / "top_5"  # / "ablation" / "2026-02-19_14-57-21"  # RNNConstrainedMask_neurons86_tau0.2_input2step_elu"
-path_save = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\figures")
+special_label = None  # "_noclamp"
 
 # ---- Show -------------------------------------
+show_loss_histograms = False
 show_matrices = True
 
+show_matrix_style = ["recorded", "all"]
+remove_clamping = False
 
 # ---- Simulate ----------------------------------
 dt_data = 0.5
+dt_data_test = 0.1
 duration_rest_start = 20
 duration_stimulus = 40
 duration_rest_end = 20
@@ -54,7 +70,6 @@ ypos_start = style.ypos_start
 xpos = xpos_start
 ypos = ypos_start - padding
 
-palette = style.palette["neurons_4"]
 
 # ================================================================
 # Initialize figure container
@@ -65,52 +80,63 @@ fig = Figure()
 # ================================================================
 # Plot histogram of loss functions
 # ================================================================
-models_across_mask = {"label": "Loss distribution\nacross masks",
-                      "path": Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data\results\freepop\mask_traces_freepop_16\RNNFreePop_neurons102_tau0.1_input2step_softplus")}
-models_same_mask = {"label": "Loss distribution\nfor best model's mask",
-                    "path": Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data\results\freepop\mask_traces_freepop16_loadtop0\RNNFreePop_neurons102_tau0.1_input2step_softplus")}
+if show_loss_histograms:
+    models_across_mask = {"label": "Loss distribution\nacross masks",
+                          "path": path_models_0}
+    models_same_mask = {"label": "Loss distribution\nfor best model's mask",
+                        "path": path_models_1}
 
-# Plot histogram for models across sparsity masks
-for i_m, models in enumerate([models_across_mask, models_same_mask]):
-    loss_list = []
-    for path_model in models["path"].glob(f"model_*.pkl"):
-        with open(path_model, 'rb') as f:
-            model = pickle.load(f)
-        model.eval()
-        loss_list.append(model.loss_mse)
+    # Plot histogram for models across sparsity masks
+    for i_m, models in enumerate([models_across_mask, models_same_mask]):
+        loss_list = []
+        for path_model in models["path"].glob(f"model_*.pt"):
+            model = load_model(path_model)
+            # with open(path_model, 'rb') as f:
+            #     model = pickle.load(f)
+            model.eval()
+            loss_list.append(model.loss_mse)
 
-    best_loss = loss_list[np.argsort(loss_list)[0]]
-    max_value = 0.025
-    n_bins = 20
-    h, b = get_hist(loss_list, bins=n_bins, hist_range=(0, max_value), center_bin=True)
-    plot_loss_dist = fig.create_plot(plot_title=models["label"],
-                                     xpos=xpos, ypos=ypos, plot_height=plot_height,
-                                     plot_width=plot_size_matrix,
-                                     xmin=0, xmax=max_value, xticks=[0, max_value],
-                                     ymin=0, ymax=50, yticks=[0, 25, 50],
-                                     # vlines=[best_loss] if i_m == 0 else None, helper_lines_lc="r" if i_m == 0 else None
-                                     )
-    plot_loss_dist.draw_vertical_bars(b, h, vertical_bar_width=max_value/n_bins)
+        best_loss = loss_list[np.argsort(loss_list)[0]]
+        max_value = 0.025
+        n_bins = 20
+        h, b = get_hist(loss_list, bins=n_bins, hist_range=(0, max_value), center_bin=True)
+        plot_loss_dist = fig.create_plot(plot_title=models["label"],
+                                         xpos=xpos, ypos=ypos, plot_height=plot_height,
+                                         plot_width=plot_size_matrix,
+                                         xmin=0, xmax=max_value, xticks=[0, max_value],
+                                         ymin=0, ymax=50, yticks=[0, 25, 50],
+                                         # vlines=[best_loss] if i_m == 0 else None, helper_lines_lc="r" if i_m == 0 else None
+                                         )
+        plot_loss_dist.draw_vertical_bars(b, h, vertical_bar_width=max_value/n_bins)
 
-    xpos += plot_size_matrix + padding
+        xpos += plot_size_matrix + padding
 
-xpos = xpos_start
-ypos -= plot_height + padding_big
-
+    xpos = xpos_start
+    ypos -= plot_height + padding_big
 
 
 # ================================================================
 # Load model instance
 # ================================================================
 i_model = 0
-for path_model in path_models.glob(f"model_top0_*.pkl"):
-    with open(path_model, 'rb') as f:
-        model = pickle.load(f)
+model_list = []
+for path_model in path_models_0.glob(f"model_*.pt"):
+    model_ = load_model(path_model)
+    # with open(path_model, 'rb') as f:
+    #     model = RemapUnpickler(f).load()
+    if model_ is None:
+        print(f"Model {path_model} could not be loaded. Skipping evaluation.")
+        continue
+    model = model_  # two-steps assignment to protect from wrongly loaded models
     model.eval()
-    break
+    print(f"{path_model}")
+    if remove_clamping:
+        # Remove clamping from model
+        model.clamp_weights_min = 0
+
+    model_list.append(model)
 
 dt = model.dt
-
 n_units_hemi = model.n_units_hemi
 n_units_A = model.nA
 n_units_B = model.nB
@@ -121,139 +147,65 @@ n_units = int(n_units_hemi * 2)
 if hasattr(model, "nX"):  # This is the case for RNNFreePop models
     model_is_free_pop = True
     n_units_X = model.nX
-    n_units += n_units_X
-    palette = style.cmap_list["neurons_5"]
 else:  # This is the case for RNNFreeNeurons models
     model_is_free_pop = False
-    palette = style.cmap_list["neurons_4"]
-
-offset_hemisphere = model.nA + model.nB + model.nC + model.nD
-neuron_identity_array = np.concatenate((np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2*np.ones((model.nC, 1)), 3*np.ones((model.nD, 1)),
-                                        np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2*np.ones((model.nC, 1)), 3*np.ones((model.nD, 1))))
-if model_is_free_pop:
-    neuron_identity_array = np.concatenate((neuron_identity_array, 4 * np.ones((model.nX, 1))))
-
-U = model.U().detach().numpy()
-mask_U = model.mask_U.detach().numpy()
-W = model.W().detach().numpy().T
-mask_W = (model.mask_W * model.signs).detach().numpy().T
 
 # Plot U, W, and associated masks
 if show_matrices:
-    # Draw heatmap with the mask for W
-    plot_size_vector = plot_size_matrix / n_units
-    plot_mask_U = fig.create_plot(plot_title="Signed\ninput mask",
-                                  xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
-                                  plot_width=plot_size_vector,
-                                  xmin=-0.5, xmax=0.5,  # xticklabels_rotation=90,
-                                  # xticks=np.arange(n_units),
-                                  ymin=-0.5, ymax=n_units - 0.5)
+    for matrix_style in show_matrix_style:
+        show_free_pop = True if model_is_free_pop and matrix_style == "all" else False
 
-    xpos += plot_size_vector + padding
-    im = plot_mask_U.draw_image(mask_U, (-0.5, 0.5, n_units - 0.5, -0.5),
-                                colormap='binary', zmin=0, zmax=1, image_interpolation=None)
+        if model_is_free_pop and show_free_pop:
+            n_units_show = n_units + n_units_X
+            colormap = RNNDSStyle.cmap_list["neurons_5"]
+        else:
+            n_units_show = n_units
+            colormap = RNNDSStyle.cmap_list["neurons_4"]
 
-    # Draw heatmap with the mask for W
-    plot_mask_W = fig.create_plot(plot_title="Signed\nconnectivity mask",
-                                  xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
-                                  plot_width=plot_size_matrix,
-                                  xmin=-0.5, xmax=n_units - 0.5,  # xticklabels_rotation=90,
-                                  # xticks=np.arange(n_units),
-                                  ymin=-0.5, ymax=n_units - 0.5)
+        offset_hemisphere = model.nA + model.nB + model.nC + model.nD
+        neuron_identity_array = np.concatenate(
+            (np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)),
+             3 * np.ones((model.nD, 1)),
+             np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)),
+             3 * np.ones((model.nD, 1))))
+        # Optionally add label for free population neurons and normalize
+        if model_is_free_pop and show_free_pop:
+            neuron_identity_array = np.concatenate((neuron_identity_array, 4 * np.ones((model.nX, 1)))) / 4
+        else:
+            neuron_identity_array /= 3
 
-    # Draw neuron identity vectors around mask_W
-    plot_ni_c = fig.create_plot(xpos=xpos - plot_size_vector, ypos=ypos, plot_height=plot_size_matrix,
-                                plot_width=plot_size_vector,
-                                xmin=-0.5, xmax=0.5,
-                                ymin=-0.5, ymax=n_units - 0.5)
-    im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_units - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_4"], zmin=0, zmax=3, image_interpolation=None)
+        U = model.U().detach().numpy()
+        mask_U = model.mask_U.detach().numpy()
+        W = model.W().detach().numpy().T
+        mask_W = (model.mask_W * model.signs).detach().numpy().T
 
-    plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
-                                plot_width=plot_size_matrix,
-                                xmin=-0.5, xmax=n_units - 0.5,
-                                ymin=-0.5, ymax=0.5)
-    im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_units - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_4"], zmin=0, zmax=3, image_interpolation=None)
+        if not show_free_pop:
+            U = U[:n_units_show]
+            mask_U = mask_U[:n_units_show]
+            W = W[:n_units_show, :n_units_show]
+            mask_W = mask_W[:n_units_show, :n_units_show]
+        grid_pop = np.array([model.nA, model.nA + model.nB, model.nA + model.nB + model.nC,
+                             model.nA + model.nB + model.nC + model.nD,
+                             offset_hemisphere + model.nA, offset_hemisphere + model.nA + model.nB,
+                             offset_hemisphere + model.nA + model.nB + model.nC])
+        if model_is_free_pop and show_free_pop:
+            grid_pop = np.concatenate([grid_pop, [offset_hemisphere + model.nA + model.nB + model.nC + model.nD]])
 
-    x_ = np.arange(n_units)
-    x = np.tile(x_, (n_units, 1))
-    y = x.T
-    im = plot_mask_W.draw_image(mask_W, (-0.5, n_units - 0.5, n_units - 0.5, -0.5),
-                                colormap='PiYG', zmin=-1, zmax=1, image_interpolation=None)
+        _, xpos, ypos = RNNService.plot_connectivity(mask_W, U=None, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
+                                                     fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
+                                                     padding=padding, value_lim=[-1, 1], plot_title=f"{matrix_style.capitalize() + '\n'}Mask W", cmap=colormap)
 
-    # Grid in mask_W
-    position_line_between_pop = np.array([model.nA, model.nA + model.nB, model.nA + model.nB + model.nC,
-                                          model.nA + model.nB + model.nC + model.nD,
-                                          offset_hemisphere + model.nA, offset_hemisphere + model.nA + model.nB,
-                                          offset_hemisphere + model.nA + model.nB + model.nC])
-    plot_mask_W_grid = fig.create_plot(xpos=xpos, ypos=ypos, plot_height=plot_size_matrix, plot_width=plot_size_matrix,
-                                       xmin=-0.5, xmax=n_units - 0.5, ymin=-0.5, ymax=n_units - 0.5,
-                                       helper_lines_lc="white",
-                                       hlines=model.n_units - position_line_between_pop - 0.5,
-                                       vlines=position_line_between_pop - 0.5)
-
-    xpos += plot_size_matrix + padding
-
-    # Draw input vector U after training
-    plot_size_vector = plot_size_matrix / n_units
-    plot_U = fig.create_plot(plot_title="U",
-                             xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
-                             plot_width=plot_size_vector,
-                             xmin=-0.5, xmax=0.5,  # xticklabels_rotation=90,
-                             # xticks=np.arange(n_units),
-                             ymin=-0.5, ymax=n_units - 0.5)
-
-    xpos += plot_size_vector + padding
-    im = plot_U.draw_image(U, (-0.5, 0.5, n_units - 0.5, -0.5),
-                           colormap='PiYG', zmin=-1, zmax=1, image_interpolation=None)
-
-    # Draw connectivity matrix W after training
-    plot_W = fig.create_plot(plot_title="W",
-                             xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
-                             plot_width=plot_size_matrix * 1.1,
-                             xmin=-0.5, xmax=n_units - 0.5,  # xticklabels_rotation=90,
-                             # xticks=np.arange(n_units),
-                             ymin=-0.5, ymax=n_units - 0.5,
-                             )
-    # Draw neuron identity vectors around W
-    plot_ni_c = fig.create_plot(xpos=xpos - plot_size_vector, ypos=ypos, plot_height=plot_size_matrix,
-                                plot_width=plot_size_vector,
-                                xmin=-0.5, xmax=0.5,
-                                ymin=-0.5, ymax=n_units - 0.5)
-    im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_units - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_4"], zmin=0, zmax=3, image_interpolation=None)
-
-    plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
-                                plot_width=plot_size_matrix,
-                                xmin=-0.5, xmax=n_units - 0.5,
-                                ymin=-0.5, ymax=0.5)
-    im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_units - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_4"], zmin=0, zmax=3, image_interpolation=None)
-
-    x_ = np.arange(n_units)
-    x = np.tile(x_, (n_units, 1))
-    y = x.T
-    value_lim = 1  # np.max(np.abs(W))
-    im = plot_W.draw_image(W, (-0.5, n_units - 0.5, n_units - 0.5, -0.5),
-                           colormap='PiYG', zmin=-value_lim, zmax=value_lim, image_interpolation=None)
-
-    plot_W_grid = fig.create_plot(xpos=xpos, ypos=ypos, plot_height=plot_size_matrix, plot_width=plot_size_matrix,
-                                  xmin=-0.5, xmax=n_units - 0.5, ymin=-0.5, ymax=n_units - 0.5,
-                                  helper_lines_lc="white",
-                                  hlines=model.n_units - position_line_between_pop - 0.5,
-                                  vlines=position_line_between_pop - 0.5)
-    divider = make_axes_locatable(plot_W.ax)
-    cax = divider.append_axes('right', size='5%', pad=0.05)
-    plot_W.figure.fig.colorbar(im, cax=cax, orientation='vertical',
-                               ticks=[-value_lim, -value_lim / 2, 0, value_lim / 2, value_lim])
-    xpos += plot_size_matrix + padding_big * 2 / 3
+        _, xpos, ypos = RNNService.plot_connectivity(W, U=U, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
+                                                     fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
+                                                     padding=padding, value_lim=[-1, 1], cmap=colormap)
+        xpos = xpos_start
+        ypos -= plot_size_matrix + padding
 
 # Rebase coordinates for response plots
 plot_size_here = style.plot_size_big * 2/3
 padding_here = padding
 xpos_start_here = xpos_here = xpos_start
-ypos_start_here = ypos_here = ypos - plot_size_matrix - padding_vertical * 1.5
+ypos_start_here = ypos_here = ypos - plot_size_matrix
 
 # Define input signals used in training
 def input_signal_constant(duration_rest_start, duration_stimulus, duration_rest_end, side="L", scale=1):
@@ -294,9 +246,9 @@ def input_signal_sine(duration_rest_start, duration_stimulus, duration_rest_end,
 
 # Define input signals used for testing (side switching)
 def input_signal_switch(duration_rest_start, duration_stimulus, duration_rest_end, side="L", scale=1):
-    duration_stimulus_side = duration_stimulus / 2
-    input_signal_step_first  = np.concatenate((np.zeros(int(duration_rest_start / dt)), np.ones(int(duration_stimulus_side / dt)), np.zeros(int((duration_stimulus_side + duration_rest_end) / dt)))) * scale
-    input_signal_step_second = np.concatenate((np.zeros(int((duration_rest_start + duration_stimulus_side) / dt)), np.ones(int(duration_stimulus_side / dt)), np.zeros(int(duration_rest_end / dt)))) * scale
+    duration_stimulus_rest = duration_rest_end / 2
+    input_signal_step_first  = np.concatenate((np.zeros(int(duration_rest_start / dt)), np.ones(int(duration_stimulus / dt)), np.zeros(int((duration_rest_end) / dt)))) * scale
+    input_signal_step_second = np.concatenate((np.zeros(int((duration_rest_start + duration_stimulus) / dt)), np.ones(int(duration_stimulus_rest / dt)), np.zeros(int(duration_stimulus_rest / dt)))) * scale
 
     if side[0] in ["l", "L"]:
         input_signal = np.concatenate((np.repeat(input_signal_step_first[..., np.newaxis], n_units_hemi, axis=1),
@@ -318,14 +270,14 @@ test_list = [
      "duration_rest_start": 20,
      "duration_stimulus": 40,
      "duration_rest_end": 20,
-     "path_traces": path_dir,
+     "path_traces": path_data,
      "path_noise": None,
      "filename_root": "avgresponses",
      "file_extension": "csv",
      "stimulus_name": "constant",
      # "filename": "avgresponses_*_constant.csv",  # not used yet
      "combine_data": None,
-     "scale_target": [0.1, 1],  # None or 1: don't scale the target signal found at path_traces and the input signal
+     "scale_target": [0.3, 1],  # None or 1: don't scale the target signal found at path_traces and the input signal
      "input_signal": input_signal_constant,
      "time_target_array": None,
      "dt_data": dt_data,
@@ -334,11 +286,30 @@ test_list = [
      "cell_type_list": ("iMI", "cMI", "MON", "sMI"),
      "fix_offset_response": True},
 
-    {"label": "Test sine L",
-     "duration_rest_start": 32,
+    {"label": "Test constant L",
+     "duration_rest_start": 16,
      "duration_stimulus": 32,
      "duration_rest_end": 32,
-     "path_traces": path_dir / "single_traces" / "kim_experiments",
+     "path_traces": path_data / "single_traces" / "kim_experiments" / "cyto8s",
+     "path_noise": None,
+     "filename_root": "responses",
+     "file_extension": "csv",
+     "stimulus_name": "constant",
+     "filename": "responses_*_constant_*.csv",
+     "combine_data": "average",
+     "scale_target": None,  # None or 1: don't scale the target signal found at path_traces and the input signal
+     "input_signal": input_signal_constant,
+     "time_target_array": np.arange(0, 80-dt_data_test, dt_data_test),
+     "dt_data": dt_data_test,
+     "side_list": ("left", "right"),
+     "flip_side": False,
+     "cell_type_list": ("MI", "MON", "SMI"),
+     "fix_offset_response": False},
+    {"label": "Test sine L",
+     "duration_rest_start": 16,
+     "duration_stimulus": 32,
+     "duration_rest_end": 32,
+     "path_traces": path_data / "single_traces" /  "kim_experiments" / "cyto8s",
      "path_noise": None,
      "filename_root": "responses",
      "file_extension": "csv",
@@ -347,17 +318,17 @@ test_list = [
      "combine_data": "average",
      "scale_target": None,  # None or 1: don't scale the target signal found at path_traces and the input signal
      "input_signal": input_signal_sine,
-     "time_target_array": np.arange(0, 96, dt_data),
-     "dt_data": dt_data,
+     "time_target_array": np.arange(0, 80-dt_data_test, dt_data_test),
+     "dt_data": dt_data_test,
      "side_list": ("left", "right"),
      "flip_side": False,
      "cell_type_list": ("MI", "MON", "SMI"),
      "fix_offset_response": False},
     {"label": "Test switch L",
-     "duration_rest_start": 32,
+     "duration_rest_start": 16,
      "duration_stimulus": 32,
      "duration_rest_end": 32,
-     "path_traces": path_dir / "single_traces" / "kim_experiments",
+     "path_traces": path_data / "single_traces" /  "kim_experiments" / "cyto8s",
      "path_noise": None,
      "filename_root": "responses",
      "file_extension": "csv",
@@ -366,32 +337,12 @@ test_list = [
      "combine_data": "average",
      "scale_target": None,  # None or 1: don't scale the target signal found at path_traces and the input signal
      "input_signal": input_signal_switch,
-     "time_target_array": np.arange(0, 96, dt_data),
-     "dt_data": dt_data,
+     "time_target_array": np.arange(0, 80-dt_data_test, dt_data_test),
+     "dt_data": dt_data_test,
      "side_list": ("left", "right"),
      "flip_side": False,
      "cell_type_list": ("MI", "MON", "SMI"),
      "fix_offset_response": False},
-
-    # {"label": "Test bilateral",
-    #  "duration_rest_start": 32,
-    #  "duration_stimulus": 32,
-    #  "duration_rest_end": 32,
-    #  "path_traces": path_dir / "single_traces" / "kim_experiments",
-    #  "path_noise": None,
-    #  "filename_root": "responses",
-    #  "file_extension": "csv",
-    #  "stimulus_name": "switching",
-    #  # "filename": "responses_*_switching_*.csv",
-    #  "combine_data": "average",
-    #  "scale_target": None,  # None or 1: don't scale the target signal found at path_traces and the input signal
-    #  "input_signal": input_signal_constant_bilateral,
-    #  "time_target_array": np.arange(0, 96, dt_data),
-    #  "dt_data": dt_data,
-    #  "side_list": ("left", "right"),
-    #  "flip_side": False,
-    #  "cell_type_list": ("MI", "MON", "SMI"),
-    #  "fix_offset_response": False},
 ]
 
 # ================================================================
@@ -429,7 +380,8 @@ for i_test, test in enumerate(test_list):
                 except ValueError:
                     with open(test['path_traces'] / f"{test['filename_root']}.pkl", 'rb') as f:
                         data_dict_raw = pickle.load(f)
-                        data_raw = list(data_dict_raw[f"{ct}_{test['stimulus_name']}_{s}"].values())[0]
+                        data_key = [k for k in data_dict_raw.keys() if f"{ct}_{test['stimulus_name']}_{s}" in k][0]  # Extract the first key starting with identifier
+                        data_raw = list(data_dict_raw[data_key].values())[0]
 
             if test['combine_data'] == "average":
                 data = np.mean(data_raw, axis=1).copy()
@@ -517,14 +469,17 @@ for i_test, test in enumerate(test_list):
 
     label = test['label']
     t_sim = np.linspace(0, duration_simulation, input_signal.shape[1])
-    res = RNNService.plot_response_by_cell(model, t_sim, input_signal, xpos_here, ypos_here,
-                                   t_exp=time_target_array, output_signal=output_signal, x0=x0,
-                                   fig=fig, show_xaxis=True, show_yaxis=i_test % 2 == 0,
+    res = RNNService.plot_response_by_cell(model_list, t_sim, input_signal, xpos_here, ypos_here,
+                                   t_exp=time_target_array, output_signal_array=output_signal, x0=x0,
+                                   fig=fig, show_xaxis=True, show_yaxis=True, compute_tau=True,
                                    plot_title_label=label, plot_size=plot_size_here,
                                    time_structure={"rest_start": test['duration_rest_start'], "stimulus": test['duration_stimulus'], "rest_end": test['duration_rest_end'], "duration": duration_simulation})
 
-    xpos_here = xpos_start_here
-    ypos_here -= plot_size_here * 3 + padding_here * 3
+    if i_test % 2 == 0:
+        xpos_here += plot_size_here * 4 + padding_here * 5
+    else:
+        xpos_here = xpos_start_here
+        ypos_here -= plot_size_here * 3 + padding_here * 3
 
 xpos = xpos_start
 ypos -= plot_size_matrix + padding_vertical * 1.5
@@ -533,4 +488,4 @@ ypos -= plot_size_matrix + padding_vertical * 1.5
 # Save final figure
 # -----------------------------------------------------------------------------
 path_save.mkdir(parents=True, exist_ok=True)
-fig.save(path_save / "figure_main_train_test_new.pdf", open_file=False, tight=style.page_tight)
+fig.save(path_save / f"figure_main_train_test{'' if special_label is None else special_label}.pdf", open_file=False, tight=style.page_tight)

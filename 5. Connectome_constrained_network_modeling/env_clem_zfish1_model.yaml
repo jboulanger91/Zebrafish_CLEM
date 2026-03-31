@@ -1,17 +1,18 @@
 name: clem_zfish1_model
 channels:
   - conda-forge
-  - defaults
-
+  - nodefaults
 dependencies:
-  # Core Python
+  # Core
   - python=3.12
-
-  # Scientific stack
+  - pip
+  - nomkl
+  # Plotting
+  - matplotlib
+  # Math tools
   - numpy
   - scipy
-
-  # Model design
-  - pip
+  - scikit-learn
   - pip:
-    - torch
+      - python-dotenv
+      - torch==2.9

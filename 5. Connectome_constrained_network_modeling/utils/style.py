@@ -1,10 +1,9 @@
 from abc import ABC
 
-from analysis.personal_dirs.Roberto.utils.palette import Palette
-
 
 class Style(ABC):
-    palette = {"default": Palette.arlecchino}
+    palette = {"default": ["deepskyblue", "deeppink", "orange", "springgreen", "tomato", "silver", "mediumorchid",
+               "mediumaquamarine", "firebrick", "blue", "red", "green", "brown"]}
     font_size = 12
     padding=2
     plot_height = 1

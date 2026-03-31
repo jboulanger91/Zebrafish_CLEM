@@ -2,9 +2,12 @@ import numpy as np
 import torch
 from torch import nn, optim
 
-from model.PopulationSlow import PopulationSlow
-from utils.ds_service import DSService
-from utils.rnn_service import RNNService
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "../..")
+
+from model.core.PopulationSlow import PopulationSlow
+from utils.services.ds_service import DSService
+from utils.services.rnn_service import RNNService
 
 
 class RNNFreePop(nn.Module):
@@ -14,7 +17,7 @@ class RNNFreePop(nn.Module):
         input_dim=1,
         tau=0.1, dt=1.0,
         # E/I ratios per population
-        E_frac_A=0.3, E_frac_B=0.3, E_frac_C=0.3, E_frac_D=0.3, E_frac_X=0.37,
+        E_frac_A=0.7, E_frac_B=0.1, E_frac_C=0.1, E_frac_D=1/3, E_frac_X=0.37,
         sparsity_U=1,
         # intra-hemisphere sparsity
         sparsity_AA=0.1125, sparsity_AB=0.18, sparsity_AC=0.475, sparsity_AD=0.065, sparsity_AX=0.07,
@@ -311,12 +314,12 @@ class RNNFreePop(nn.Module):
             gamma_init=0.995
         )
 
-        # strengths
+        # target penalty strengths
         self.fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
         self.slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
         self.rho_target_fast = rho_target_fast
 
-        # effective (scheduled)
+        # effective penalty strengths according to schedule
         self.effective_fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
         self.effective_slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
 
@@ -352,12 +355,11 @@ class RNNFreePop(nn.Module):
             prev = rho
         return rho
 
-    def fast_spectral_radius_penalty(self):
+    def fast_spectral_radius_penalty(self, margin=0.05):
         if self.effective_fast_spectral_radius_penalty_strength == 0:
             return 0
 
         rho_fast = self.spectral_radius_power(self.W_fast())
-        margin = 0.05
         penalty = torch.relu(rho_fast - self.rho_target_fast - margin).pow(2)
         return penalty * self.effective_fast_spectral_radius_penalty_strength
 

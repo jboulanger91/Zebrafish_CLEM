@@ -1,5 +1,9 @@
 import numpy as np
 
+# Compute the average sparsity across and within populations
+# This average constraint is applied to the free popluation of helper neurons
+
+# population-specific sparsity constraints
 to_pop_constraints = {
     "A": {"N": 15,
           "E_frac": 0.7,

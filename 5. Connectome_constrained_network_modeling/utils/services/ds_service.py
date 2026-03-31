@@ -337,3 +337,19 @@ class DSService():
             "popt_decay": popt_decay,
         }
         return tau_rise, tau_decay, info
+
+    @staticmethod
+    def compute_time_rise(time, signal, percentage_threshold=0.9, show_plot=False):
+        threshold = percentage_threshold * torch.max(signal)
+        time_rise = time[torch.argwhere(signal >= threshold)[0][0]]
+        if show_plot:
+            plt.figure()
+            plt.plot(time, signal)
+            plt.ylim(0, 2)
+            plt.xlabel("Time")
+            plt.ylabel("Signal")
+            plt.hlines(threshold, np.min(time), np.max(time), color="red", linestyle="--")
+            plt.vlines(time_rise, 0, 2, color="red", linestyle="--")
+            plt.show()
+
+        return time_rise - time[0]

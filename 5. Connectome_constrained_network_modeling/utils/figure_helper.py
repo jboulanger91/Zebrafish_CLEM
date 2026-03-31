@@ -4,9 +4,6 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
-import pandas as pd
-import seaborn as sns
-import navis
 import pathlib
 
 
@@ -1066,158 +1063,6 @@ class SuperPlot():
             for text in leg.get_texts():
                 plt.setp(text, color=artist_dict["textcolor"])
 
-    def draw_swarmplot(self, ys, **opts_dict):
-
-        artist_dict = self.plot_dict.copy()
-
-        for key in opts_dict.keys():
-            if key not in artist_dict.keys():
-                raise ValueError(key, "is not a valid plotting parameter.")
-            artist_dict[key] = opts_dict[key]
-
-        if artist_dict["ignore_sheet_data"] is False:
-
-            if isinstance(artist_dict["sheet_label"], list):
-                sheet_labels = artist_dict["sheet_label"]
-            else:
-                sheet_labels = [artist_dict["sheet_label"]]*len(ys)
-            for i, y in enumerate(ys):
-
-                self.plot_data["label"].append(sheet_labels[i])
-                self.plot_data["x"].append(i*np.ones_like(y))
-                self.plot_data["y"].append(y)
-
-        if type(artist_dict["pc"]) is not list:
-            artist_dict["pc"] = [artist_dict["pc"]] * len(artist_dict["xticklabels"])
-
-        lc = sns.color_palette(artist_dict["pc"])
-
-        ys = [pd.Series(y) for y in ys]
-
-        df = pd.concat(ys, axis=1, keys=range(len(artist_dict["xticks"]))).stack(0)
-        df = df.reset_index(level=1)
-        df.columns = ["X", "Y"]
-
-        self.current_zorder += 1
-
-        self.set_axes_properties()
-
-        g = sns.swarmplot(x="X", y="Y", data=df, ax=self.ax, palette=lc, hue="X", edgecolor=artist_dict["ec"],
-                      linewidth=artist_dict["elw"], rasterized=artist_dict["rasterized"],
-                      marker=artist_dict["pt"], size=artist_dict["ps"], alpha=artist_dict["alpha"], zorder=self.current_zorder)
-        g.get_legend().remove()
-
-        # As seanborn replaces the labels, set them again
-
-        if self.plot_dict["yticks"] is not None:
-            self.ax.set_yticks(self.plot_dict["yticks"])
-
-        if self.plot_dict["xticks"] is not None:
-            self.ax.set_xticks(self.plot_dict["xticks"])
-
-        self.ax.set_xticklabels(self.plot_dict["xticklabels"])
-        self.ax.set_yticklabels(self.plot_dict["yticklabels"])
-
-        self.ax.set_xlabel(self.plot_dict["xl"])
-        self.ax.set_ylabel(self.plot_dict["yl"])
-
-        self.set_axes_properties()
-
-    def draw_violinplot(self, ys, **opts_dict):
-
-        artist_dict = self.plot_dict.copy()
-
-        for key in opts_dict.keys():
-            if key not in artist_dict.keys():
-                raise ValueError(key, "is not a valid plotting parameter.")
-            artist_dict[key] = opts_dict[key]
-
-        if artist_dict["ignore_sheet_data"] is False:
-
-            if isinstance(artist_dict["sheet_label"], list):
-                sheet_labels = artist_dict["sheet_label"]
-            else:
-                sheet_labels = [artist_dict["sheet_label"]]*len(ys)
-            for i, y in enumerate(ys):
-
-                self.plot_data["label"].append(sheet_labels[i])
-                self.plot_data["x"].append(i*np.ones_like(y))
-                self.plot_data["y"].append(y)
-
-        if type(artist_dict["alpha"]) is not list:
-            artist_dict["alpha"] = [artist_dict["alpha"]] * len(artist_dict["xticks"])
-
-        if type(artist_dict["pc"]) is not list:
-            artist_dict["pc"] = [artist_dict["pc"]] * len(artist_dict["xticks"])
-
-        palette = sns.color_palette(artist_dict["pc"])
-
-        ys_ = [pd.Series(y) for y in ys]
-
-        df = pd.concat(ys_, axis=1, keys=range(len(artist_dict["xticks"]))).stack(0)
-        df = df.reset_index(level=1)
-        df.columns = ["X", "Y"]
-
-        self.current_zorder += 1
-
-        self.set_axes_properties()
-        g = sns.violinplot(x="X", y="Y", data=df, ax=self.ax, palette=palette, hue="X", legend=False, edgecolor=artist_dict["ec"],
-                       linewidth=artist_dict["elw"], inner=None, rasterized=artist_dict["rasterized"], zorder=self.current_zorder)
-        #g.get_legend().remove()
-        plt.setp(self.ax.collections[-len(ys):], alpha=artist_dict["alpha"])
-
-        # As seanborn replaces the labels, set them again
-        self.ax.set_xticklabels(self.plot_dict["xticklabels"])
-        self.ax.set_yticklabels(self.plot_dict["yticklabels"])
-        self.ax.set_xlabel(self.plot_dict["xl"])
-        self.ax.set_ylabel(self.plot_dict["yl"])
-
-        self.set_axes_properties()
-
-    def draw_boxplot(self, ys, **opts_dict):
-
-        artist_dict = self.plot_dict.copy()
-
-        for key in opts_dict.keys():
-            if key not in artist_dict.keys():
-                raise ValueError(key, "is not a valid plotting parameter.")
-            artist_dict[key] = opts_dict[key]
-
-        if type(artist_dict["pc"]) is not list:
-            artist_dict["pc"] = [artist_dict["pc"]] * len(artist_dict["xticks"])
-
-        palette = sns.color_palette(artist_dict["pc"])
-
-        ys_ = [pd.Series(y) for y in ys]
-
-        df = pd.concat(ys_, axis=1, keys=range(len(artist_dict["xticks"]))).stack(0)
-        df = df.reset_index(level=1)
-        df.columns = ["X", "Y"]
-
-        self.current_zorder += 1
-        flierprops = dict(marker=artist_dict["pt"],
-                          markersize=artist_dict["ps"],
-                          zorder=self.current_zorder,
-                          markerfacecolor=artist_dict["textcolor"],
-                          linestyle='none',
-                          markeredgecolor=artist_dict["textcolor"])
-
-        g = sns.boxplot(x="X", y="Y", data=df, ax=self.ax, palette=palette, hue="X", legend=False,
-                    boxprops={"zorder": self.current_zorder, "alpha": artist_dict["alpha"]},
-                    linewidth=artist_dict["elw"],
-                    width=artist_dict["vertical_bar_width"],
-                    flierprops=flierprops,
-                    zorder=self.current_zorder)
-        #g.get_legend().remove()
-
-        # As seaborn replaces the labels, set them again
-        self.ax.set_xticklabels(self.plot_dict["xticklabels"])
-        self.ax.set_yticklabels(self.plot_dict["yticklabels"])
-        self.ax.set_xlabel(self.plot_dict["xl"])
-        self.ax.set_ylabel(self.plot_dict["yl"])
-
-        self.set_axes_properties()
-
     def draw_image(self, img, extent, **opts_dict):
         artist_dict = self.plot_dict.copy()
 
@@ -1237,24 +1082,6 @@ class SuperPlot():
                            cmap=plt.get_cmap(artist_dict["colormap"]), norm=artist_dict["norm_colormap"], alpha=artist_dict["alpha"],
                            rasterized=artist_dict["rasterized"], zorder=self.current_zorder)
         return im
-
-    def draw_navis_neuron(self, cell_swc, brain_regions, **opts_dict):
-        artist_dict = self.plot_dict.copy()
-
-        for key in opts_dict.keys():
-            if key not in artist_dict.keys():
-                raise ValueError(key, "is not a valid plotting parameter.")
-            artist_dict[key] = opts_dict[key]
-
-        self.current_zorder += 1
-        if cell_swc is not None:
-            navis.plot2d(cell_swc, ax=self.ax, color=artist_dict["lc"], alpha=artist_dict["alpha"], linewidth=artist_dict["lw"],
-                         method='2d', view=artist_dict["navis_view"], group_neurons=True, volume_outlines=False, rasterize=artist_dict["rasterized"])
-
-        for volume in brain_regions:
-            navis.plot2d(volume, ax=self.ax, color=artist_dict["navis_color"], linewidth=artist_dict["lw"], alpha=artist_dict["navis_alpha"], method='2d',
-                         view=artist_dict["navis_view"], group_neurons=True, rasterize=artist_dict["rasterized"])
-
 
     def draw_pcolormesh(self, x, y, Z, aa=False, shading="gouraud", **opts_dict):
         """

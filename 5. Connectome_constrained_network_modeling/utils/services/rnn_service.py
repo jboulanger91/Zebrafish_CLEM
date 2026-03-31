@@ -1,13 +1,18 @@
 import numpy as np
 import torch
+from matplotlib.colors import SymLogNorm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from scipy.stats import wasserstein_distance
 from torch import nn
 
-from analysis.personal_dirs.Roberto.projects.rnn_ds.plot.style import RNNDSStyle
-from analysis.personal_dirs.Roberto.projects.rnn_ds.utils.configuration_rnn import ConfigurationRNN
-from analysis.personal_dirs.Roberto.projects.rnn_ds.utils.ds_service import DSService
-from analysis.utils.figure_helper import Figure
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
+
+from figures.style import RNNDSStyle
+from utils.configuration_rnn import ConfigurationRNN
+from utils.services.ds_service import DSService
+from utils.math.operators import nanstd
+from utils.figure_helper import Figure
 
 
 class RNNService:
@@ -331,17 +336,33 @@ class RNNService:
         return res
 
     @staticmethod
-    def plot_response_by_cell(model, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list, t_exp=None, output_signal=None, x0=None,
+    def plot_response_by_cell(model_list, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list,
+                              t_exp=None, output_signal_array=None, x0=None,
                       fig=None, plot_title_label="", show_xaxis=True, show_yaxis=True, show_xs=False,
                       palette=RNNDSStyle.palette["neurons_4"], plot_size=RNNDSStyle.plot_size_big * 0.4,
                       padding=RNNDSStyle.padding / 2, compute_tau=True,
                       time_structure=ConfigurationRNN.time_structure_simulation_test):
-        # Draw network response to low step function (used in training)
-        x0 = torch.zeros(model.n_units) if x0 is None else x0
-        with torch.no_grad():
-            inputs = torch.tensor(input_signal, dtype=torch.float32)
-            xs, y_pred = model.forward(x0, inputs)
+        # Loop over model, simulate them and extract mean and SEM of activity
+        if torch.is_tensor(model_list):
+            model_list = [model_list]
+        xs_list = []
+        y_pred_list = []
+        for model in model_list:
+            x0 = torch.zeros(model.n_units) if x0 is None else x0
+            with torch.no_grad():
+                inputs = torch.tensor(input_signal, dtype=torch.float32)
+                xs, y_pred = model.forward(x0, inputs)
+                xs_list.append(xs)
+                y_pred_list.append(y_pred)
 
+        xs_array = torch.stack(xs_list, dim=0)
+        xs_mean = torch.nanmean(xs_array, dim=0)
+        y_pred_array = torch.stack(y_pred_list, dim=0)
+        y_pred_mean = torch.nanmean(y_pred_array, dim=0)
+        y_pred_std = nanstd(y_pred_array, dim=0)
+
+
+        # Draw network response to low step function (used in training)
         if inputs.dim() < 3:
             range_input = range(1)
         else:
@@ -350,33 +371,60 @@ class RNNService:
         if fig is None:
             fig = Figure()
 
-        if output_signal is None:
+        if output_signal_array is None:
             data_range = range(1)
         else:
             data_range = range(2)
-            if len(output_signal.shape) == 2:
-                output_signal = torch.unsqueeze(torch.tensor(output_signal, dtype=torch.float32), 0)
 
+            # output_signal_array is processed as an array with dimensions: [R, I, T, C]
+            # where R is the number of recordings for cell c at time t given stimulation i
+            if len(output_signal_array.shape) == 2:
+                output_signal_array = torch.unsqueeze(torch.tensor(output_signal_array, dtype=torch.float32), 0)
+            if len(output_signal_array.shape) == 3:
+                output_signal_array = torch.unsqueeze(torch.tensor(output_signal_array, dtype=torch.float32), 0)
+
+            output_signal_mean = torch.nanmean(output_signal_array, axis=0)
+            output_signal_std = np.nanstd(output_signal_array, axis=0)
+
+        if t_exp is None:
+            t_exp = t
         if compute_tau:
             print(f"\n{plot_title_label}")
+            stimulus_window_data_index_list = np.argwhere(np.logical_and(t_exp>=time_structure["rest_start"],
+                                                                    t_exp<time_structure["rest_start"] + time_structure["stimulus"]/2))
+            offest_time_pop3 = 10  # seconds
+            stimulus_window_data_pop3_index_list = np.argwhere(np.logical_and(t_exp>=time_structure["rest_start"] + offest_time_pop3,
+                                                                    t_exp<time_structure["rest_start"] + offest_time_pop3 + time_structure["stimulus"]/2))
+            stimulus_window_model_index_list = np.argwhere(np.logical_and(t>=time_structure["rest_start"],
+                                                                    t<time_structure["rest_start"] + time_structure["stimulus"]/2))
+
             for i_ct in range(len(ct_list)):
                 for i_input in range_input:
                     if i_ct in [0, 1, 3, 4, 5, 7]:
-                        tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(y_pred[i_input, :, i_ct],
-                                                                              ConfigurationRNN.dt_simulation,
-                                                                              time_structure["rest_start"],
-                                                                              time_structure["rest_start"] +
-                                                                              time_structure["stimulus"])
+                        tau_rise = DSService.compute_time_rise(t[stimulus_window_model_index_list],
+                                                               y_pred_list[0][i_input, stimulus_window_model_index_list, i_ct])
+                        # tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(y_pred[i_input, :, i_ct],
+                        #                                                       ConfigurationRNN.dt_simulation,
+                        #                                                       time_structure["rest_start"],
+                        #                                                       time_structure["rest_start"] +
+                        #                                                       time_structure["stimulus"])
                         print(f"Population {i_ct}")
-                        print(f"MODEL | input {i_input} | tau_rise: {tau_rise} | tau_decay: {tau_decay}")
-                        if output_signal is not None:
-                            tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(
-                                output_signal[i_input, :, i_ct],
-                                ConfigurationRNN.dt_data,
-                                time_structure["rest_start"],
-                                time_structure["rest_start"] +
-                                time_structure["stimulus"])
-                            print(f"DATA | input {i_input} | tau_rise: {tau_rise} | tau_decay: {tau_decay}")
+                        print(f"MODEL | input {i_input} | tau_rise: {tau_rise}")
+                        if output_signal_array is not None:
+                            if i_ct in [3, 7]:
+                                window_index_list = stimulus_window_data_pop3_index_list
+                            else:
+                                window_index_list = stimulus_window_data_index_list
+                            tau_rise = DSService.compute_time_rise(t_exp[window_index_list],
+                                                                   output_signal_array[0, i_input, window_index_list, i_ct])
+
+                            # tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(
+                            #     output_signal_mean[i_input, :, i_ct],
+                            #     ConfigurationRNN.dt_data,
+                            #     time_structure["rest_start"],
+                            #     time_structure["rest_start"] +
+                            #     time_structure["stimulus"])
+                            print(f"DATA | input {i_input} | tau_rise: {tau_rise}")
 
         ymin = 0
         ymax = 2
@@ -405,21 +453,19 @@ class RNNService:
                     xticks=[time_structure["rest_start"],
                             time_structure["rest_start"] + time_structure["stimulus"]] if show_xaxis and i_data==len(data_range)-1 else None,
                     ymin=ymin, ymax=ymax, yticks=[ymin, ymax] if show_yaxis and i_ct == 0 else None,
-                    yl="Activity" if show_yaxis and side == 0 else None)
+                    yl=r"Shifted $\Delta$F/F" + f"\n({'Data' if i_data == 0 else 'Model'})" if show_yaxis and i_ct == 0 else None)
 
                 for i_input in range_input:
-                    alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 else 1
+                    alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 or i_input<len(range_input)-1 else 1
                     for side in range(2):  # there are 2 hemispheres
                         offset_index = side * 4  # harcoded for 4 populations here
                         offset_hemisphere = side * (model.nA + model.nB + model.nC + model.nD)
 
                         line_dashes = None if side == 0 else (1, 2)
                         if i_data == 0:
-                            if t_exp is None:
-                                t_exp = t
-                            plot_response.draw_line(t_exp, output_signal[i_input, :, ct[f"index{len(ct_list)}"] + offset_index], lc=palette[ct[f"index{len(ct_list)}"]], line_dashes=line_dashes, alpha=alpha_here)
+                            plot_response.draw_line(t_exp, output_signal_mean[i_input, :, ct[f"index{len(ct_list)}"] + offset_index], lc=palette[ct[f"index{len(ct_list)}"]], line_dashes=line_dashes, alpha=alpha_here, yerr=output_signal_std[i_input, :, ct[f"index{len(ct_list)}"] + offset_index])
                         else:
-                            plot_response.draw_line(t, y_pred[i_input, :, ct[f"index{len(ct_list)}"] + offset_index], lc=palette[ct[f"index{len(ct_list)}"]], line_dashes=line_dashes, alpha=alpha_here)
+                            plot_response.draw_line(t, y_pred_mean[i_input, :, ct[f"index{len(ct_list)}"] + offset_index], lc=palette[ct[f"index{len(ct_list)}"]], line_dashes=line_dashes, alpha=alpha_here, yerr=y_pred_std[i_input, :, ct[f"index{len(ct_list)}"]])
 
                 ypos -= plot_size + padding / 3
             xpos += plot_size + padding
@@ -428,6 +474,72 @@ class RNNService:
         res = {"fig": fig,
                "xpos": xpos,
                "ypos": ypos,
-               "xs": xs,
-               "y_pred": y_pred}
+               "xs": xs_mean,
+               "y_pred": y_pred_mean,
+               "y_pred_std": y_pred_std}
         return res
+
+    @staticmethod
+    def plot_connectivity(W, U=None, neuron_identity_array=None, grid_pop=None, fig=None, xpos=RNNDSStyle.xpos_start, ypos=RNNDSStyle.ypos_start,
+                          plot_size_matrix=RNNDSStyle.plot_size_big * 1.2, padding=RNNDSStyle.padding, value_lim=[-1, 1], plot_title="W", cmap=RNNDSStyle.cmap_list["neurons_5"]):
+
+        n_neurons = W.shape[0]
+        # Draw input vector U after training
+        plot_size_vector = plot_size_matrix / n_neurons
+
+        if U is not None:
+            plot_U = fig.create_plot(plot_title="U",
+                                     xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
+                                     plot_width=plot_size_vector,
+                                     xmin=-0.5, xmax=0.5,  # xticklabels_rotation=90,
+                                     # xticks=np.arange(n_neurons),
+                                     ymin=-0.5, ymax=n_neurons - 0.5)
+
+            xpos += plot_size_vector + padding
+            im = plot_U.draw_image(U, (-0.5, 0.5, n_neurons - 0.5, -0.5),
+                                   colormap='PiYG', zmin=-1, zmax=1, image_interpolation=None)
+
+        # Draw connectivity matrix W
+        plot_W = fig.create_plot(plot_title=plot_title,
+                                 xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
+                                 plot_width=plot_size_matrix * 1.1,
+                                 xmin=-0.5, xmax=n_neurons - 0.5,  # xticklabels_rotation=90,
+                                 # xticks=np.arange(n_neurons),
+                                 ymin=-0.5, ymax=n_neurons - 0.5)
+
+        if neuron_identity_array is not None:
+            # Draw neuron identity vectors around W
+            plot_ni_c = fig.create_plot(xpos=xpos - plot_size_vector, ypos=ypos, plot_height=plot_size_matrix,
+                                        plot_width=plot_size_vector,
+                                        xmin=-0.5, xmax=0.5,
+                                        ymin=-0.5, ymax=n_neurons - 0.5)
+            im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
+                                      colormap=cmap, zmin=0, zmax=1, image_interpolation=None)
+
+            plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
+                                        plot_width=plot_size_matrix,
+                                        xmin=-0.5, xmax=n_neurons - 0.5,
+                                        ymin=-0.5, ymax=0.5)
+            im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
+                                      colormap=cmap, zmin=0, zmax=1, image_interpolation=None)
+
+        x_ = np.arange(n_neurons)
+        x = np.tile(x_, (n_neurons, 1))
+        y = x.T
+        norm = SymLogNorm(linthresh=0.03, linscale=1.0, vmin=-1, vmax=1, base=10)
+        im = plot_W.draw_image(W, (-0.5, n_neurons - 0.5, n_neurons - 0.5, -0.5), norm_colormap=norm,
+                               colormap='PiYG', zmin=value_lim[0], zmax=value_lim[-1], image_interpolation=None)
+
+        if grid_pop is not None:
+            plot_W_grid = fig.create_plot(xpos=xpos, ypos=ypos, plot_height=plot_size_matrix, plot_width=plot_size_matrix,
+                                          xmin=-0.5, xmax=n_neurons - 0.5, ymin=-0.5, ymax=n_neurons - 0.5,
+                                          helper_lines_lc="white",
+                                          hlines=n_neurons - grid_pop - 0.5,
+                                          vlines=grid_pop - 0.5)
+        divider = make_axes_locatable(plot_W.ax)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        plot_W.figure.fig.colorbar(im, cax=cax, orientation='vertical',
+                                   ticks=[value_lim[0], np.mean(value_lim), value_lim[-1]])
+        xpos += plot_size_matrix + padding * 1.5
+
+        return fig, xpos, ypos

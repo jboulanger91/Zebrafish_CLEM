@@ -2,19 +2,29 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+from dotenv import dotenv_values
 from scipy import optimize, signal
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
+
 # ------------------------------------------------------------
-# 1. Load time series
+# Env and paths
 # ------------------------------------------------------------
-path_trace = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data\contralateral_motion_integrator_preferred_activity_traces.csv")
-path_save = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data\noise_estimation")
+env = dotenv_values()
+path_trace = Path(env["PATH_DATA_NOISE"])
+path_save = Path("../")
+
+# ------------------------------------------------------------
+# 0. Configuration
+# ------------------------------------------------------------
 display = True
 save_estimation = False
 time_window_integration = (20, 60)  # (s)
 
+# ------------------------------------------------------------
+# 1. Load time series
+# ------------------------------------------------------------
 # Load traces to use as target signals
 trace_id = path_trace.name.replace("_activity_traces.csv", "")
 side = trace_id.split("_")[-1]

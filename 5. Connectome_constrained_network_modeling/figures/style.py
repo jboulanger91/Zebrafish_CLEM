@@ -2,26 +2,20 @@ import copy
 
 from matplotlib.colors import ListedColormap
 
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
+
 from utils.style import Style
-from utils.palette import Palette
 
 
 class RNNDSStyle(Style):
-    def __init__(self, plot_label_i=0, stimulus_palette=Palette.green_short):
+    def __init__(self, plot_label_i=0):
         Style.__init__(self)
         self.plot_label_i = plot_label_i
-        self.add_palette("stimulus", stimulus_palette)
 
 
-    palette = {"default": Palette.arlecchino,
-               "correct_incorrect": Palette.correct_incorrect,
-               "neutral": [Palette.color_neutral],
-               "green": Palette.green_short,
-               "fish_code": ["#73489C", "#753B51", "#103882", "#7F0C0C"],
-
-               "neurons_3": ["#efb233", "#67bed9", "#a18cbd"],
-               "neurons_4": ["#efb233", "#de68a4", "#67bed9", "#a18cbd"]
-               }
+    palette = {"neurons_3": ["#efb233", "#67bed9", "#a18cbd"],
+               "neurons_4": ["#efb233", "#de68a4", "#67bed9", "#a18cbd"]}
     cmap_list = {"neurons_3": ListedColormap(["#efb233", "#67bed9", "#a18cbd"]),
                  "neurons_4": ListedColormap(["#efb233", "#de68a4", "#67bed9", "#a18cbd"]),
                  "neurons_5": ListedColormap(["#efb233", "#de68a4", "#67bed9", "#a18cbd", "#909090"])}

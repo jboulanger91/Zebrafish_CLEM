@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 def integrate(input_signal, output_signal_start=None, tau=10, dt=1):
@@ -59,3 +60,6 @@ def get_hist(value_list, bins=10, hist_range=None, duration=None, allow_zero=Tru
 
 def inv_softplus(x, beta=1):
     return np.log(-1 + np.exp(x * beta)) / beta
+
+def nanstd(x, dim):
+    return torch.sqrt(torch.nanmean(torch.pow(x - torch.nanmean(x, dim=dim).unsqueeze(dim), 2), dim=dim))

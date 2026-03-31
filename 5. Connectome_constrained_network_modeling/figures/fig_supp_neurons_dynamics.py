@@ -2,17 +2,24 @@ import pickle
 from pathlib import Path
 
 import torch
-import matplotlib.pyplot as plt
 import numpy as np
 
-from plot.style import RNNDSStyle
+# Manually add root path for imports to improve interoperability
+import sys;
+
+from dotenv import dotenv_values
+
+sys.path.insert(0, "..")
+
+from style import RNNDSStyle
 from utils.figure_helper import Figure
 
 # ================================================================
-# Paths
+# Env and paths
 # ================================================================
-path_top_model = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data\results\freepop\mask_traces_freepop_16_slow9\RNNFreePop_neurons102_tau0.1_input2step_softplus\top_5")
-path_save = path_top_model / "results"
+env =  dotenv_values()
+path_top_model = Path(env["PATH_MODELS"])
+path_save = Path(env["PATH_SAVE"])
 
 # ================================================================
 # Signal configuration
@@ -41,7 +48,7 @@ padding = style.padding / 2
 padding_big = style.padding * 2
 padding_vertical = style.padding
 
-palette = style.palette["neurons_4"]
+palette = style.palette["neurons_5"]
 
 # ================================================================
 # Initialize figure container
@@ -57,7 +64,7 @@ for path_model in path_top_model.glob("model_*.pkl"):
     loss_list.append(model.loss_mse)
 
 # Sort them by performance in training
-top_indices = np.argsort(loss_list)
+top_indices = np.argsort(loss_list)  # [:1]
 
 for i_m, i_m_sorted in enumerate(top_indices):
     model = model_list[i_m_sorted]
@@ -82,7 +89,7 @@ for i_m, i_m_sorted in enumerate(top_indices):
     x_trial = xs[i_trial].detach().cpu().numpy()  # (T, n_units)
 
     # store info about populations
-    population_indices = model.population_indices[:-1]
+    population_indices = model.population_indices
     free_by_pop = [model.idx_X]  # model.free_indices_by_pop
     free_indices = model.idx_X  # model.free_indices_by_pop
     anchor_by_pop = population_indices  # model.anchor_indices_by_pop
@@ -103,17 +110,19 @@ for i_m, i_m_sorted in enumerate(top_indices):
         plot_pop_n = fig.create_plot(plot_title=f"{RNNDSStyle.population_name_list[i_pop]}" if i_m == 0 else None,
                                      xpos=xpos, ypos=ypos, plot_width=plot_width, plot_height=plot_height,
                                      xmin=0, xmax=np.max(time), xl="Time (s)", xticks=[0, 20, 60, 80],
-                                     ymin=0, ymax=10, yl="Activity" if i_pop == 0 else None, yticks=[0, 5, 10] if i_pop == 0 else None,
-                                     vspans=[[20, 60, "k", 0.3]])
+                                     ymin=0, ymax=8, yl=f"Model {i_m}\nActivity" if i_pop == 0 else None, yticks=[0, 4, 8] if i_pop == 0 else None,
+                                     vspans=[[20, 60, "k", 0.1]])
         xpos += plot_width + padding
 
-        plot_pop_n.draw_line(time, anchor_traces, lc=palette[i_pop % 4])
-        plot_pop_n.draw_line(time, free_traces, lc="k", label="Free neurons" if i_m == 0 and i_pop==len(population_indices)-1 else None)
+        color = palette[-1] if i_pop == len(population_indices)-1 else palette[i_pop % 4]
+        plot_pop_n.draw_line(time, anchor_traces, lc=color)
+        # plot_pop_n.draw_line(time, free_traces, lc="k", label="Free neurons" if i_m == 0 and i_pop==len(population_indices)-1 else None)
 
     xpos = xpos_start
-    ypos -= plot_height + padding
+    ypos -= plot_height + padding * 1.5
 
 # -----------------------------------------------------------------------------
 # Save final figure
 # -----------------------------------------------------------------------------
-fig.save(path_save / f"neurons_dynamics_trial{i_trial}.pdf", open_file=False, tight=style.page_tight)
+path_save.mkdir(parents=True, exist_ok=True)
+fig.save(path_save / f"figure_supp_neurons_dynamics.pdf", open_file=False, tight=style.page_tight)

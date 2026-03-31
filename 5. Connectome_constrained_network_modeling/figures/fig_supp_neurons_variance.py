@@ -1,23 +1,29 @@
-import pickle
-
 import torch
 import numpy as np
 from pathlib import Path
+from dotenv import dotenv_values
 
-from plot.style import RNNDSStyle
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
+
+from style import RNNDSStyle
 from utils.figure_helper import Figure
+from utils.load_model import load_model
+
+# ------------------------------------------------
+# Env and paths
+# ------------------------------------------------
+env = dotenv_values()
+path_dir = Path(env["PATH_DIR"])
+path_traces = Path(env["PATH_DATA"])
+path_noise_estimation = Path(env["PATH_NOISE_ESTIMATION"])
+path_models = Path(env["PATH_MODELS"])   # directory containing avgresponses_X.csv
+path_save = Path(env["PATH_SAVE"])
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
-path_dir = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns\data")   # directory containing model_X.pkl
-path_noise_estimation = path_dir / "noise_estimation" / "contralateral_motion_integrator_preferred_noise_estimation.pkl"
-path_models = path_dir / "results" / "freepop" / "mask_traces_freepop_16" / "RNNFreePop_neurons102_tau0.1_input2step_softplus"  # RNNConstrainedMask_neurons86_tau0.2_input2step_elu"
-path_model_top = path_models / "top_5"
-path_traces = path_dir / "single_traces" / "jon_experiments"
-path_save = path_models / "results"
-TOP_FRAC  = 0.05
-TOP_N = 5  # 10  # 0.05
+TOP_N = 1  # 10  # 0.05
 device = "cpu"
 free_neurons = 16
 model_is_free_pop = True
@@ -87,42 +93,46 @@ input_signal_neurons_L = torch.tensor(np.concatenate((np.repeat(input_signal[...
 # ================================================================
 # Load traces to use as target signals
 # ================================================================
-cell_types_list = ["motion_integrator", "motion_onset", "slow_motion_integrator"]
-traces_dict = {ct: {} for ct in cell_types_list}
+cell_types_list = ["MI", "MON", "SMI"]
+traces_dict = {ct: None for ct in cell_types_list}
 all_signals = []
 min_traces_all = 0
 for ct in cell_types_list:
-    filename = f"{ct}_hindbrain_preferred_raw_individual_traces.csv"
+    filename = f"responses_{ct}_left_constant100.csv"
     data = np.loadtxt(path_traces / filename, dtype=float, delimiter=",", skiprows=1)
     downsample_time_list = data[:, 0]
-    traces_dict[ct]["signal"] = data[:, 1:] / 100
+    traces_dict[ct] = data[:, 1:] / 100
     min_trace_here = np.min(data[:, 1:] / 100)
     if min_trace_here < min_traces_all:
         min_traces_all = min_trace_here
-target_signal_L = np.stack((traces_dict["motion_integrator"]["preferred"],
-                                traces_dict["motion_integrator"]["preferred"],
-                                traces_dict["motion_onset"]["preferred"],
-                                traces_dict["slow_motion_integrator"]["preferred"],
-                                traces_dict["motion_integrator"]["null"],
-                                traces_dict["motion_integrator"]["null"],
-                                traces_dict["motion_onset"]["null"],
-                                traces_dict["slow_motion_integrator"]["null"]
-                                ),
-                               axis=-1)
-initial_value_signal_L = np.concatenate((np.array([traces_dict[ct]["signal"][0, 0] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 0])/5, n_units_A),
-                                      np.array([traces_dict[ct]["signal"][0, 1] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 1])/5, n_units_B),
-                                      np.array([traces_dict[ct]["signal"][0, 2] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 2])/5, n_units_C),
-                                      np.array([traces_dict[ct]["signal"][0, 3] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 3])/5, n_units_D),
-                                      np.array([traces_dict[ct]["signal"][0, 4] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 4])/5, n_units_A),
-                                      np.array([traces_dict[ct]["signal"][0, 5] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 5])/5, n_units_B),
-                                      np.array([traces_dict[ct]["signal"][0, 6] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 6])/5, n_units_C),
-                                      np.array([traces_dict[ct]["signal"][0, 7] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(traces_dict[ct]["signal"][0, 7])/5, n_units_D)))
+target_signal_L = np.stack((np.mean(traces_dict["MI"], axis=1),
+                            np.mean(traces_dict["MI"], axis=1),
+                            np.mean(traces_dict["MON"], axis=1),
+                            np.mean(traces_dict["SMI"], axis=1),
+                            # repeat on the other side. Quick and dirty solution, acceptable only because
+                            # this trace is only useful to determine the pop-specific initial values for the
+                            # simulations, and preferred and null side may share the same initial value.
+                            np.mean(traces_dict["MI"], axis=1),
+                            np.mean(traces_dict["MI"], axis=1),
+                            np.mean(traces_dict["MON"], axis=1),
+                            np.mean(traces_dict["SMI"], axis=1),
+                            ),
+                           axis=-1)
+target_signal_L -= min_traces_all
+initial_value_signal_L = np.concatenate((np.array([target_signal_L[0, 0] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_L[0, 0])/5, n_units_A),
+                                         np.array([target_signal_L[0, 1] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_L[0, 1])/5, n_units_B),
+                                         np.array([target_signal_L[0, 2] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_L[0, 2])/5, n_units_C),
+                                         np.array([target_signal_L[0, 3] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_L[0, 3])/5, n_units_D),
+                                         np.array([target_signal_L[0, 4] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_L[0, 4])/5, n_units_A),
+                                         np.array([target_signal_L[0, 5] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_L[0, 5])/5, n_units_B),
+                                         np.array([target_signal_L[0, 6] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_L[0, 6])/5, n_units_C),
+                                         np.array([target_signal_L[0, 7] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_L[0, 7])/5, n_units_D)))
 if model_is_free_pop:
     input_signal_neurons_L = np.concatenate((input_signal_neurons_L, np.zeros((len(input_signal), n_units_X))), axis=1)
     initial_value_signal_L = np.concatenate((initial_value_signal_L, np.array([np.mean(target_signal_L[0]) for _ in range(n_units_X)]) + np.random.normal(0, np.abs(
         np.mean(target_signal_L[0])) / 5, n_units_X)))
-min_traces_all = np.abs(min_traces_all)
-t_exp = np.linspace(0, duration_simulation, len(traces_dict[ct]["signal"]))
+# min_traces_all = np.abs(min_traces_all)
+t_exp = np.linspace(0, duration_simulation, len(traces_dict["MI"]))
 
 def pop_variability_vs_time(
     X,                     # (T, U) or (N, T, U)
@@ -167,8 +177,6 @@ def pop_variability_vs_time(
         raise ValueError("reduction_trials must be 'mean', 'median', or None")
 
     return V.detach().cpu().numpy()
-
-import numpy as np
 
 def nrmse(a, b, eps=1e-8):
     a = np.asarray(a); b = np.asarray(b)
@@ -238,9 +246,9 @@ def compare_to_time_shuffle_controls(V_target, V_model, n_shuffles=10000, seed=0
     return results
 
 metric = "std"
-for i_model, path_model in enumerate(path_model_top.glob("model_*.pkl")):
-    with open(path_model, 'rb') as f:
-        model = pickle.load(f)
+input_signal_neurons_L = torch.tensor(input_signal_neurons_L, dtype=torch.float32)
+for i_model, path_model in enumerate(path_models.glob("model_top0_*.pt")):
+    model = load_model(path_model)
 
     print(f"Evaluating model {i_model}")
 
@@ -248,18 +256,22 @@ for i_model, path_model in enumerate(path_model_top.glob("model_*.pkl")):
     model_xs = model_xs.squeeze()
 
     for i_ct, ct in enumerate(cell_types_list):
-        target_xs = torch.tensor(traces_dict[ct]["signal"], dtype=torch.float32)
+        target_xs = torch.tensor(traces_dict[ct] - min_traces_all, dtype=torch.float32)
         V_t = pop_variability_vs_time(target_xs, metric=metric, reduction_trials=None)
 
         if i_ct == 0:
-            index_pop = np.concatenate((model.anchor_indices_by_pop[0], model.anchor_indices_by_pop[1]))
+            index_pop = np.concatenate((model.population_indices[0], model.population_indices[1]))
         elif i_ct == 1:
-            index_pop = model.anchor_indices_by_pop[2]
+            index_pop = model.population_indices[2]
         elif i_ct == 2:
-            index_pop = model.anchor_indices_by_pop[3]
+            index_pop = model.population_indices[3]
         else:
             raise ValueError(f"Unknown i_ct {i_ct}")
         model_xs_pop = model_xs[:, index_pop]
+
+        # # Enable this block to remove flat neurons from the population, useful for DEBUG purposes
+        # index_neurons_behaving = torch.squeeze(torch.argwhere(torch.std(model_xs_pop, dim=0) > 6e-2))
+        # model_xs_pop = model_xs_pop[:, index_neurons_behaving]
 
         V_m = pop_variability_vs_time(model_xs_pop, metric=metric, reduction_trials=None)
 
@@ -267,17 +279,17 @@ for i_model, path_model in enumerate(path_model_top.glob("model_*.pkl")):
         plot_m_pop_xs = fig.create_plot(plot_title=f"Target\n{ct}" if i_model == 0 else None,
                                      xpos=xpos, ypos=ypos, plot_width=plot_width, plot_height=plot_height,
                                      xl="Time (s)" if i_model == 4 else None, yl=ylabel,
-                                     xmin=0, xmax=duration_simulation, ymin=0, ymax=3,
+                                     xmin=0, xmax=duration_simulation, ymin=0, ymax=5,
                                      xticks=[0, duration_rest_start, duration_rest_start + duration_stimulus,
                                              duration_simulation],
-                                     yticks=[0, 1.5, 3])
+                                     yticks=[0, 2.5, 5])
         xpos += plot_width + padding / 2
         for i_neuron in range(target_xs.shape[1]):
             plot_m_pop_xs.draw_line(t_exp, target_xs[:, i_neuron], lc=palette[i_ct], lw=0.1)
         plot_m_pop_xs = fig.create_plot(plot_title=f"Model\n{ct}" if i_model == 0 else None,
                                         xpos=xpos, ypos=ypos, plot_width=plot_width, plot_height=plot_height,
                                         xl="Time (s)" if i_model == 4 else None,
-                                        xmin=0, xmax=duration_simulation, ymin=0, ymax=3,
+                                        xmin=0, xmax=duration_simulation, ymin=0, ymax=5,
                                         xticks=[0, duration_rest_start, duration_rest_start + duration_stimulus,
                                                 duration_simulation],
                                         yticks=None)
@@ -288,9 +300,9 @@ for i_model, path_model in enumerate(path_model_top.glob("model_*.pkl")):
         plot_m_pop_var = fig.create_plot(plot_title=ct if i_model == 0 else None,
                                      xpos=xpos, ypos=ypos, plot_width=plot_width, plot_height=plot_height,
                                      xl="Time (s)" if i_model == 4 else None, yl="Activity variability",
-                                     xmin=0, xmax=duration_simulation, ymin=0, ymax=3,
+                                     xmin=0, xmax=duration_simulation, ymin=0, ymax=5,
                                      xticks=[0, duration_rest_start, duration_rest_start + duration_stimulus, duration_simulation],
-                                     yticks=[0, 1.5, 3])
+                                     yticks=[0, 2.5, 5])
         xpos += plot_width + padding * 2
         plot_m_pop_var.draw_line(t_exp, V_t.squeeze(), lc=palette[i_ct], label="Target" if i_ct==len(cell_types_list)-1 else None)
         plot_m_pop_var.draw_line(t_sim, V_m.squeeze(), lc=palette[i_ct], line_dashes=(1, 2), label="Model" if i_ct==len(cell_types_list)-1 else None)
@@ -305,4 +317,5 @@ for i_model, path_model in enumerate(path_model_top.glob("model_*.pkl")):
 # # -----------------------------------------------------------------------------
 # # Save final figure
 # # -----------------------------------------------------------------------------
-# fig.save(path_save / f"check_neurons_variance_{metric}.pdf", open_file=False, tight=style.page_tight)
+path_save.mkdir(parents=True, exist_ok=True)
+fig.save(path_save / f"figure_sup_neurons_variance_{metric}.pdf", open_file=False, tight=style.page_tight)

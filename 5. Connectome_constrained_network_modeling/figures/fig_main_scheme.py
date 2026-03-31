@@ -4,22 +4,32 @@ import numpy as np
 from pathlib import Path
 
 import torch
+from dotenv import dotenv_values
+from matplotlib.colors import SymLogNorm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from model.RNNFreeNeurons import RNNFreeNeurons
-from model.RNNFreePop import RNNFreePop
-from plot.style import RNNDSStyle
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
+
+from model.core.RNNFreePop import RNNFreePop
+from style import RNNDSStyle
 from utils.figure_helper import Figure
+
+# ------------------------------------------------
+# Env and paths
+# ------------------------------------------------
+env = dotenv_values()
+path_dir = Path(env["PATH_DIR"])
+path_traces = Path(env["PATH_DATA"])   # directory containing model_X.pkl
+path_noise_estimation = Path(env["PATH_NOISE_ESTIMATION"])
+path_models = Path(env["PATH_MODELS"])   # directory containing avgresponses_X.csv
+path_save = Path(env["PATH_SAVE"])
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
-path_dir = Path(r"C:\Users\Roberto\Desktop\highlights\clem_rnns")   # directory containing model_X.pkl
-path_traces = path_dir / "data"
-path_noise_estimation = path_traces / "noise_estimation" / "contralateral_motion_integrator_preferred_noise_estimation.pkl"
-path_models = path_traces / "results" / "freeneurons" / "mask_traces_freeneurons_1_attempt2" / "RNNFreeNeurons_neurons102_tau0.1_input2step_softplus" / "top_5"
-path_save = path_dir / "figures"
 loop_over_trained_models = False
+show_matrix_style = ["recorded", "all"]
 
 n_input_signal = 2
 dt = 0.01
@@ -154,8 +164,10 @@ ypos -= plot_height * 2 + padding * 3
 # Define function to show the model parameters
 # ------------------------------------------------
 value_lim = 1
-def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
-    n_neurons = model.n_units
+def plot_model_matrices(model, fig, xpos, ypos, value_lim=1, show_free_pop=True):
+    n_neurons = model.n_units_hemi * 2
+    if show_free_pop:
+        n_neurons += model.nX
     plot_size_vector = plot_size_matrix / n_neurons
     U = model.U().detach().cpu().numpy()
     W = model.W().detach().cpu().numpy().T
@@ -163,10 +175,29 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
     W_clamp = torch.abs(
         torch.clamp(torch.abs(model.W_raw), model.clamp_weights_min, model.clamp_weights_max)).detach().numpy().T
 
+    if show_free_pop:
+        n_units_X = model.nX
+        n_units_show = n_units + n_units_X
+        colormap = RNNDSStyle.cmap_list["neurons_5"]
+    else:
+        n_units_show = n_units
+        colormap = RNNDSStyle.cmap_list["neurons_4"]
+
+    if not show_free_pop:
+        U = U[:n_units_show]
+        W = W[:n_units_show, :n_units_show]
+        W_clamp = W_clamp[:n_units_show, :n_units_show]
+        mask_W = mask_W[:n_units_show, :n_units_show]
+
     offset_hemisphere = model.nA + model.nB + model.nC + model.nD
     neuron_identity_array = np.concatenate(
         (np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)), 3 * np.ones((model.nD, 1)),
          np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)), 3 * np.ones((model.nD, 1))))
+    # Optionally add label for free population neurons and normalize
+    if show_free_pop:
+        neuron_identity_array = np.concatenate((neuron_identity_array, 4 * np.ones((model.nX, 1)))) / 4
+    else:
+        neuron_identity_array /= 3
 
     # Draw heatmap with the mask for W
     plot_mask_W = fig.create_plot(plot_title="Signed\nconnectivity mask",
@@ -182,14 +213,14 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
                                 xmin=-0.5, xmax=0.5,
                                 ymin=-0.5, ymax=n_neurons - 0.5)
     im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
                                 plot_width=plot_size_matrix,
                                 xmin=-0.5, xmax=n_neurons - 0.5,
                                 ymin=-0.5, ymax=0.5)
     im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     x_ = np.arange(n_neurons)
     x = np.tile(x_, (n_neurons, 1))
@@ -237,19 +268,20 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
                                 xmin=-0.5, xmax=0.5,
                                 ymin=-0.5, ymax=n_neurons - 0.5)
     im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
                                 plot_width=plot_size_matrix,
                                 xmin=-0.5, xmax=n_neurons - 0.5,
                                 ymin=-0.5, ymax=0.5)
     im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     x_ = np.arange(n_neurons)
     x = np.tile(x_, (n_neurons, 1))
     y = x.T
-    im = plot_W.draw_image(W, (-0.5, n_neurons - 0.5, n_neurons - 0.5, -0.5),
+    norm = SymLogNorm(linthresh=0.03, linscale=1.0, vmin=-1, vmax=1, base=10)
+    im = plot_W.draw_image(W, (-0.5, n_neurons - 0.5, n_neurons - 0.5, -0.5), norm_colormap=norm,
                            colormap='PiYG', zmin=-value_lim, zmax=value_lim, image_interpolation=None)
 
     plot_W_grid = fig.create_plot(xpos=xpos, ypos=ypos, plot_height=plot_size_matrix, plot_width=plot_size_matrix,
@@ -276,14 +308,14 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
                                 xmin=-0.5, xmax=0.5,
                                 ymin=-0.5, ymax=n_neurons - 0.5)
     im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
                                 plot_width=plot_size_matrix,
                                 xmin=-0.5, xmax=n_neurons - 0.5,
                                 ymin=-0.5, ymax=0.5)
     im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     x_ = np.arange(n_neurons)
     x = np.tile(x_, (n_neurons, 1))
@@ -305,6 +337,8 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
 
     # W_slow_pop_n = torch.abs(model.W_slow_module.gammas()[i] * torch.outer(model.W_slow_module.v_slow[i], model.W_slow_module.u_slow[i])).T
     W_slow_pop_n = torch.abs(model.W_slow_module(model.device)).T
+    if not show_free_pop:
+        W_slow_pop_n = W_slow_pop_n[:n_units_show, :n_units_show]
     value_lim_slow = value_lim  # torch.max(W_slow_pop_n)
 
     # Draw connectivity matrix W_clamp after training, before masking
@@ -320,14 +354,14 @@ def plot_model_matrices(model, fig, xpos, ypos, value_lim=1):
                                 xmin=-0.5, xmax=0.5,
                                 ymin=-0.5, ymax=n_neurons - 0.5)
     im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
                                 plot_width=plot_size_matrix,
                                 xmin=-0.5, xmax=n_neurons - 0.5,
                                 ymin=-0.5, ymax=0.5)
     im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
-                              colormap=style.cmap_list["neurons_5"], zmin=0, zmax=3, image_interpolation=None)
+                              colormap=colormap, zmin=0, zmax=1, image_interpolation=None)
 
     x_ = np.arange(n_neurons)
     x = np.tile(x_, (n_neurons, 1))
@@ -370,7 +404,13 @@ model = RNNFreePop(nA=n_units_A, nB=n_units_B, nC=n_units_C, nD=n_units_D, nX=n_
                      sparsity_U=1,
                      tau=tau_neuron, dt=dt, clamp_weights_min=1e-2, n_slow_pops=n_slow_pops)
 model.eval()
-xpos, ypos = plot_model_matrices(model, fig, xpos, ypos, value_lim)
+for matrix_style in show_matrix_style:
+    show_free_pop = True if matrix_style == "all" else False
+
+    xpos, ypos = plot_model_matrices(model, fig, xpos, ypos, value_lim, show_free_pop)
+
+    xpos = xpos_start
+    ypos -= plot_size_matrix + padding_vertical * 1.5
 
 
 # ------------------------------------------------
@@ -387,10 +427,13 @@ if loop_over_trained_models:
             model = pickle.load(f)
         model.eval()
 
-        xpos, ypos = plot_model_matrices(model, fig, xpos, ypos, value_lim)
+        for matrix_style in show_matrix_style:
+            show_free_pop = True if matrix_style == "all" else False
 
-        xpos = xpos_start
-        ypos -= plot_size_matrix + padding_vertical * 1.5
+            xpos, ypos = plot_model_matrices(model, fig, xpos, ypos, value_lim, show_free_pop)
+
+            xpos = xpos_start
+            ypos -= plot_size_matrix + padding_vertical * 1.5
 
 # -----------------------------------------------------------------------------
 # Save final figure
