@@ -1,3 +1,14 @@
+# Connectome-constrained network modeling
+
+### Project organization
+Here is an overview to navigate the project
+- `./analysis`: contains intermediate steps of analysis, which may be used to aggregate data and compute important quantities used in model simulation and figure generation
+- `./figures`: contains all scripts generating raw versions of the figures in the manuscript
+- `./model`: contains the implementation of the model and the training script
+- `./utils`: contain useful services, constants, functions, and utility classes, used to run analysis and compute core quantities appearing in the figures
+
+- `./env_clem_zfish1_model.yaml`: environment configuration to install dependencies
+- `./noise_estimation.pkl`: precomputed estimation of the noise contribution to augment the dataset of recorded traces
 
 ### Environment setup for dependencies
 Use the project-specific environment. Create it:
