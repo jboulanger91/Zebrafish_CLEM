@@ -128,8 +128,16 @@ python cli.py all                 # Run everything end-to-end
 ---
 
 ### 5. Connectome-constrained network modeling
-Computational models that simulate network dynamics under realistic connectome constraints.
+Code for training and analysing a recurrent neural network that reproduces population-averaged calcium dynamics recorded bilaterally across the four neuron populations iMI, cMI, MON, and sMI in two hemispheres. The network enforces Dale's law, anatomical sparsity, and structured slow integration modes, and is fit directly to GCaMP-convolved population traces. Running with default parameters reproduces the trained connectivity and population outputs reported in the paper.
 
-**Environment file:** `env.yaml`
+This includes:
+    - The class implementing the biologically constrained RNN with signed E/I connectivity (Dale's law), block-sparse anatomical masks, and a latent "free" population of unobserved neurons (in `./model/core`)
+    - The script for training via staged regularisation: spectral radius penalty on the fast connectivity and stimulus-gated hemispheric antagonism penalty (in `./model`)
+    - Selection and preliminary analysis of trained models (in `./analysis`)
+    - Generation of the raw version of the plots presented in Fig. 5 (in `./figures`) 
+
+For more details about the content of the directory and its use, refer to the model-specific `README`.
+
+**Environment file:** `./env_clem_zfish1_model.yaml`
 
 ---
