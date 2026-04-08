@@ -15,13 +15,15 @@ class RNNDSStyle(Style):
 
 
     palette = {"neurons_3": ["#efb233", "#67bed9", "#a18cbd"],
-               "neurons_4": ["#efb233", "#de68a4", "#67bed9", "#a18cbd"]}
+               "neurons_4": ["#efb233", "#de68a4", "#67bed9", "#a18cbd"],
+               "neurons_5": ["#efb233", "#de68a4", "#67bed9", "#a18cbd", "#909090"]}
     cmap_list = {"neurons_3": ListedColormap(["#efb233", "#67bed9", "#a18cbd"]),
                  "neurons_4": ListedColormap(["#efb233", "#de68a4", "#67bed9", "#a18cbd"]),
                  "neurons_5": ListedColormap(["#efb233", "#de68a4", "#67bed9", "#a18cbd", "#909090"])}
 
     population_name_list = ["Left iMI", "Left cMI", "Left MON", "Left sMI",
-                            "Right iMI", "Right cMI", "Right MON", "Right sMI"]
+                            "Right iMI", "Right cMI", "Right MON", "Right sMI",
+                            "Unkown"]
 
     font_size_label = 8
     font_size_text = 6

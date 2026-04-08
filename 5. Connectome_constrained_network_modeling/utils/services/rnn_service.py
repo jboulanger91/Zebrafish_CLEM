@@ -481,7 +481,8 @@ class RNNService:
 
     @staticmethod
     def plot_connectivity(W, U=None, neuron_identity_array=None, grid_pop=None, fig=None, xpos=RNNDSStyle.xpos_start, ypos=RNNDSStyle.ypos_start,
-                          plot_size_matrix=RNNDSStyle.plot_size_big * 1.2, padding=RNNDSStyle.padding, value_lim=[-1, 1], plot_title="W", cmap=RNNDSStyle.cmap_list["neurons_5"]):
+                          plot_size_matrix=RNNDSStyle.plot_size_big * 1.2, padding=RNNDSStyle.padding, value_lim=[-1, 1], plot_title="W",
+                          cmap=RNNDSStyle.cmap_list["neurons_5"], show_colorbar=True):
 
         n_neurons = W.shape[0]
         # Draw input vector U after training
@@ -499,10 +500,12 @@ class RNNService:
             im = plot_U.draw_image(U, (-0.5, 0.5, n_neurons - 0.5, -0.5),
                                    colormap='PiYG', zmin=-1, zmax=1, image_interpolation=None)
 
+        scale_width = 1.1 if show_colorbar else 1
+
         # Draw connectivity matrix W
         plot_W = fig.create_plot(plot_title=plot_title,
                                  xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
-                                 plot_width=plot_size_matrix * 1.1,
+                                 plot_width=plot_size_matrix * scale_width,
                                  xmin=-0.5, xmax=n_neurons - 0.5,  # xticklabels_rotation=90,
                                  # xticks=np.arange(n_neurons),
                                  ymin=-0.5, ymax=n_neurons - 0.5)
@@ -536,10 +539,11 @@ class RNNService:
                                           helper_lines_lc="white",
                                           hlines=n_neurons - grid_pop - 0.5,
                                           vlines=grid_pop - 0.5)
-        divider = make_axes_locatable(plot_W.ax)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
-        plot_W.figure.fig.colorbar(im, cax=cax, orientation='vertical',
-                                   ticks=[value_lim[0], np.mean(value_lim), value_lim[-1]])
+        if show_colorbar:
+            divider = make_axes_locatable(plot_W.ax)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            plot_W.figure.fig.colorbar(im, cax=cax, orientation='vertical',
+                                       ticks=[value_lim[0], np.mean(value_lim), value_lim[-1]])
         xpos += plot_size_matrix + padding * 1.5
 
         return fig, xpos, ypos
