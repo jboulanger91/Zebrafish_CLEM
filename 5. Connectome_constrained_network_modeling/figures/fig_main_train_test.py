@@ -470,7 +470,7 @@ for i_test, test in enumerate(test_list):
     t_sim = np.linspace(0, duration_simulation, input_signal.shape[1])
     res = RNNService.plot_response_by_cell(model_list, t_sim, input_signal, xpos_here, ypos_here,
                                    t_exp=time_target_array, output_signal_array=output_signal, x0=x0,
-                                   fig=fig, show_xaxis=True, show_yaxis=True, compute_tau=True,
+                                   fig=fig, show_xaxis=True, show_yaxis=True, compute_tau=False,
                                    plot_title_label=label, plot_size=plot_size_here,
                                    time_structure={"rest_start": test['duration_rest_start'], "stimulus": test['duration_stimulus'], "rest_end": test['duration_rest_end'], "duration": duration_simulation})
 
