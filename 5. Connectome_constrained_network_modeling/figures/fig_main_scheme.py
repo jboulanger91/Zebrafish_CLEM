@@ -28,7 +28,7 @@ path_save = Path(env["PATH_SAVE"])
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
-loop_over_trained_models = False
+loop_over_trained_models = True
 show_matrix_style = ["recorded", "all"]
 
 n_input_signal = 2

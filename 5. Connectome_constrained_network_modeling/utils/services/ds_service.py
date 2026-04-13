@@ -2,6 +2,10 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
+from scipy.stats import pearsonr
+from scipy.signal import welch
+
 from sklearn.decomposition import PCA
 from torch import nn
 
@@ -353,3 +357,142 @@ class DSService():
             plt.show()
 
         return time_rise - time[0]
+
+    @classmethod
+    def interpolate_to_common_grid(cls, signal1, times1, signal2, times2, num_points=None):
+        """
+        Interpolate both signals onto a shared time grid covering their overlapping interval.
+        Resolution defaults to the finer of the two original samplings.
+        """
+        t_start = max(times1[0], times2[0])
+        t_end = min(times1[-1], times2[-1])
+        if t_end <= t_start:
+            raise ValueError("Signals have no overlapping time interval.")
+
+        if num_points is None:
+            dt = min(np.mean(np.diff(times1)), np.mean(np.diff(times2)))
+            num_points = int((t_end - t_start) / dt) + 1
+
+        t_common = np.linspace(t_start, t_end, num_points)
+        s1 = interp1d(times1, signal1, kind='linear', bounds_error=True)(t_common)
+        s2 = interp1d(times2, signal2, kind='linear', bounds_error=True)(t_common)
+        return s1, s2, t_common
+
+    @classmethod
+    def pearson_correlation(cls, signal1, times1, signal2, times2, num_points=None):
+        """
+        Pearson correlation between two signals with (potentially) different time samplings.
+
+        Both signals are linearly interpolated onto the overlapping time interval at the
+        resolution of the finer sampling before computing the correlation.
+
+        Parameters
+        ----------
+        signal1, signal2 : array-like  — signal values
+        times1,  times2  : array-like  — corresponding timestamps (same units)
+        num_points       : int, optional — override the number of points on the common grid
+
+        Returns
+        -------
+        r : float   — Pearson correlation coefficient in [-1, 1]
+        p : float   — two-tailed p-value
+        """
+        s1, s2, _ = cls.interpolate_to_common_grid(signal1, times1, signal2, times2, num_points)
+        r, p = pearsonr(s1, s2)
+        return r, p
+
+    @classmethod
+    def compute_acf(cls, x, max_lag):
+        """Normalized (biased) ACF via direct correlation, lags 0 … max_lag. ACF[0] == 1."""
+        x = x - x.mean()
+        n = len(x)
+        full = np.correlate(x, x, mode='full')  # length 2n-1
+        acf = full[n - 1: n + max_lag + 1]  # lags 0 … max_lag
+        acf = acf / (n * x.var())  # normalize: acf[0] = 1
+        return acf
+
+    @classmethod
+    def acf_distance(cls, signal1, times1, signal2, times2,
+                     num_points=None, max_lag=None, metric='rmse'):
+        """
+        Distance between the autocorrelation functions (ACFs) of two signals.
+
+        ACFs are normalized to [-1, 1] and encode only temporal structure (not amplitude),
+        making this metric amplitude-independent by construction.
+
+        Parameters
+        ----------
+        signal1, signal2 : array-like
+        times1,  times2  : array-like
+        num_points       : int, optional — grid resolution override
+        max_lag          : int, optional — max lag index (default: half signal length)
+        metric           : 'rmse'    → RMSE between ACFs  (lower = more similar)
+                           'pearson' → 1 − r between ACFs (lower = more similar)
+
+        Returns
+        -------
+        distance      : float       — 0 means identical ACFs / timescales
+        acf1, acf2    : np.ndarray  — the two ACF arrays (useful for plotting / fitting)
+        """
+        s1, s2, _ = cls.interpolate_to_common_grid(signal1, times1, signal2, times2, num_points)
+        n = len(s1)
+
+        if max_lag is None:
+            max_lag = n // 2
+
+        acf1 = cls.compute_acf(s1, max_lag)
+        acf2 = cls.compute_acf(s2, max_lag)
+
+        if metric == 'rmse':
+            dist = float(np.sqrt(np.mean((acf1 - acf2) ** 2)))
+        elif metric == 'pearson':
+            r, _ = pearsonr(acf1, acf2)
+            dist = float(1.0 - r)
+        else:
+            raise ValueError("metric must be 'rmse' or 'pearson'.")
+
+        return dist, acf1, acf2
+
+    @classmethod
+    def jsd_psd(cls, signal1, times1, signal2, times2, num_points=None, nperseg=None):
+        """
+        Jensen-Shannon Divergence (JSD) between the normalized Power Spectral Densities.
+
+        Normalizing each PSD to sum to 1 turns it into a probability distribution over
+        frequency, making the metric fully amplitude-independent.
+
+        JSD = 0.5 * KL(P || M) + 0.5 * KL(Q || M),   M = 0.5*(P + Q)
+
+        Parameters
+        ----------
+        signal1, signal2 : array-like
+        times1,  times2  : array-like
+        num_points       : int, optional — grid resolution override
+        nperseg          : int, optional — Welch segment length (default: min(256, N//4))
+
+        Returns
+        -------
+        jsd           : float in [0, 1] — 0 = identical spectra, 1 = maximally different
+        freqs         : np.ndarray — frequency axis
+        psd1_norm     : np.ndarray — normalized PSD of signal1
+        psd2_norm     : np.ndarray — normalized PSD of signal2
+        """
+        s1, s2, t_common = cls.interpolate_to_common_grid(signal1, times1, signal2, times2, num_points)
+        fs = 1.0 / (t_common[1] - t_common[0])
+
+        if nperseg is None:
+            nperseg = min(256, len(s1) // 4)
+
+        freqs, psd1 = welch(s1, fs=fs, nperseg=nperseg)
+        _, psd2 = welch(s2, fs=fs, nperseg=nperseg)
+
+        p = psd1 / psd1.sum()
+        q = psd2 / psd2.sum()
+        m = 0.5 * (p + q)
+
+        def _kl(a, b):
+            mask = (a > 0) & (b > 0)
+            return float(np.sum(a[mask] * np.log(a[mask] / b[mask])))
+
+        jsd = (0.5 * _kl(p, m) + 0.5 * _kl(q, m)) / np.log(2)  # normalize to [0, 1]
+        return float(np.clip(jsd, 0.0, 1.0)), freqs, p, q

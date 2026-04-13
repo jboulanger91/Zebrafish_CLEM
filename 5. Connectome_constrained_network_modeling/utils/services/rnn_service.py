@@ -335,13 +335,13 @@ class RNNService:
                "y_pred": y_pred}
         return res
 
-    @staticmethod
-    def plot_response_by_cell(model_list, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list,
+    @classmethod
+    def plot_response_by_cell(cls, model_list, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list,
                               t_exp=None, output_signal_array=None, x0=None,
                       fig=None, plot_title_label="", show_xaxis=True, show_yaxis=True, show_xs=False,
                       palette=RNNDSStyle.palette["neurons_4"], plot_size=RNNDSStyle.plot_size_big * 0.4,
-                      padding=RNNDSStyle.padding / 2, compute_tau=True,
-                      time_structure=ConfigurationRNN.time_structure_simulation_test):
+                      padding=RNNDSStyle.padding / 2, compute_tau=False,
+                      time_structure=ConfigurationRNN.time_structure_simulation_test, compute_performance_method=None):
         # Loop over model, simulate them and extract mean and SEM of activity
         if torch.is_tensor(model_list):
             model_list = [model_list]
@@ -471,13 +471,54 @@ class RNNService:
             xpos += plot_size + padding
             ypos = ypos_start_here
 
+        # Compute amplitude-independent performance
+        performance = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, compute_performance_method)
+        print(f"{compute_performance_method}: {performance}")
+
+        # # for debug purposes only
+        # performance_corr = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "corr")
+        # print(f"DEBUG | pearson corr: {performance_corr}")
+        # performance_acf = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "acf")
+        # print(f"DEBUG | acf distance: {performance_acf}")
+        # performance_psd = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "psd")
+        # print(f"DEBUG | JSD PSD: {performance_psd}")
+
         res = {"fig": fig,
                "xpos": xpos,
                "ypos": ypos,
                "xs": xs_mean,
                "y_pred": y_pred_mean,
-               "y_pred_std": y_pred_std}
+               "y_pred_std": y_pred_std,
+               "performance": performance}
         return res
+
+    @classmethod
+    def compute_performance(cls, output_signal_mean, t_exp, y_pred_mean, t_sim, compute_performance_method=None):
+        if compute_performance_method == None:
+            compute_performance_method = "pearson"
+
+        if compute_performance_method in ["corr", "pearson"]:
+            perf_f = DSService.pearson_correlation
+        elif compute_performance_method in ["acf"]:
+            perf_f = DSService.acf_distance
+        elif compute_performance_method in ["psd", "jsd"]:
+            perf_f = DSService.jsd_psd
+        else:
+            raise Exception(f"compute_performance_method {compute_performance_method} is not supported")
+
+        if len(output_signal_mean.size()) == 3:
+            output_signal_mean = torch.unsqueeze(output_signal_mean, 0)
+        if len(y_pred_mean.size()) == 3:
+            y_pred_mean = torch.unsqueeze(y_pred_mean, 0)
+
+        performance = 0
+        n_contributions = output_signal_mean.size()[0] * output_signal_mean.size()[1] * output_signal_mean.size()[3]
+        for i_model in range(output_signal_mean.size()[0]):
+            for i_input in range(output_signal_mean.size()[1]):
+                for i_ct in range(output_signal_mean.size()[3]):
+                    performance += np.abs(perf_f(output_signal_mean[i_model, i_input, :, i_ct], t_exp, y_pred_mean[i_model, i_input, :, i_ct], t_sim)[0]) / n_contributions
+
+        return performance
 
     @staticmethod
     def plot_connectivity(W, U=None, neuron_identity_array=None, grid_pop=None, fig=None, xpos=RNNDSStyle.xpos_start, ypos=RNNDSStyle.ypos_start,

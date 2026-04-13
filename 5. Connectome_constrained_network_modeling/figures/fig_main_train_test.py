@@ -9,7 +9,6 @@ from dotenv import dotenv_values
 import sys; sys.path.insert(0, "..")
 
 from style import RNNDSStyle
-from utils.remap_unpickler import RemapUnpickler
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus, get_hist
@@ -34,7 +33,7 @@ path_save = Path(env["PATH_SAVE"])
 special_label = None  # "_noclamp"
 
 # ---- Show -------------------------------------
-show_loss_histograms = False
+show_loss_histograms = True
 show_matrices = True
 
 show_matrix_style = ["recorded", "all"]
