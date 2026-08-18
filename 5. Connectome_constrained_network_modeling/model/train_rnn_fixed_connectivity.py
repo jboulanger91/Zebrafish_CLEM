@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     # Training
     do_symmetry_transform = False
-    n_epochs = 101  # 1001
+    n_epochs = 3001
     seed = None
 
     # Resolve env
