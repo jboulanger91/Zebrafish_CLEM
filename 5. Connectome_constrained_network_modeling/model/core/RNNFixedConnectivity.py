@@ -65,8 +65,7 @@ class RNNFixedConnectivity(nn.Module):
             torch.manual_seed(seed)
 
         self.register_buffer("W_norm", torch.tensor(W_norm, dtype=torch.float32))
-        self.beta = nn.Parameter(torch.rand(n_beta).squeeze())
-        self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, input_dim)))
+        self.beta = nn.Parameter(torch.rand(n_beta, dtype=torch.float32).squeeze())
 
         # -------- indices (populations) --------
         # left hemisphere
@@ -127,17 +126,18 @@ class RNNFixedConnectivity(nn.Module):
         self.ys = None
 
         if fixed_U is None:
+            self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, input_dim)))
             self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
-            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed))
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed).squeeze())
         else:
-            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
-            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, 1, seed))
-            self.register_buffer("U_raw", fixed_U)
+            self.optimizer = optim.Adam([self.beta], lr=lr, weight_decay=weight_decay)
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, 1, seed).squeeze())
+            self.register_buffer("U_raw", fixed_U.float())
 
     def process_beta(self):
         if self.beta.dim() > 0:
             # map the 8 population-related beta values (associated to the input into each population) into a full matrix
-            beta = torch.concat([torch.ones((len(pop), self.n_units)) * self.beta.detach().clone()[i_pop]
+            beta = torch.concat([torch.ones((len(pop), self.n_units), dtype=torch.float32) * self.beta[i_pop]
                                  for i_pop, pop in enumerate(self.population_indices)])
         else:
             beta = self.beta

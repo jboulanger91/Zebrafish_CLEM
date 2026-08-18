@@ -51,7 +51,9 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
 
     is_axon = df.index.str.strip().str.startswith("axon")
     axon_labels = df.index[is_axon]
-    axon_values = df.loc[axon_labels].sum(axis=0).to_numpy()
+    axon_rostral_idx = [i for i, is_axon_rostral in enumerate(axon_labels.str.strip().str.contains("rostral")) if not is_axon_rostral]
+    axon_values = np.array(df.loc[axon_labels].sum(axis=0).to_numpy())
+    axon_values[axon_rostral_idx] = 0
 
     # Identify neurons to discard: anything whose identifier starts with "axon"
     if drop_axons:
@@ -82,7 +84,7 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
 
     return matrix, axon_values, idx_to_id, id_to_idx, df_clean, idx_side_change
 
-def process_synapse_matrix(W_raw, idx_to_id, idx_side_change):
+def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
     # normalize W_raw
     W_sum_neuron = np.sum(W_raw, axis=0)
     W_sum_neuron = np.array([1 if sum_neuron == 0 else sum_neuron for sum_neuron in W_sum_neuron])
@@ -91,15 +93,18 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change):
     # get neurons info
     dict_neurons = {ConfigurationRNN.SIDE_LEFT: {}, ConfigurationRNN.SIDE_RIGHT: {}}
     for i_neuron, info_neuron_str in idx_to_id.items():
-        # get side
-        if i_neuron < idx_side_change: side = ConfigurationRNN.SIDE_LEFT
-        else: side = ConfigurationRNN.SIDE_RIGHT
         # parse neuron info string
         info_neuron_list = info_neuron_str.split(" | ")
-        # id_neuron = info_neuron_list[1].replace("ID: ", "")
-        function = info_neuron_list[2].replace("functional classifier: ", "")
-        projection = info_neuron_list[3].replace("projection classifier: ", "")
-        neurotransmitter = info_neuron_list[4].replace("neurotransmitter classifier: ", "")
+        # get side
+        if "hemisphere" in info_neuron_str:
+            side = info_neuron_list[2].replace("hemisphere: ", "")
+        else:
+            if i_neuron < idx_side_change: side = ConfigurationRNN.SIDE_LEFT
+            else: side = ConfigurationRNN.SIDE_RIGHT
+        # get other features
+        function = info_neuron_list[3].replace("functional classifier: ", "")
+        projection = info_neuron_list[4].replace("projection classifier: ", "")
+        neurotransmitter = info_neuron_list[5].replace("neurotransmitter classifier: ", "")
 
         pop = ConfigurationRNN.classifier_to_pop_map[function][projection]
         if pop not in dict_neurons[side].keys():
@@ -140,9 +145,11 @@ def get_W(path_W_csv, do_symmetry_transform=False):
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
+    U_norm = U / np.sum(U)
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
                     "U": U,
+                    "U_norm": U_norm,
                     "idx_side_change": idx_side_change,
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}
