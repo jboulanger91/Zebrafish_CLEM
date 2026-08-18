@@ -80,7 +80,7 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
     idx_to_id = {i: label for i, label in enumerate(df_clean.index)}
     id_to_idx = {label: i for i, label in idx_to_id.items()}
 
-    return matrix, idx_to_id, id_to_idx, df_clean, idx_side_change, axon_values
+    return matrix, axon_values, idx_to_id, id_to_idx, df_clean, idx_side_change
 
 def process_synapse_matrix(W_raw, idx_to_id, idx_side_change):
     # normalize W_raw
@@ -136,18 +136,19 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change):
     return W, dict_neurons
 
 def get_W(path_W_csv, do_symmetry_transform=False):
-    W_raw, idx_to_id, _, _, idx_side_change, axon_values = load_synapse_matrix(path_W_csv)
+    W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv)
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
-        W, _dict_neurons = symmetry_transform(W, _dict_neurons)
+        W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
+                    "U": U,
                     "idx_side_change": idx_side_change,
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}
     return W, dict_neurons
 
-def symmetry_transform(W, dict_neurons):
+def symmetry_transform(W, U, dict_neurons):
     # accept L or R as reference side depending on which one is the smallest one
     # (for which we have all information available to build a symmetric matrix)
     if len(dict_neurons[ConfigurationRNN.SIDE_LEFT]["idx_list"]) <= len(dict_neurons[ConfigurationRNN.SIDE_RIGHT]["idx_list"]):
@@ -169,7 +170,10 @@ def symmetry_transform(W, dict_neurons):
     W_sim[np.ix_(idx_OTHER[:n_neurons_side], idx_OTHER[:n_neurons_side])] = W[np.ix_(idx_REF, idx_REF)]
     W_sim[np.ix_(idx_REF, idx_OTHER[:n_neurons_side])] = W[np.ix_(idx_OTHER[:n_neurons_side], idx_REF)]
 
-    return W_sim, dict_neurons
+    # define symmetric U mirroring reference side
+    U_sim = np.repeat(U[idx_REF], 2)
+
+    return W_sim, U_sim, dict_neurons
 
 # if __name__ == "__main__":
 #     csv_path = r"C:\Users\Roberto\Desktop\left-right_matrix_e-i_raster_native.csv"
