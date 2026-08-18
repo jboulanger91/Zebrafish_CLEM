@@ -6,11 +6,15 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
+
+from utils.load_model import load_model
+
 # ------------------------------------------------
 # Env variables and paths
 # ------------------------------------------------
 env = dotenv_values()
-path_dir = Path(env["PATH_DIR"])
 path_noise_estimation = Path("../noise_estimation.pkl")
 path_models = Path(env["PATH_MODELS"])   # directory containing model_X.pkl
 path_save = path_models
@@ -24,20 +28,49 @@ save_selected_models = True
 select_models = "top"  # "median"
 
 # ------------------------------------------------
+# Utils
+# ------------------------------------------------
+def extract_custom_attrs(model):
+    """
+    Grab everything in __dict__ that is NOT an nn.Module, Parameter,
+    or private attribute — i.e. your custom hyperparams/config.
+    """
+    skip_types = (torch.nn.Module, torch.nn.Parameter)
+    attrs = {}
+    for k, v in model.__dict__.items():
+        if k.startswith("_"):          # private / internal PyTorch bookkeeping
+            continue
+        if isinstance(v, skip_types):  # submodules handled by state_dict
+            continue
+        try:
+            # test serializability with torch.save
+            torch.save(v, Path("/dev/null") if Path("/dev/null").exists()
+                          else Path("nul"))  # Windows: "nul", Linux: /dev/null
+        except Exception:
+            print(f"  Skipping non-serializable attribute: {k} ({type(v).__name__})")
+            continue
+        attrs[k] = v
+    return attrs
+
+
+# ------------------------------------------------
 # Loop over all trained models
 # ------------------------------------------------
 loss_list = []
 model_path_list = []
 i_model = 0
-for path_model in path_models.glob(f"model_*.pkl"):
+for path_model in path_models.glob(f"model_*.pt"):
     print(f"Evaluating model {i_model}")
     i_model += 1
 
     model_path_list.append(path_model)
     # Load model instance
-    with open(path_model, 'rb') as f:
-        model = pickle.load(f)
-    model.eval()
+    try:
+        model = load_model(path_model)
+    except:
+        with open(path_model, 'rb') as f:
+            model = pickle.load(f)
+        model.eval()
 
     x0 = torch.zeros(model.n_units)
     try:
@@ -68,15 +101,27 @@ else:
 
 top_label = 0
 for i in selected_indices:
-    with open(model_path_list[i], 'rb') as f:
-        model = pickle.load(f)
-    model.eval()
+    try:
+        model = load_model(path_model)
+    except:
+        with open(model_path_list[i], 'rb') as f:
+            model = pickle.load(f)
+        model.eval()
+
+    # ── Build checkpoint ────────────────────────────────────────────────────
+    checkpoint = {
+        "state_dict": model.state_dict(),
+        "custom_attrs": extract_custom_attrs(model),
+        "class_name": type(model).__name__,  # useful as a sanity check
+    }
 
     # Save trained model
     model_name_split = model_path_list[i].name.replace(".pkl", "").split('_')
-    model_name_top = f"model_top{top_label}_{model_name_split[1]}_{model_name_split[2]}.pkl"
+    model_name_top = f"model_top{top_label}_{model_name_split[1]}_{model_name_split[2]}.pt"
     path_save_top_model = path_models / f"{select_models}_{num_selected}"
     path_save_top_model.mkdir(parents=True, exist_ok=True)
-    with open(path_save_top_model / model_name_top, 'wb') as f:
-        pickle.dump(model, f)
+
+    torch.save(checkpoint, path_save_top_model / model_name_top)
+    # with open(path_save_top_model / model_name_top, 'wb') as f:
+    #     pickle.dump(model, f)
     top_label += 1

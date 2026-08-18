@@ -17,7 +17,11 @@ class ConfigurationRNN:
                         {"label": "sMI",
                          "index4": 3,
                          "index3": 2},]
-    side_list = ["L", "R"]
+    SIDE_LEFT  = "L"
+    SIDE_RIGHT = "R"
+    side_list = [SIDE_LEFT, SIDE_RIGHT]
+    cell_list = ["iMI", "cMI", "MON", "sMI"]
+
 
     time_structure_simulation_train = {"rest_start": 20,
                                  "stimulus":   40,
@@ -31,3 +35,12 @@ class ConfigurationRNN:
 
     time_structure_simulation_train["duration"] = np.sum(time_structure_simulation_train["time_list"])
     time_structure_simulation_test["duration"] = np.sum(time_structure_simulation_test["time_list"])
+
+    classifier_to_pop_map = {"motion_integrator": {"ipsilateral": "iMI",
+                                                   "contralateral": "cMI"},
+                             "motion_onset": {"ipsilateral": "MON",
+                                              "contralateral": "MON"},
+                             "slow_motion_integrator": {"ipsilateral": "sMI",
+                                                        "contralateral": "sMI"},
+                             "myelinated": {"ipsilateral": "myelinated",
+                                            "contralateral": "myelinated"}}

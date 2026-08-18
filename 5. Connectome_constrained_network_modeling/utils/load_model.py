@@ -5,6 +5,7 @@ from pathlib import Path
 import sys; sys.path.insert(0, "..")
 
 from model.core.RNNFreePop import RNNFreePop
+from model.core.RNNClem import RNNClem
 
 
 
@@ -19,7 +20,12 @@ def load_model(pt_path, verbose=False, skip_if_error=True):
     # ── Instantiate the model ───────────────────────────────────────────────
     # Option A: if your class takes hyperparams as constructor args
     attrs = checkpoint["custom_attrs"]
-    model = RNNFreePop(nA=attrs["nA"], nB=attrs["nB"], nC=attrs["nC"], nD=attrs["nD"], nX=attrs["nX"], dt=attrs["dt"])
+    if checkpoint["class_name"] == "RNNFreePop":
+        model = RNNFreePop(nA=attrs["nA"], nB=attrs["nB"], nC=attrs["nC"], nD=attrs["nD"], nX=attrs["nX"], dt=attrs["dt"])
+    elif checkpoint["class_name"] == "RNNClem":
+        model = RNNClem(nA=attrs["nA"], nB=attrs["nB"], nC=attrs["nC"], nD=attrs["nD"], dt=attrs["dt"])
+    else:
+        raise NotImplementedError
 
     # ── Restore parameters ──────────────────────────────────────────────────
     try:

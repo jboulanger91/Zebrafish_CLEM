@@ -8,10 +8,10 @@ import pickle
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
 
-from model.RNNFreePop import RNNFreePop
-from utils.ds_service import DSService
-from utils.operators import inv_softplus
-from utils.train_batch import TrainSignal
+from model.core.RNNFreePop import RNNFreePop
+from utils.services.ds_service import DSService
+from utils.math.operators import inv_softplus
+from utils.math.train_batch import TrainSignal
 
 
 if __name__ == '__main__':
