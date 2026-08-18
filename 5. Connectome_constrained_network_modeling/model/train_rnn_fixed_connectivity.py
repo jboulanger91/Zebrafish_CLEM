@@ -23,8 +23,8 @@ if __name__ == '__main__':
     fit_model = True
 
     # Generate a 1D input and target
-    n_beta = 8
-    label_U = "connectome"  # "uniform"  # "free"  #
+    n_beta = 1
+    label_U = "pop"  # "connectome"  # "uniform"  # "free"  #
     activation = "softplus"
     dt = 0.01
     duration_rest_start = 20
@@ -81,6 +81,8 @@ if __name__ == '__main__':
             fixed_U = torch.ones(n_units) / n_units
         elif label_U == "connectome":
             fixed_U = torch.tensor(dict_neurons["U_norm"], dtype=torch.float32)
+        elif label_U == "pop":
+            fixed_U = "pop"
         else:
             raise NotImplementedError
 

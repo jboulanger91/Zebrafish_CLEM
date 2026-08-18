@@ -125,8 +125,13 @@ class RNNFixedConnectivity(nn.Module):
         self.xs = None
         self.ys = None
 
+        self.mode_U = fixed_U
         if fixed_U is None:
-            self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, input_dim)))
+            self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, self.n_units)))
+            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed).squeeze())
+        elif fixed_U == "pop":
+            self.U_raw = nn.Parameter(torch.randn(8, input_dim) / np.sqrt(max(1, self.n_units)))
             self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
             self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed).squeeze())
         else:
@@ -149,8 +154,18 @@ class RNNFixedConnectivity(nn.Module):
         W = self.W_norm * beta
         return W
 
+    def process_Uraw(self):
+        if self.mode_U != "pop":
+            _U = self.U_raw
+        else:
+            _U = torch.zeros(self.n_units, dtype=torch.float32)
+            for i_pop, pop in enumerate(self.population_indices):
+                _U[pop] = self.U_raw[i_pop]
+        return _U
+
     def U(self):
-        return torch.abs(self.U_raw) * self.mask_U
+        _U = self.process_Uraw()
+        return torch.abs(_U) * self.mask_U
 
     # ---------- forward ----------
     def forward(self, x0, inputs):
