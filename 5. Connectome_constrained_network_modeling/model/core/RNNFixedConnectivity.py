@@ -15,7 +15,8 @@ class RNNFixedConnectivity(nn.Module):
         self, W_norm, dict_neurons,
         n_beta=1, input_dim=1,
         tau=0.1, dt=1.0,
-        sparsity_U=1,
+        fixed_U=None,
+        sparsity_U=1,  # only considered if fixed_U is None
         lr=1e-3,
         weight_decay=1e-5,
         activation='softplus',
@@ -108,7 +109,7 @@ class RNNFixedConnectivity(nn.Module):
             # self.idx_X.tolist(),
         ]
 
-        # -------- sparsity masks --------
+        # -------- sparsity mask for U --------
         def block_mask(n_rows, n_cols, keep_prob, seed_=None):
             g = None if seed_ is None else torch.Generator().manual_seed(seed_)
             size = n_rows * n_cols
@@ -120,14 +121,18 @@ class RNNFixedConnectivity(nn.Module):
                 r[order[k:]] = 0.0
             return r.reshape(n_rows, n_cols).float()
 
-        self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed))
-
         # state buffers (set in forward)
         self.h = None
         self.xs = None
         self.ys = None
 
-        self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
+        if fixed_U is None:
+            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed))
+        else:
+            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, 1, seed))
+            self.register_buffer("U_raw", fixed_U)
 
     # ---------- transforms ----------
     def W(self):

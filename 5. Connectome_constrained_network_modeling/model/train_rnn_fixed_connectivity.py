@@ -33,7 +33,7 @@ if __name__ == '__main__':
 
     # Training
     do_symmetry_transform = False
-    n_epochs = 3001
+    n_epochs = 11  # 3001
     seed = None
 
     # Resolve env
@@ -72,7 +72,8 @@ if __name__ == '__main__':
         n_units_RMON = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["MON"]["n_neurons"]
         n_units_RsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["n_neurons"]
         n_units = W_norm.shape[0]
-        rnn = RNNFixedConnectivity(W_norm, dict_neurons, n_beta=1, sparsity_U=1, tau=tau_neuron, dt=dt,
+        rnn = RNNFixedConnectivity(W_norm, dict_neurons, n_beta=1, fixed_U=None,
+                                   sparsity_U=1, tau=tau_neuron, dt=dt,
                                    seed=seed, activation=activation, clamp_weights_min=1e-2)
 
     # Define input/output signals for training
