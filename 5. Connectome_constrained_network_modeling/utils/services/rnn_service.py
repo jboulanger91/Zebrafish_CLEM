@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import torch
 from matplotlib.colors import SymLogNorm
@@ -588,3 +590,26 @@ class RNNService:
         xpos += plot_size_matrix + padding * 1.5
 
         return fig, xpos, ypos
+
+    @staticmethod
+    def extract_custom_attrs(model):
+        """
+        Grab everything in __dict__ that is NOT an nn.Module, Parameter,
+        or private attribute — i.e. your custom hyperparams/config.
+        """
+        skip_types = (torch.nn.Module, torch.nn.Parameter)
+        attrs = {}
+        for k, v in model.__dict__.items():
+            if k.startswith("_"):  # private / internal PyTorch bookkeeping
+                continue
+            if isinstance(v, skip_types):  # submodules handled by state_dict
+                continue
+            try:
+                # test serializability with torch.save
+                torch.save(v, Path("/dev/null") if Path("/dev/null").exists()
+                else Path("nul"))  # Windows: "nul", Linux: /dev/null
+            except Exception:
+                print(f"  Skipping non-serializable attribute: {k} ({type(v).__name__})")
+                continue
+            attrs[k] = v
+        return attrs

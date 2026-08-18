@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import dotenv_values
 
-import pandas as pd
+import torch
 import numpy as np
 import pickle
 
@@ -13,6 +13,7 @@ from model.core.RNNFixedConnectivity import RNNFixedConnectivity
 from analysis.load_synapse_matrix import get_W
 from utils.configuration_rnn import ConfigurationRNN
 from utils.services.ds_service import DSService
+from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus
 from utils.math.train_batch import TrainSignal
 
@@ -184,9 +185,17 @@ if __name__ == '__main__':
 
     # Save trained model
     if save_model:
-        label_model = f"RNNFreePop_neurons{n_units}_tau{tau_neuron}_input{n_input_signal}step_{activation}"
+        checkpoint = {
+            # Define checkpoint to save
+            "state_dict": rnn.state_dict(),
+            "custom_attrs": RNNService.extract_custom_attrs(rnn),
+            "class_name": type(rnn).__name__,
+        }
+
+        label_model = f"RNNFixedConnectivity_neurons{n_units}_input{n_input_signal}step_{activation}"
         label_model_instance = f"{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
         path_save_model = path_save / label_model
         path_save_model.mkdir(parents=True, exist_ok=True)
-        with open(path_save_model / f"model_{label_model_instance}.pkl", 'wb') as f:
-            pickle.dump(rnn, f)
+        torch.save(checkpoint, path_save_model / f"model_{label_model_instance}.pt")
+        # with open(path_save_model / f"model_{label_model_instance}.pkl", 'wb') as f:
+        #     pickle.dump(rnn, f)

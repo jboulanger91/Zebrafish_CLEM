@@ -10,6 +10,7 @@ from dotenv import dotenv_values
 import sys; sys.path.insert(0, "..")
 
 from utils.load_model import load_model
+from utils.services.rnn_service import RNNService
 
 # ------------------------------------------------
 # Env variables and paths
@@ -26,32 +27,6 @@ TOP_AMOUNT = 10
 mode_select_top = "percentage"  # "count"  #
 save_selected_models = True
 select_models = "top"  # "median"
-
-# ------------------------------------------------
-# Utils
-# ------------------------------------------------
-def extract_custom_attrs(model):
-    """
-    Grab everything in __dict__ that is NOT an nn.Module, Parameter,
-    or private attribute — i.e. your custom hyperparams/config.
-    """
-    skip_types = (torch.nn.Module, torch.nn.Parameter)
-    attrs = {}
-    for k, v in model.__dict__.items():
-        if k.startswith("_"):          # private / internal PyTorch bookkeeping
-            continue
-        if isinstance(v, skip_types):  # submodules handled by state_dict
-            continue
-        try:
-            # test serializability with torch.save
-            torch.save(v, Path("/dev/null") if Path("/dev/null").exists()
-                          else Path("nul"))  # Windows: "nul", Linux: /dev/null
-        except Exception:
-            print(f"  Skipping non-serializable attribute: {k} ({type(v).__name__})")
-            continue
-        attrs[k] = v
-    return attrs
-
 
 # ------------------------------------------------
 # Loop over all trained models
@@ -111,7 +86,7 @@ for i in selected_indices:
     # ── Build checkpoint ────────────────────────────────────────────────────
     checkpoint = {
         "state_dict": model.state_dict(),
-        "custom_attrs": extract_custom_attrs(model),
+        "custom_attrs": RNNService.extract_custom_attrs(model),
         "class_name": type(model).__name__,  # useful as a sanity check
     }
 

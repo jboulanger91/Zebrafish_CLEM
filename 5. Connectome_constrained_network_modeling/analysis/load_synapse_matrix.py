@@ -56,15 +56,17 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
     # Identify neurons to discard: anything whose identifier starts with "axon"
     if drop_axons:
         non_axon_labels = df.index[~is_axon]
+        non_axon_idx = df.index.get_indexer(non_axon_labels)
         df = df.loc[non_axon_labels, non_axon_labels]
-        axon_values = axon_values[non_axon_labels]
+        axon_values = axon_values[non_axon_idx]
 
     # Identify neurons to discard: anything whose identifier starts with "myelinated"
     if drop_myelinated:
         is_myelinated = df.index.str.strip().str.contains("myelinated")
         non_myelinated_labels = df.index[~is_myelinated]
+        non_myelinated_idx = df.index.get_indexer(non_myelinated_labels)
         df = df.loc[non_myelinated_labels, non_myelinated_labels]
-        axon_values = axon_values[non_myelinated_labels]
+        axon_values = axon_values[non_myelinated_idx]
 
     df_clean = df
 
@@ -134,7 +136,7 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change):
     return W, dict_neurons
 
 def get_W(path_W_csv, do_symmetry_transform=False):
-    W_raw, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv)
+    W_raw, idx_to_id, _, _, idx_side_change, axon_values = load_synapse_matrix(path_W_csv)
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, _dict_neurons = symmetry_transform(W, _dict_neurons)
