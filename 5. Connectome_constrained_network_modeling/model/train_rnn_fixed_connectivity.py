@@ -23,7 +23,7 @@ if __name__ == '__main__':
     fit_model = True
 
     # Generate a 1D input and target
-    n_beta = 1
+    n_beta = 32  # 8  # 1
     label_U = "pop"  # "connectome"  # "uniform"  # "free"  #
     activation = "softplus"
     dt = 0.01
@@ -202,6 +202,7 @@ if __name__ == '__main__':
     if save_model:
         checkpoint = {
             # Define checkpoint to save
+            "dict_neurons": dict_neurons,
             "state_dict": rnn.state_dict(),
             "custom_attrs": RNNService.extract_custom_attrs(rnn),
             "class_name": type(rnn).__name__,

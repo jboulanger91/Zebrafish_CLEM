@@ -128,24 +128,49 @@ class RNNFixedConnectivity(nn.Module):
         self.mode_U = fixed_U
         if fixed_U is None:
             self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, self.n_units)))
-            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
-            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed).squeeze())
+            parameters = [self.beta, self.U_raw]
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed))
         elif fixed_U == "pop":
             self.U_raw = nn.Parameter(torch.randn(8, input_dim) / np.sqrt(max(1, self.n_units)))
-            self.optimizer = optim.Adam([self.beta, self.U_raw], lr=lr, weight_decay=weight_decay)
-            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed).squeeze())
+            parameters = [self.beta, self.U_raw]
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, sparsity_U, seed))
         else:
-            self.optimizer = optim.Adam([self.beta], lr=lr, weight_decay=weight_decay)
-            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, 1, seed).squeeze())
+            parameters = [self.beta]
+            self.register_buffer("mask_U", block_mask(self.n_units, input_dim, 1, seed))
             self.register_buffer("U_raw", fixed_U.float())
+        self.optimizer = optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
+
+    def build_beta_mask(self):
+        n_pop_per_hemisphere = 4
+        beta_mask = torch.zeros((self.n_units, self.n_units), dtype=torch.float32)
+
+        for i in range(n_pop_per_hemisphere):
+            for j in range(n_pop_per_hemisphere):
+                # Within-hemisphere blocks: top-left (A-A) mirrored to bottom-right (B-B)
+                beta_idx = i * n_pop_per_hemisphere + j
+                beta_mask[np.ix_(self.population_indices[i], self.population_indices[j])] = self.beta[beta_idx]
+                beta_mask[np.ix_(self.population_indices[i + n_pop_per_hemisphere], self.population_indices[j + n_pop_per_hemisphere])] = self.beta[beta_idx]
+                # Cross-hemisphere blocks: top-right (A-B) mirrored to bottom-left (B-A)
+                beta_idx_cross = 16 + beta_idx
+                beta_mask[np.ix_(self.population_indices[i], self.population_indices[j + n_pop_per_hemisphere])] = self.beta[beta_idx_cross]
+                beta_mask[np.ix_(self.population_indices[i + n_pop_per_hemisphere], self.population_indices[j])] = self.beta[beta_idx_cross]
+
+        return beta_mask
 
     def process_beta(self):
-        if self.beta.dim() > 0:
-            # map the 8 population-related beta values (associated to the input into each population) into a full matrix
-            beta = torch.concat([torch.ones((len(pop), self.n_units), dtype=torch.float32) * self.beta[i_pop]
-                                 for i_pop, pop in enumerate(self.population_indices)])
-        else:
+        if self.beta.dim() == 0:
             beta = self.beta
+        elif self.beta.dim() == 1:
+            if self.beta.shape[0] == 8:
+                # map the 8 population-related beta values (associated to the input into each population) into a full matrix
+                beta = torch.concat([torch.ones((len(pop), self.n_units), dtype=torch.float32) * self.beta[i_pop]
+                                     for i_pop, pop in enumerate(self.population_indices)])
+            elif self.beta.shape[0] == 32:  # 8 x 4, which is the number of population pairs, considering the beta matrix symmetric
+                beta = self.build_beta_mask()
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
         return beta
 
     # ---------- transforms ----------
@@ -161,6 +186,8 @@ class RNNFixedConnectivity(nn.Module):
             _U = torch.zeros(self.n_units, dtype=torch.float32)
             for i_pop, pop in enumerate(self.population_indices):
                 _U[pop] = self.U_raw[i_pop]
+        if _U.dim() == 1:
+            _U = _U.unsqueeze(1)
         return _U
 
     def U(self):
