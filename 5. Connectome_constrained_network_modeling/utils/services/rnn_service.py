@@ -289,11 +289,41 @@ class RNNService:
 
         ymin = 0
         ymax = 2
+        if type(model).__name__ in ("RNNFreePop", "RNNClem"):
+            offset_hemisphere = model.nA+model.nB+model.nC+model.nD
+            n_units_side = {
+                "n_units_hemi_L": offset_hemisphere,
+                "idx_cell_side": [
+                    {"idx_iMI": np.arange(0, model.nA),
+                     "idx_cMI": np.arange(model.nA, model.nA+model.nB),
+                     "idx_MON": np.arange(model.nA+model.nB, model.nA+model.nB+model.nC),
+                     "idx_sMI": np.arange(model.nA+model.nB+model.nC, model.nA+model.nB+model.nC+model.nD)},
+                    {"idx_iMI": offset_hemisphere + np.arange(0, model.nA),
+                     "idx_cMI": offset_hemisphere + np.arange(model.nA, model.nA + model.nB),
+                     "idx_MON": offset_hemisphere + np.arange(model.nA + model.nB, model.nA + model.nB + model.nC),
+                     "idx_sMI": offset_hemisphere + np.arange(model.nA + model.nB + model.nC, model.nA + model.nB + model.nC + model.nD)}
+                ]
+            }
+        elif type(model).__name__ == "RNNFixedConnectivity":
+            n_units_side = {
+                "idx_cell_side": [
+                    {"idx_iMI": model.idx_LiMI,
+                     "idx_cMI": model.idx_LcMI,
+                     "idx_MON": model.idx_LMON,
+                     "idx_sMI": model.idx_LsMI},
+                    {"idx_iMI": model.idx_RiMI,
+                     "idx_cMI": model.idx_RcMI,
+                     "idx_MON": model.idx_RMON,
+                     "idx_sMI": model.idx_RsMI}
+                ]
+            }
+        else:
+            raise NotImplementedError
+
         for side in range(2):
             plot_title = f"{plot_title_label}" if side == 0 else ""
             plot_title = plot_title
             offset_index = side * 4
-            offset_hemisphere = side * (model.nA + model.nB + model.nC + model.nD)
             plot_input = fig.create_plot(
                 plot_title=plot_title,
                 xpos=xpos, ypos=ypos, plot_height=plot_size/10,
@@ -310,7 +340,7 @@ class RNNService:
                 ymin=ymin, ymax=ymax, yticks=[ymin, ymax] if show_yaxis and side == 0 else None,
                 yl="Activity" if show_yaxis and side == 0 else None)
             # input_signal_vis = input_signal[:, offset_hemisphere] / (torch.max(input_signal)-torch.min(input_signal)) * (ymax-ymin) # Normalize to ymin-ymax range
-            plot_input.draw_line(t, input_signal[:, offset_hemisphere], lc="k")
+            plot_input.draw_line(t, input_signal[:, n_units_side["n_units_hemi_L"]], lc="k")
             if output_signal is not None:
                 if t_exp is None:
                     t_exp = t
@@ -319,11 +349,10 @@ class RNNService:
                 plot_response.draw_line(t_exp, output_signal[:, 2+offset_index], lc=palette[2])
                 plot_response.draw_line(t_exp, output_signal[:, 3+offset_index], lc=palette[3])
             if show_xs:
-                plot_response.draw_line(t, xs[:, offset_hemisphere:offset_hemisphere+model.nA], lc=palette[0], lw=0.1, line_dashes=(1, 2))
-                plot_response.draw_line(t, xs[:, offset_hemisphere+model.nA:offset_hemisphere+model.nA + model.nB], lc=palette[1], lw=0.1, line_dashes=(1, 2))
-                plot_response.draw_line(t, xs[:, offset_hemisphere+model.nA + model.nB:offset_hemisphere+model.nA + model.nB + model.nC], lc=palette[2], lw=0.1, line_dashes=(1, 2))
-                plot_response.draw_line(t, xs[:, offset_hemisphere+model.nA + model.nB + model.nC:offset_hemisphere+model.nA + model.nB + model.nC + model.nD],
-                                              lc=palette[3], lw=0.1, line_dashes=(1, 2))
+                plot_response.draw_line(t, xs[:, n_units_side[side]["idx_iMI"]], lc=palette[0], lw=0.1, line_dashes=(1, 2))
+                plot_response.draw_line(t, xs[:, n_units_side[side]["idx_cMI"]], lc=palette[1], lw=0.1, line_dashes=(1, 2))
+                plot_response.draw_line(t, xs[:, n_units_side[side]["idx_MON"]], lc=palette[2], lw=0.1, line_dashes=(1, 2))
+                plot_response.draw_line(t, xs[:, n_units_side[side]["idx_sMI"]], lc=palette[3], lw=0.1, line_dashes=(1, 2))
             plot_response.draw_line(t, y_pred[:, 0+offset_index], lc=palette[0], line_dashes=(1, 2))
             plot_response.draw_line(t, y_pred[:, 1+offset_index], lc=palette[1], line_dashes=(1, 2))
             plot_response.draw_line(t, y_pred[:, 2+offset_index], lc=palette[2], line_dashes=(1, 2))
@@ -434,7 +463,7 @@ class RNNService:
         plot_height_input = plot_size / 10
         for i_ct, ct in enumerate(ct_list):
             for i_side, side in enumerate(ConfigurationRNN.side_list):
-                offset_hemisphere = i_side * (model.nA + model.nB + model.nC + model.nD)
+                offset_hemisphere = i_side * model.n_units_hemi
                 plot_title = f"{ct['label']}" if i_side == 0 else None
                 plot_input = fig.create_plot(
                     plot_title=plot_title,
@@ -461,7 +490,6 @@ class RNNService:
                     alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 or i_input<len(range_input)-1 else 1
                     for side in range(2):  # there are 2 hemispheres
                         offset_index = side * 4  # harcoded for 4 populations here
-                        offset_hemisphere = side * (model.nA + model.nB + model.nC + model.nD)
 
                         line_dashes = None if side == 0 else (1, 2)
                         if i_data == 0:

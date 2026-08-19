@@ -19,18 +19,17 @@ from utils.load_model import load_model
 # Env and paths
 # ------------------------------------------------
 env = dotenv_values()
-path_dir = Path(env["PATH_DIR"])
-path_data = Path(env["PATH_DATA"])
+path_data = Path(env["PATH_DATA"])   # directory containing avgresponse_X.csv
 path_noise_estimation = Path(env["PATH_NOISE_ESTIMATION"])
-path_models_0 = Path(env["PATH_MODELS"])   # directory containing avgresponses_X.csv
-path_models_1 = Path(env["PATH_MODELS_LOADMASK"])   # directory containing avgresponses_X.csv
+path_models_0 = Path(env["PATH_MODELS"])   # directory containing model_X.pt
+path_models_1 = Path(env["PATH_MODELS_LOADMASK"])   # directory containing model_X.pt
 path_save = Path(env["PATH_SAVE"])
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
 # ---- Paths -------------------------------------
-special_label = None  # "_noclamp"
+special_label = "_nbeta1_Ufree"  # "_noclamp"
 
 # ---- Show -------------------------------------
 show_loss_histograms = True
@@ -86,13 +85,14 @@ if show_loss_histograms:
                         "path": path_models_1}
 
     # Plot histogram for models across sparsity masks
-    for i_m, models in enumerate([models_across_mask, models_same_mask]):
+    # for i_m, models in enumerate([models_across_mask, models_same_mask]):
+    for i_m, models in enumerate([models_across_mask]):
         loss_list = []
         for path_model in models["path"].glob(f"model_*.pt"):
             model = load_model(path_model)
             # with open(path_model, 'rb') as f:
             #     model = pickle.load(f)
-            model.eval()
+            # model.eval()
             loss_list.append(model.loss_mse)
 
         best_loss = loss_list[np.argsort(loss_list)[0]]
@@ -137,11 +137,28 @@ for path_model in path_models_0.glob(f"model_*.pt"):
 
 dt = model.dt
 n_units_hemi = model.n_units_hemi
-n_units_A = model.nA
-n_units_B = model.nB
-n_units_C = model.nC
-n_units_D = model.nD
-n_units = int(n_units_hemi * 2)
+if type(model).__name__ in ("RNNFreePop", "RNNClem"):
+    n_units_LiMI = model.nA
+    n_units_LcMI = model.nB
+    n_units_LMON = model.nC
+    n_units_LsMI = model.nD
+    n_units_RiMI = model.nA
+    n_units_RcMI = model.nB
+    n_units_RMON = model.nC
+    n_units_RsMI = model.nD
+    n_units = int(n_units_hemi * 2)
+elif type(model).__name__ == "RNNFixedConnectivity":
+    n_units_LiMI = len(model.idx_LiMI)
+    n_units_LcMI = len(model.idx_LcMI)
+    n_units_LMON = len(model.idx_LMON)
+    n_units_LsMI = len(model.idx_LsMI)
+    n_units_RiMI = len(model.idx_RiMI)
+    n_units_RcMI = len(model.idx_RcMI)
+    n_units_RMON = len(model.idx_RMON)
+    n_units_RsMI = len(model.idx_RsMI)
+    n_units = model.n_units
+else:
+    raise NotImplementedError
 
 if hasattr(model, "nX"):  # This is the case for RNNFreePop models
     model_is_free_pop = True
@@ -161,12 +178,11 @@ if show_matrices:
             n_units_show = n_units
             colormap = RNNDSStyle.cmap_list["neurons_4"]
 
-        offset_hemisphere = model.nA + model.nB + model.nC + model.nD
         neuron_identity_array = np.concatenate(
-            (np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)),
-             3 * np.ones((model.nD, 1)),
-             np.zeros((model.nA, 1)), np.ones((model.nB, 1)), 2 * np.ones((model.nC, 1)),
-             3 * np.ones((model.nD, 1))))
+            (np.zeros((n_units_LiMI, 1)), np.ones((n_units_LcMI, 1)), 2 * np.ones((n_units_LMON, 1)),
+             3 * np.ones((n_units_LsMI, 1)),
+             np.zeros((n_units_RiMI, 1)), np.ones((n_units_RcMI, 1)), 2 * np.ones((n_units_LMON, 1)),
+             3 * np.ones((n_units_RsMI, 1))))
         # Optionally add label for free population neurons and normalize
         if model_is_free_pop and show_free_pop:
             neuron_identity_array = np.concatenate((neuron_identity_array, 4 * np.ones((model.nX, 1)))) / 4
@@ -176,23 +192,28 @@ if show_matrices:
         U = model.U().detach().numpy()
         mask_U = model.mask_U.detach().numpy()
         W = model.W().detach().numpy().T
-        mask_W = (model.mask_W * model.signs).detach().numpy().T
+        try:
+            mask_W = (model.mask_W * model.signs).detach().numpy().T
+        except AttributeError:
+            mask_W = None
 
-        if not show_free_pop:
-            U = U[:n_units_show]
-            mask_U = mask_U[:n_units_show]
-            W = W[:n_units_show, :n_units_show]
-            mask_W = mask_W[:n_units_show, :n_units_show]
-        grid_pop = np.array([model.nA, model.nA + model.nB, model.nA + model.nB + model.nC,
-                             model.nA + model.nB + model.nC + model.nD,
-                             offset_hemisphere + model.nA, offset_hemisphere + model.nA + model.nB,
-                             offset_hemisphere + model.nA + model.nB + model.nC])
+        if mask_W is not None:
+            if not show_free_pop:
+                U = U[:n_units_show]
+                mask_U = mask_U[:n_units_show]
+                W = W[:n_units_show, :n_units_show]
+                mask_W = mask_W[:n_units_show, :n_units_show]
+        grid_pop = np.array([n_units_LiMI, n_units_LiMI + n_units_LcMI, n_units_LiMI + n_units_LcMI + n_units_LMON,
+                             n_units_LiMI + n_units_LcMI + n_units_LMON + n_units_LsMI,
+                             n_units_RiMI, n_units_RiMI + n_units_RcMI, n_units_RiMI + n_units_RcMI + n_units_RMON,
+                             n_units_RiMI + n_units_RcMI + n_units_RMON + n_units_RsMI])
         if model_is_free_pop and show_free_pop:
-            grid_pop = np.concatenate([grid_pop, [offset_hemisphere + model.nA + model.nB + model.nC + model.nD]])
+            grid_pop = np.concatenate([grid_pop, [n_units]])
 
-        _, xpos, ypos = RNNService.plot_connectivity(mask_W, U=None, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
-                                                     fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
-                                                     padding=padding, value_lim=[-1, 1], plot_title=f"{matrix_style.capitalize() + '\n'}Mask W", cmap=colormap)
+        if mask_W is not None:
+            _, xpos, ypos = RNNService.plot_connectivity(mask_W, U=None, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
+                                                         fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
+                                                         padding=padding, value_lim=[-1, 1], plot_title=f"{matrix_style.capitalize() + '\n'}Mask W", cmap=colormap)
 
         _, xpos, ypos = RNNService.plot_connectivity(W, U=U, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
                                                      fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
@@ -211,10 +232,10 @@ def input_signal_constant(duration_rest_start, duration_stimulus, duration_rest_
     input_signal_ = np.concatenate((np.zeros(int(duration_rest_start / dt)), np.ones(int(duration_stimulus / dt)), np.zeros(int(duration_rest_end / dt)))) * scale
     if side[0] in ["l", "L"]:
         input_signal = np.concatenate((np.repeat(input_signal_[..., np.newaxis], n_units_hemi, axis=1),
-                                             np.zeros((len(input_signal_), n_units_hemi))), axis=1)
+                                             np.zeros((len(input_signal_), n_units-n_units_hemi))), axis=1)
     elif side[0] in ["r", "R"]:
         input_signal = np.concatenate((np.zeros((len(input_signal_), n_units_hemi)),
-                                             np.repeat(input_signal_[..., np.newaxis], n_units_hemi, axis=1)), axis=1)
+                                             np.repeat(input_signal_[..., np.newaxis], n_units-n_units_hemi, axis=1)), axis=1)
     else:
         input_signal = None
     return input_signal
@@ -235,10 +256,10 @@ def input_signal_sine(duration_rest_start, duration_stimulus, duration_rest_end,
     input_signal_ = np.concatenate((np.zeros(int(duration_rest_start / dt)), sine(np.arange(0, duration_stimulus, dt)), np.zeros(int(duration_rest_end / dt)))) * scale
     if side[0] in ["l", "L"]:
         input_signal = np.concatenate((np.repeat(input_signal_[..., np.newaxis], n_units_hemi, axis=1),
-                                             np.zeros((len(input_signal_), n_units_hemi))), axis=1)
+                                             np.zeros((len(input_signal_), n_units-n_units_hemi))), axis=1)
     elif side[0] in ["r", "R"]:
         input_signal = np.concatenate((np.zeros((len(input_signal_), n_units_hemi)),
-                                             np.repeat(input_signal_[..., np.newaxis], n_units_hemi, axis=1)), axis=1)
+                                             np.repeat(input_signal_[..., np.newaxis], n_units-n_units_hemi, axis=1)), axis=1)
     else:
         input_signal = None
     return input_signal
@@ -251,10 +272,10 @@ def input_signal_switch(duration_rest_start, duration_stimulus, duration_rest_en
 
     if side[0] in ["l", "L"]:
         input_signal = np.concatenate((np.repeat(input_signal_step_first[..., np.newaxis], n_units_hemi, axis=1),
-                                       np.repeat(input_signal_step_second[..., np.newaxis], n_units_hemi, axis=1)), axis=1)
+                                       np.repeat(input_signal_step_second[..., np.newaxis], n_units-n_units_hemi, axis=1)), axis=1)
     elif side[0] in ["r", "R"]:
         input_signal = np.concatenate((np.repeat(input_signal_step_second[..., np.newaxis], n_units_hemi, axis=1),
-                                      np.repeat(input_signal_step_first[..., np.newaxis], n_units_hemi, axis=1)), axis=1)
+                                      np.repeat(input_signal_step_first[..., np.newaxis], n_units-n_units_hemi, axis=1)), axis=1)
     else:
         input_signal = None
     return input_signal
@@ -441,14 +462,14 @@ for i_test, test in enumerate(test_list):
         output_signal += min_traces_all
         output_signal_list.append(output_signal)
         # Define initial value for simulation
-        initial_value = inv_softplus(np.concatenate((np.array([output_signal[0, 0] for _ in range(n_units_A)]),  # + np.random.normal(0, np.abs(target_signal[0, 0]) / 5, n_units_A),
-                                                     np.array([output_signal[0, 1] for _ in range(n_units_B)]),  # + np.random.normal(0, np.abs(target_signal[0, 1]) / 5, n_units_B),
-                                                     np.array([output_signal[0, 2] for _ in range(n_units_C)]),  # + np.random.normal(0, np.abs(target_signal[0, 2]) / 5, n_units_C),
-                                                     np.array([output_signal[0, 3] for _ in range(n_units_D)]),  # + np.random.normal(0, np.abs(target_signal[0, 3]) / 5, n_units_D),
-                                                     np.array([output_signal[0, 4] for _ in range(n_units_A)]),  # + np.random.normal(0, np.abs(target_signal[0, 4]) / 5, n_units_A),
-                                                     np.array([output_signal[0, 5] for _ in range(n_units_B)]),  # + np.random.normal(0, np.abs(target_signal[0, 5]) / 5, n_units_B),
-                                                     np.array([output_signal[0, 6] for _ in range(n_units_C)]),  # + np.random.normal(0, np.abs(target_signal[0, 6]) / 5, n_units_C),
-                                                     np.array([output_signal[0, 7] for _ in range(n_units_D)]))))  # + np.random.normal(0, np.abs(target_signal[0, 7]) / 5, n_units_D)))
+        initial_value = inv_softplus(np.concatenate((np.array([output_signal[0, 0] for _ in range(n_units_LiMI)]),  # + np.random.normal(0, np.abs(target_signal[0, 0]) / 5, n_units_LiMI),
+                                                     np.array([output_signal[0, 1] for _ in range(n_units_LcMI)]),  # + np.random.normal(0, np.abs(target_signal[0, 1]) / 5, n_units_LcMI),
+                                                     np.array([output_signal[0, 2] for _ in range(n_units_LMON)]),  # + np.random.normal(0, np.abs(target_signal[0, 2]) / 5, n_units_LMON),
+                                                     np.array([output_signal[0, 3] for _ in range(n_units_LsMI)]),  # + np.random.normal(0, np.abs(target_signal[0, 3]) / 5, n_units_LsMI),
+                                                     np.array([output_signal[0, 4] for _ in range(n_units_RiMI)]),  # + np.random.normal(0, np.abs(target_signal[0, 4]) / 5, n_units_RiMI),
+                                                     np.array([output_signal[0, 5] for _ in range(n_units_RcMI)]),  # + np.random.normal(0, np.abs(target_signal[0, 5]) / 5, n_units_RcMI),
+                                                     np.array([output_signal[0, 6] for _ in range(n_units_RMON)]),  # + np.random.normal(0, np.abs(target_signal[0, 6]) / 5, n_units_RMON),
+                                                     np.array([output_signal[0, 7] for _ in range(n_units_RsMI)]))))  # + np.random.normal(0, np.abs(target_signal[0, 7]) / 5, n_units_RsMI)))
 
         if model_is_free_pop:
             input_signal_ = np.concatenate((input_signal_, np.zeros((len(input_signal_), n_units_X))), axis=1)
