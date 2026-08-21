@@ -148,8 +148,10 @@ def get_W(path_W_csv, do_symmetry_transform=False):
     U_norm = U / np.sum(U)
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
+                    "W_mask": np.sign(W),
                     "U": U,
                     "U_norm": U_norm,
+                    "U_mask": np.sign(U),
                     "idx_side_change": idx_side_change,
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}

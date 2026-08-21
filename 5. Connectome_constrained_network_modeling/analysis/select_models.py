@@ -24,7 +24,7 @@ path_save = path_models
 # Configuration
 # ------------------------------------------------
 TOP_AMOUNT = 10
-mode_select_top = "percentage"  # "count"  #
+mode_select_top = "count"  # "percentage"  #
 save_selected_models = True
 select_models = "top"  # "median"
 
