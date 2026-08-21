@@ -5,9 +5,9 @@ class PopulationSlow(nn.Module):
     def __init__(
         self,
         population_indices,
-        signs,
         mask,
         slow_populations,
+        signs=None,
         gamma_init=0.995,
         gamma_min=0.90,
         gamma_max=0.9995,
@@ -16,7 +16,10 @@ class PopulationSlow(nn.Module):
     ):
         super().__init__()
         self.population_indices = population_indices
-        self.signs = signs
+        if signs is None:
+            self.signs = torch.ones(mask.shape[0])
+        else:
+            self.signs = signs
         self.mask = mask
         self.slow_populations = slow_populations
         self.gamma_min = float(gamma_min)
