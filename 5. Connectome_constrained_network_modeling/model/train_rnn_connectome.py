@@ -23,8 +23,6 @@ if __name__ == '__main__':
     fit_model = True
 
     # Generate a 1D input and target
-    n_beta = 32  # 8  # 1
-    label_U = "pop"  # "connectome"  # "uniform"  # "free"  #
     activation = "softplus"
     dt = 0.01
     duration_rest_start = 20
@@ -74,17 +72,6 @@ if __name__ == '__main__':
         n_units_RMON = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["MON"]["n_neurons"]
         n_units_RsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["n_neurons"]
         n_units = W_norm.shape[0]
-
-        if label_U is None or label_U == "free":
-            fixed_U = None
-        elif label_U == "uniform":
-            fixed_U = torch.ones(n_units) / n_units
-        elif label_U == "connectome":
-            fixed_U = torch.tensor(dict_neurons["U_norm"], dtype=torch.float32)
-        elif label_U == "pop":
-            fixed_U = "pop"
-        else:
-            raise NotImplementedError
 
         rnn = RNNConnectome(dict_neurons, tau=tau_neuron, dt=dt, seed=seed, activation=activation, clamp_weights_min=1e-2)
 
@@ -206,7 +193,7 @@ if __name__ == '__main__':
             "class_name": type(rnn).__name__,
         }
 
-        label_model = f"RNNFixedConnectivity_neurons{n_units}_nbeta{n_beta}_U{label_U}"
+        label_model = f"RNNConnectome_neurons{n_units}"
         label_model_instance = f"{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
         path_save_model = path_save / label_model
         path_save_model.mkdir(parents=True, exist_ok=True)
