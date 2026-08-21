@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     # Generate a 1D input and target
     n_beta = 32  # 8  # 1
-    label_U = "pop"  # "connectome"  # "uniform"  # "free"  #
+    label_U = "free"  # "pop"  # "connectome"  # "uniform"  # 
     activation = "softplus"
     dt = 0.01
     duration_rest_start = 20
@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
     # Training
     do_symmetry_transform = False
-    n_epochs = 3001
+    n_epochs = 5001
     seed = None
 
     # Resolve env
