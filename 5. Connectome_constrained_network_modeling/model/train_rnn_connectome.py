@@ -34,7 +34,7 @@ if __name__ == '__main__':
     # Training
     do_symmetry_transform = False
     n_epochs = 5001
-    seed = None
+    seed = 0
 
     # Resolve env
     # When calling the script you can provide the path to the .env file as argument.
