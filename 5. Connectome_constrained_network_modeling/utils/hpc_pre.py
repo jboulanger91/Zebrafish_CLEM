@@ -62,16 +62,15 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 # path_experiment = "benchmarking/5_param"
 # path = f"{path_root}/{path_experiment}"
 # path_save = path
-path_root = sys.argv[1]
-path_experiment = sys.argv[2]
-path = f"{path_root}/{path_experiment}"
-path_save = sys.argv[3]
-generate_env(path_root, path_experiment, path_save)
+path_data = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon"
+path_noise_estimation = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon/noise_estimation/contralateral_motion_integrator_preferred_noise_estimation.pkl"
+path_save_env = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/connectome_enhancement"
+generate_env(path_data, path_noise_estimation, path_save_env)
 
-script_path = "/home/kn/kn_pop542534/script/rnn_ds/connectome_enhanced"  # where to save scripts
+script_path = "/home/kn/kn_pop542534/script/rnn_ds/connectome_enhancement"  # where to save scripts
 label_script = "rnn_connectome"  # scripts root name
 python_file_path = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/train_rnn_connectome.py"  # path to python script to execute
-env_file_path_root = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/connectome_enhancement/.env"  # path and root label for env file
-label_env_list = [str(l.name).split(".")[-1] for l in Path(path_save).glob('.env.*')]  # end label for env file
+env_file_path_root = path_save_env + "/.env"  # path and root label for env file
+label_env_list = [str(l.name).split(".")[-1] for l in Path(path_save_env).glob('.env.*')]  # end label for env file
 generate_slurm(script_path, python_file_path, env_file_path_root, label_script=label_script, label_env_list=label_env_list)
 
