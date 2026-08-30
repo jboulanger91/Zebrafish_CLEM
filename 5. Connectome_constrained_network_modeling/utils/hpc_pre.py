@@ -48,7 +48,7 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 
 
         # add python command to pbs script
-        slurm_content += f"conda run -n py312 python {python_file_path} {env_file_path_root}.{label_env}\n"
+        slurm_content += f'conda run -n py312 python "{python_file_path}" "{env_file_path_root}.{label_env}"\n'
         f_slurm.write(slurm_content)
 
         # write bash file to launch pbs
