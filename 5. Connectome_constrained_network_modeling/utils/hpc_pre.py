@@ -4,14 +4,13 @@ from pathlib import Path
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
 
-def generate_env(path_data, path_noise_estimation, path_save):
-    path = f"{path_root}/{path_experiment}"
-    for model_filepath in Path(path).glob('connectivity_mask_*.csv'):
+def generate_env(path_dir, path_data, path_noise_estimation, path_save):
+    for model_filepath in Path(path_dir).glob('connectivity_mask_*.csv'):
         # initialize .env
         content = f'''
 # --- benchmarking
 PATH_DATA={path_data}
-PATH_SAVE={path_save}
+PATH_SAVE={path_data}
 PATH_NOISE_ESTIMATION={path_noise_estimation}
 '''
 
@@ -62,10 +61,11 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 # path_experiment = "benchmarking/5_param"
 # path = f"{path_root}/{path_experiment}"
 # path_save = path
+path_dir = "/home/kn/kn_pop542534/data/rnn_ds/connectome_enhancement"
 path_data = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon"
 path_noise_estimation = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon/noise_estimation/contralateral_motion_integrator_preferred_noise_estimation.pkl"
 path_save_env = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/connectome_enhancement"
-generate_env(path_data, path_noise_estimation, path_save_env)
+generate_env(path_dir, path_data, path_noise_estimation, path_save_env)
 
 script_path = "/home/kn/kn_pop542534/script/rnn_ds/connectome_enhancement"  # where to save scripts
 label_script = "rnn_connectome"  # scripts root name
