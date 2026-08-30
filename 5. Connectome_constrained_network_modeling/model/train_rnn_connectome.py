@@ -11,7 +11,7 @@ import sys; sys.path.insert(0, "..")
 
 from model.core.RNNConnectome import RNNConnectome
 from analysis.load_synapse_matrix import get_W
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus
@@ -44,6 +44,7 @@ if __name__ == '__main__':
     except IndexError:
         env_path = "../.env"
     env = dotenv_values(env_path)
+    label_model_instance = "_" + env["LABEL"] if "LABEL" in env.keys() else ""
 
     # Paths
     path_traces = Path(env["PATH_DATA"])
@@ -194,9 +195,9 @@ if __name__ == '__main__':
         }
 
         label_model = f"RNNConnectome_neurons{n_units}"
-        label_model_instance = f"{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
+        label_model_instance = label_model_instance + f"_{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
         path_save_model = path_save / label_model
         path_save_model.mkdir(parents=True, exist_ok=True)
-        torch.save(checkpoint, path_save_model / f"model_{label_model_instance}.pt")
+        torch.save(checkpoint, path_save_model / f"model{label_model_instance}.pt")
         # with open(path_save_model / f"model_{label_model_instance}.pkl", 'wb') as f:
         #     pickle.dump(rnn, f)

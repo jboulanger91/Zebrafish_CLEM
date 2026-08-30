@@ -11,7 +11,7 @@ from torch import nn
 import sys; sys.path.insert(0, "..")
 
 from figures.style import RNNDSStyle
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 from utils.services.ds_service import DSService
 from utils.math.operators import nanstd
 from utils.figure_helper import Figure

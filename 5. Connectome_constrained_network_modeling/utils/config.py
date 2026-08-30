@@ -4,6 +4,8 @@ import numpy as np
 class ConfigurationRNN:
     dt_simulation = 0.01
     dt_data = 0.5
+    tau_neuron = 0.1
+    clamp_weights_min = 1e-2
 
     cell_label_list = [ {"label": "iMI",
                          "index4": 0,
@@ -44,3 +46,30 @@ class ConfigurationRNN:
                                                         "contralateral": "sMI"},
                              "myelinated": {"ipsilateral": "myelinated",
                                             "contralateral": "myelinated"}}
+
+
+class ConfigurationNeural():
+    N_POPS = 8
+    POP_META = {
+        'name': ['L_iMI', 'L_cMI', 'L_MON', 'L_sMI',
+                 'R_iMI', 'R_cMI', 'R_MON', 'R_sMI', ],
+        'hemisphere': ['L', 'L', 'L', 'L', 'R', 'R', 'R', 'R'],
+    }
+
+    # Fixed anatomical parameters (known from data)
+    F_I_FIXED = np.array([0.3, 0.9, 0.9, 2 / 3, 0.3, 0.9, 0.9, 2 / 3])
+    N_REL_FIXED = np.array([1.00, 0.80, 0.50, 0.65, 1.00, 0.80, 0.50, 0.65])
+    N_CELLS = [15, 15, 2, 11, 15, 15, 2, 11]  # recorded cells per population
+    N_CELLS_FREE = 16
+    P = np.array([
+        [0.1125, 0.18, 0.475,   0.065, 0, 0, 0, 0, ],
+        [0, 0, 0, 0,         0.2, 0.3, 0.04, 0.06, ],
+        [0.08, 0.45, 0.09, 0.04, 0.03, 0.15, 0, 0, ],
+        [0.02, 0, 0, 0,       0.05, 0.05, 0.05, 0, ],
+
+        [0, 0, 0, 0,     0.1125, 0.18, 0.475, 0.065],
+        [0.2, 0.3, 0.04, 0.06,         0, 0, 0, 0, ],
+        [0.03, 0.15, 0, 0, 0.08, 0.45, 0.09, 0.04, ],
+        [0.05, 0.05, 0.05, 0,       0.02, 0, 0, 0, ]
+    ]).T  # reported as in the Fig. 5b and then transposed
+

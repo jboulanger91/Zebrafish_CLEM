@@ -11,7 +11,7 @@ import sys; sys.path.insert(0, "..")
 
 from model.core.RNNFixedConnectivity import RNNFixedConnectivity
 from analysis.load_synapse_matrix import get_W
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus

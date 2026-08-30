@@ -19,7 +19,7 @@ import pandas as pd
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
 
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 
 def get_idx_side_change(df,
                         identifier_change="functional classifier: motion_integrator",
@@ -55,14 +55,14 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
     axon_values = np.array(df.loc[axon_labels].sum(axis=0).to_numpy())
     axon_values[axon_rostral_idx] = 0
 
-    # Identify neurons to discard: anything whose identifier starts with "axon"
+    # Identify nodes to discard: anything whose identifier starts with "axon"
     if drop_axons:
         non_axon_labels = df.index[~is_axon]
         non_axon_idx = df.index.get_indexer(non_axon_labels)
         df = df.loc[non_axon_labels, non_axon_labels]
         axon_values = axon_values[non_axon_idx]
 
-    # Identify neurons to discard: anything whose identifier starts with "myelinated"
+    # Identify nodes to discard: anything whose identifier starts with "myelinated"
     if drop_myelinated:
         is_myelinated = df.index.str.strip().str.contains("myelinated")
         non_myelinated_labels = df.index[~is_myelinated]
@@ -156,6 +156,37 @@ def get_W(path_W_csv, do_symmetry_transform=False):
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}
     return W, dict_neurons
+
+def update_W(path_csv, W_new, path_save=None, drop_axons=True, drop_myelinated=True):
+    df = pd.read_csv(path_csv, index_col=0)
+    # Identify neurons to discard: anything whose identifier starts with "axon"
+    if drop_axons:
+        is_axon = df.index.str.strip().str.startswith("axon")
+        non_axon_labels = df.index[~is_axon]
+        df = df.loc[non_axon_labels, non_axon_labels]
+
+    # Identify neurons to discard: anything whose identifier starts with "myelinated"
+    if drop_myelinated:
+        is_myelinated = df.index.str.strip().str.contains("myelinated")
+        non_myelinated_labels = df.index[~is_myelinated]
+        df = df.loc[non_myelinated_labels, non_myelinated_labels]
+
+    # Define row/col identifiers
+    row_labels = df.index  # first-column metadata
+    col_labels = df.columns  # first-row metadata (header)
+
+    # Check shape of the upated W matches row/col size
+    if W_new.shape != (len(row_labels), len(col_labels)):
+        raise ValueError(
+            f"Shape mismatch: data is {W_new.shape}, "
+            f"expected ({len(row_labels)}, {len(col_labels)})"
+        )
+
+    # Create new df and save it as csv
+    df_out = pd.DataFrame(W_new, index=row_labels, columns=col_labels)
+    if path_save is None:
+        path_save = path_csv
+    df_out.to_csv(path_save)
 
 def symmetry_transform(W, U, dict_neurons):
     # accept L or R as reference side depending on which one is the smallest one

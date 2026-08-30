@@ -7,7 +7,7 @@ import sys; sys.path.insert(0, "../..")
 
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 
 
 class RNNFixedConnectivity(nn.Module):
@@ -29,6 +29,8 @@ class RNNFixedConnectivity(nn.Module):
         verbose_every=None,        # if None -> default to 50 prints per run
     ):
         super().__init__()
+
+        self.dict_neurons = dict_neurons
 
         # device
         if device is None:

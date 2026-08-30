@@ -5,13 +5,14 @@ from torch import nn, optim
 from model.core.PopulationSlow import PopulationSlow
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
-from utils.configuration_rnn import ConfigurationRNN
+from utils.config import ConfigurationRNN
 
 
 class RNNConnectome(nn.Module):
     def __init__(
             self,
             dict_neurons,
+            W_fixed=None,
             input_dim=1,
             tau=0.1, dt=0.01,
             lr=1e-3,
@@ -22,7 +23,6 @@ class RNNConnectome(nn.Module):
             activation='softplus',
             seed=None,
             device=None,
-            diag_zero_W=True,
             gcamp_tau_rise=0.25,
             gcamp_tau_decay=2.4,
             clamp_weights_min=None,
@@ -34,6 +34,8 @@ class RNNConnectome(nn.Module):
             n_slow_pops=8
     ):
         super().__init__()
+
+        self.dict_neurons = dict_neurons
 
         # device
         if device is None:
@@ -74,6 +76,14 @@ class RNNConnectome(nn.Module):
 
         self.W_raw = nn.Parameter(W_raw / np.sqrt(self.n_units))
         self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, input_dim)))
+
+        if W_fixed is None:
+            self.W_fixed = torch.zeros_like(self.W_raw)
+            self.W_fixed_mask = torch.zeros_like(self.W_raw)
+        else:
+            assert W_fixed.shape == self.W_raw.shape, "Shape of W_fixed does not match W. Wrong number of neurons"
+            self.W_fixed = W_fixed
+            self.W_fixed_mask = W_fixed[~np.isnan(W_fixed)]
 
         # -------- indices (populations) --------
         # left hemisphere
@@ -160,7 +170,8 @@ class RNNConnectome(nn.Module):
         return W_clamp * self.mask_W
 
     def W(self):
-        return self.W_fast() + self.W_slow_module(self.device) * self.mask_W
+        _W = self.W_fast() + self.W_slow_module(self.device) * self.mask_W
+        return _W * torch.abs(self.W_fixed_mask-1) + self.W_fixed * self.W_fixed_mask
 
     def U(self):
         return torch.abs(self.U_raw) * self.mask_U
