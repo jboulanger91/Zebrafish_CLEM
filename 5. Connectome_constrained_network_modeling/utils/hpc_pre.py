@@ -23,7 +23,7 @@ PATH_NOISE_ESTIMATION={path_noise_estimation}
         f = open(f"{path_save}/.env.model_{model_id}", "x")
         f.write(content)
 
-def generate_slurm(script_path, python_file_path, env_file_path_root, label_script, label_env_list)
+def generate_slurm(script_path, python_file_path, env_file_path_root, label_script, label_env_list):
     # init and open bash file
     sh_content = f"#!/bin/bash\n"
 
