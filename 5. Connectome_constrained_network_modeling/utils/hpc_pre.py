@@ -31,18 +31,18 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 
         # initialize slurm script
         slurm_content = '''#!/bin/bash
-    #SBATCH --job-name=rnn_connectome
-    #SBATCH --nodes=1
-    #SBATCH --ntasks-per-node=1
-    #SBATCH --mem=32gb
-    #SBATCH --time=48:00:00
-    #SBATCH --output=/home/kn/kn_kn/kn_pop542534/output/job_output_%j.out
-    #SBATCH --mail-type=NONE
-    #SBATCH --mail-user=roberto.garza@uni.kn
+#SBATCH --job-name=rnn_connectome
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem=32gb
+#SBATCH --time=48:00:00
+#SBATCH --output=/home/kn/kn_kn/kn_pop542534/output/job_output_%j.out
+#SBATCH --mail-type=NONE
+#SBATCH --mail-user=roberto.garza@uni.kn
 
-    source $HOME/miniforge3/etc/profile.d/conda.sh
+source $HOME/miniforge3/etc/profile.d/conda.sh
 
-    export PYTHONPATH="${PYTHONPATH}:/home/kn/kn_pop542534/code:/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling"
+export PYTHONPATH="${PYTHONPATH}:/home/kn/kn_pop542534/code:/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling"
 
     '''
 
