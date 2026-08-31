@@ -44,7 +44,7 @@ source $HOME/miniforge3/etc/profile.d/conda.sh
 
 export PYTHONPATH="${PYTHONPATH}:/home/kn/kn_pop542534/code:/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling"
 
-    '''
+'''
 
 
         # add python command to pbs script
