@@ -12,6 +12,7 @@ Expected CSV layout:
     "cell | ID: 576460752631366630 | functional classifier: motion_integrator | ..."
 """
 import itertools
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -37,18 +38,7 @@ def get_idx_side_change(df,
             return i  # positional value
     return None
 
-def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
-    # First column becomes the index automatically because it has no header
-    # name aligned with a real column count (typical "presynaptic" style CSV).
-    df = pd.read_csv(csv_path, index_col=0)
-
-    # Sanity check: matrix should be square with matching row/col labels.
-    # If rows and columns are not identically labeled/ordered, align them.
-    if not df.index.equals(df.columns):
-        print("WARNING | matrix should be square with matching row/col labels. Aligning them.")
-        common = df.index.intersection(df.columns)
-        df = df.loc[common, common]
-
+def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=True, return_axon_values=True):
     is_axon = df.index.str.strip().str.startswith("axon")
     axon_labels = df.index[is_axon]
     axon_rostral_idx = [i for i, is_axon_rostral in enumerate(axon_labels.str.strip().str.contains("rostral")) if not is_axon_rostral]
@@ -63,14 +53,34 @@ def load_synapse_matrix(csv_path, drop_axons=True, drop_myelinated=True):
         axon_values = axon_values[non_axon_idx]
 
     # Identify nodes to discard: anything whose identifier starts with "myelinated"
-    if drop_myelinated:
-        is_myelinated = df.index.str.strip().str.contains("myelinated")
-        non_myelinated_labels = df.index[~is_myelinated]
-        non_myelinated_idx = df.index.get_indexer(non_myelinated_labels)
-        df = df.loc[non_myelinated_labels, non_myelinated_labels]
-        axon_values = axon_values[non_myelinated_idx]
+    if drop_unknown_cells:
+        is_unknown_cell = df.index.str.strip().str.contains("myelinated | not functionally imaged")
+        non_unknown_cell_labels = df.index[~is_unknown_cell]
+        non_unknown_cell_idx = df.index.get_indexer(non_unknown_cell_labels)
+        df = df.loc[non_unknown_cell_labels, non_unknown_cell_labels]
+        axon_values = axon_values[non_unknown_cell_idx]
 
-    df_clean = df
+    if return_axon_values:
+        return df, axon_values
+    else:
+        return df
+
+def load_synapse_matrix(csv_path, drop_non_functionally_identified=True):
+    # First column becomes the index automatically because it has no header
+    # name aligned with a real column count (typical "presynaptic" style CSV).
+    df = pd.read_csv(csv_path, index_col=0)
+
+    # Sanity check: matrix should be square with matching row/col labels.
+    # If rows and columns are not identically labeled/ordered, align them.
+    if not df.index.equals(df.columns):
+        print("WARNING | matrix should be square with matching row/col labels. Aligning them.")
+        common = df.index.intersection(df.columns)
+        df = df.loc[common, common]
+
+    if drop_non_functionally_identified:
+        df_clean, axon_values = _drop_non_functionally_identified(df)
+    else:
+        axon_values = None
 
     # Identify index for side change after removing axons and myelinated
     idx_side_change = get_idx_side_change(df_clean)
@@ -97,14 +107,14 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
         info_neuron_list = info_neuron_str.split(" | ")
         # get side
         if "hemisphere" in info_neuron_str:
-            side = info_neuron_list[2].replace("hemisphere: ", "")
+            side = info_neuron_list[2].replace("hemisphere: ", "").strip()
         else:
             if i_neuron < idx_side_change: side = ConfigurationRNN.SIDE_LEFT
             else: side = ConfigurationRNN.SIDE_RIGHT
         # get other features
-        function = info_neuron_list[3].replace("functional classifier: ", "")
-        projection = info_neuron_list[4].replace("projection classifier: ", "")
-        neurotransmitter = info_neuron_list[5].replace("neurotransmitter classifier: ", "")
+        function = info_neuron_list[3].replace("functional classifier: ", "").strip()
+        projection = info_neuron_list[4].replace("projection classifier: ", "").strip()
+        neurotransmitter = info_neuron_list[5].replace("neurotransmitter classifier: ", "").strip()
 
         pop = ConfigurationRNN.classifier_to_pop_map[function][projection]
         if pop not in dict_neurons[side].keys():
@@ -145,7 +155,7 @@ def get_W(path_W_csv, do_symmetry_transform=False):
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
-    U_norm = U / np.sum(U)
+    U_norm = U / np.sum(U) if np.sum(U) > 0 else U
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
                     "W_mask": np.sign(W),
@@ -157,19 +167,11 @@ def get_W(path_W_csv, do_symmetry_transform=False):
                     "symmetry_transform": ~do_symmetry_transform,}
     return W, dict_neurons
 
-def update_W(path_csv, W_new, path_save=None, drop_axons=True, drop_myelinated=True):
+def update_W(path_csv, W_new, path_save=None, drop_non_functionally_identified=True):
     df = pd.read_csv(path_csv, index_col=0)
-    # Identify neurons to discard: anything whose identifier starts with "axon"
-    if drop_axons:
-        is_axon = df.index.str.strip().str.startswith("axon")
-        non_axon_labels = df.index[~is_axon]
-        df = df.loc[non_axon_labels, non_axon_labels]
 
-    # Identify neurons to discard: anything whose identifier starts with "myelinated"
-    if drop_myelinated:
-        is_myelinated = df.index.str.strip().str.contains("myelinated")
-        non_myelinated_labels = df.index[~is_myelinated]
-        df = df.loc[non_myelinated_labels, non_myelinated_labels]
+    if drop_non_functionally_identified:
+        df, _ = _drop_non_functionally_identified(df)
 
     # Define row/col identifiers
     row_labels = df.index  # first-column metadata
@@ -184,9 +186,11 @@ def update_W(path_csv, W_new, path_save=None, drop_axons=True, drop_myelinated=T
 
     # Create new df and save it as csv
     df_out = pd.DataFrame(W_new, index=row_labels, columns=col_labels)
+    Path(path_save).parent.mkdir(parents=True, exist_ok=True)
     if path_save is None:
         path_save = path_csv
     df_out.to_csv(path_save)
+    return df_out
 
 def symmetry_transform(W, U, dict_neurons):
     # accept L or R as reference side depending on which one is the smallest one
