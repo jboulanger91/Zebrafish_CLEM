@@ -10,6 +10,7 @@ sys.path.insert(0, "..")
 
 from model.core.RNNFreePop import RNNFreePop
 from model.core.RNNClem import RNNClem
+from model.core.RNNConnectome import RNNConnectome
 from model.core.RNNFixedConnectivity import RNNFixedConnectivity
 from analysis.load_synapse_matrix import get_W
 
@@ -36,11 +37,11 @@ def load_model(pt_path, verbose=False, skip_if_error=True):
     elif checkpoint["class_name"] == "RNNClem":
         model = RNNClem(nA=attrs["nA"], nB=attrs["nB"], nC=attrs["nC"], nD=attrs["nD"], dt=attrs["dt"])
     elif checkpoint["class_name"] == "RNNFixedConnectivity":
-        if "dict_neurons" not in checkpoint.keys():
+        if "dict_neurons" not in checkpoint.keys():  # ##### DEBUG
             env = dotenv_values()
             path_W_csv = Path(env["PATH_W_CSV"])
             W_norm, checkpoint["dict_neurons"] = get_W(path_W_csv)
-        process_checkpoint_rnnfixedconnectivity(checkpoint)
+        process_checkpoint_rnnfixedconnectivity(checkpoint)  # ##### DEBUG
         model = RNNFixedConnectivity(checkpoint["state_dict"]["W_norm"], checkpoint["dict_neurons"],
                                      n_beta=torch.numel(checkpoint["state_dict"]["beta"]),
                                      fixed_U=checkpoint["custom_attrs"]["mode_U"],
@@ -48,6 +49,11 @@ def load_model(pt_path, verbose=False, skip_if_error=True):
                                      tau=checkpoint["custom_attrs"]["dt"] / checkpoint["custom_attrs"]["alpha"],
                                      dt=checkpoint["custom_attrs"]["dt"],
                                      clamp_weights_min=checkpoint["custom_attrs"]["clamp_weights_min"])
+    elif checkpoint["class_name"] == "RNNConnectome":
+        model = RNNConnectome(checkpoint["dict_neurons"],
+                             tau=checkpoint["custom_attrs"]["dt"] / checkpoint["custom_attrs"]["alpha"],
+                             dt=checkpoint["custom_attrs"]["dt"],
+                             clamp_weights_min=checkpoint["custom_attrs"]["clamp_weights_min"])
     else:
         raise NotImplementedError
 

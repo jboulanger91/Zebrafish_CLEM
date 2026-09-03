@@ -35,7 +35,7 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32gb
-#SBATCH --time=48:00:00
+#SBATCH --time=96:00:00
 #SBATCH --output=/home/kn/kn_kn/kn_pop542534/output/job_output_%j.out
 #SBATCH --mail-type=NONE
 #SBATCH --mail-user=roberto.garza@uni.kn
