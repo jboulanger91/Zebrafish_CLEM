@@ -610,7 +610,7 @@ class RNNConnectome(nn.Module):
 
         # .T is a view, and a transposed operand makes every GEMM in the loop
         # take a slower path; materialising it once is worth the one copy.
-        Wt = W.T.contiguous()
+        Wt = W.contiguous()
 
         beta = torch.exp(torch.tensor(-self.alpha, device=device))
         one_minus_beta = 1.0 - beta
@@ -722,7 +722,7 @@ class RNNConnectome(nn.Module):
             downsample_target_list=None,
             stage_boundaries=None,
             lr_schedule=None, lr_factor=0.5, lr_patience=150, lr_min=1e-5,
-            early_stopping_patience=None, early_stopping_min_delta=0.0,
+            early_stopping_patience=100, early_stopping_min_delta=0.0,
             restore_best=True):
         """
         Full-batch BPTT with a staged regulariser curriculum.
