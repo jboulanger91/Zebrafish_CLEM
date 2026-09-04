@@ -45,6 +45,8 @@ if __name__ == '__main__':
         env_path = "../.env"
     env = dotenv_values(env_path)
     label_model_instance = "_" + env["LABEL"] if "LABEL" in env.keys() else ""
+    if label_model_instance == "_":
+        label_model_instance += f"{np.random.randint(0,999999):06d}"
 
     # Paths
     path_traces = Path(env["PATH_DATA"])
