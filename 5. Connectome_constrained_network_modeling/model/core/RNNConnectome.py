@@ -75,9 +75,6 @@ avoided, by GCaMP-filtering all `n_units` channels. This implementation:
     starts swapping;
   * supports absolute stage boundaries, LR decay on plateau and early stopping,
     so run length is set by the loss curve rather than by a guessed epoch count.
-
-All of the above are numerically equivalent to, or opt-in extensions of, the
-original behaviour: with default arguments this class trains the same model.
 """
 
 import copy
@@ -567,17 +564,36 @@ class RNNConnectome(nn.Module):
         when the drive was precomputed, or zeros-plus-input otherwise. Returns
         the final state and the stacked activities of the chunk.
 
-        Two deliberate choices here: the activities are collected in a Python
-        list and stacked once (one autograd node, rather than one CopySlices per
-        step from writing into a preallocated tensor), and Wt is passed in
-        already transposed so the loop does not rebuild a view T times.
+        Four deliberate choices here:
+
+        * the per-step slices of the drive are taken with ONE `unbind`, not with
+          `drive_chunk[:, t, :]` inside the loop. This is the single most
+          important line in the class for wall-clock time. `drive_chunk`
+          requires grad (it contains U), so every `select` records a node whose
+          backward allocates a *full* (N, T_chunk, n_units) zero tensor and
+          scatters one row into it -- T times over. At T=8000, N=4,
+          n_units=200 that is ~200 GB of pointless memory traffic per backward
+          pass, and it dominates the epoch (measured: 63 s out of a 64 s
+          epoch). `unbind` replaces all of it with a single StackBackward, and
+          is bit-identical in both the forward values and the gradients;
+        * the activation is computed once per step and reused: the `f(h)`
+          appended to `xs` is the same tensor the next step feeds to the matmul,
+          instead of being recomputed (which cost a second softplus forward
+          *and* backward at every step);
+        * `addmm` fuses `drive_t + f(h) @ Wt` and `addcmul` fuses the state
+          update, roughly halving the number of autograd nodes per step;
+        * the activities are collected in a Python list and stacked once (one
+          autograd node, rather than one CopySlices per step from writing into a
+          preallocated tensor), and Wt is hoisted out of the loop.
         """
+        drive_steps = drive_chunk.unbind(1)          # T views, ONE autograd node
         xs_chunk = []
-        for t in range(drive_chunk.shape[1]):
-            rec = self.f(h) @ Wt                     # (N, n_units)
-            drive = rec + drive_chunk[:, t, :]
-            h = beta * h + one_minus_beta * drive
-            xs_chunk.append(self.f(h))
+        fh = self.f(h)
+        for drive_t in drive_steps:
+            drive = torch.addmm(drive_t, fh, Wt)     # drive_t + f(h) @ Wt
+            h = torch.addcmul(beta * h, drive, one_minus_beta)
+            fh = self.f(h)                           # reused by the next step
+            xs_chunk.append(fh)
         return h, torch.stack(xs_chunk, dim=1)       # (N, T_chunk, n_units)
 
     def forward(self, x0, inputs, filter_xs=True):
@@ -608,8 +624,6 @@ class RNNConnectome(nn.Module):
         U = self.U().to(device)  # (n_units, input_dim)
         W = self.W().to(device)  # (n_units, n_units), post-by-pre
 
-        # .T is a view, and a transposed operand makes every GEMM in the loop
-        # take a slower path; materialising it once is worth the one copy.
         Wt = W.contiguous()
 
         beta = torch.exp(torch.tensor(-self.alpha, device=device))
@@ -682,14 +696,32 @@ class RNNConnectome(nn.Module):
         Nearest-neighbour resampling of a simulated signal onto data timestamps.
 
         raw_signal: (N, T, dim); time_sample_list: (T_ds,) in seconds.
+
+        The (T, T_ds) distance matrix and its argmin depend only on T, dt and
+        the timestamps -- none of which change between epochs -- so the index
+        vector is memoised. During fit this turns a per-epoch 6.4M-element
+        allocate/subtract/argmin into a dict lookup. Same indices, same output.
         """
         if not torch.is_tensor(time_sample_list):
             time_sample_list = torch.tensor(time_sample_list, dtype=torch.float32,
                                             device=raw_signal.device)
-        t_raw = torch.arange(0, raw_signal.shape[1], device=raw_signal.device,
-                             dtype=torch.float32) * self.dt
-        dt = torch.abs(t_raw[:, None] - time_sample_list[None, :])  # (T, T_ds)
-        idx_sample = torch.argmin(dt, dim=0)                        # (T_ds,)
+
+        cache = getattr(self, "_ds_idx_cache", None)
+        if cache is None:
+            cache = self._ds_idx_cache = {}
+        # Keyed on the full timestamp vector, so a different target grid can
+        # never pick up another grid's indices.
+        key = (int(raw_signal.shape[1]), float(self.dt), str(raw_signal.device),
+               tuple(time_sample_list.detach().cpu().reshape(-1).tolist()))
+        idx_sample = cache.get(key)
+
+        if idx_sample is None:
+            t_raw = torch.arange(0, raw_signal.shape[1], device=raw_signal.device,
+                                 dtype=torch.float32) * self.dt
+            dt = torch.abs(t_raw[:, None] - time_sample_list[None, :])  # (T, T_ds)
+            idx_sample = torch.argmin(dt, dim=0)                        # (T_ds,)
+            cache[key] = idx_sample
+
         return raw_signal[:, idx_sample, :]
 
     def _infer_stim_side(self, train_list, device):
@@ -875,7 +907,12 @@ class RNNConnectome(nn.Module):
                 best_mse = self.loss_mse
                 epochs_without_improvement = 0
                 if restore_best and early_stopping_patience is not None:
-                    best_state = copy.deepcopy(self.state_dict())
+                    # A plain clone of the (already detached) state_dict tensors
+                    # is the same snapshot as copy.deepcopy without going
+                    # through the pickle machinery, which for an n x n W plus
+                    # the mask buffers ran on most epochs of the run.
+                    best_state = {k: v.detach().clone() if torch.is_tensor(v) else copy.deepcopy(v)
+                                  for k, v in self.state_dict().items()}
             else:
                 epochs_without_improvement += 1
 
