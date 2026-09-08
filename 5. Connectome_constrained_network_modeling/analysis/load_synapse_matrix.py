@@ -155,7 +155,9 @@ def get_W(path_W_csv, do_symmetry_transform=False):
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
-    U_norm = U / np.sum(U) if np.sum(U) > 0 else U
+    if np.sum(U) == 0:
+        U = np.ones_like(U)
+    U_norm = U / np.sum(U)
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
                     "W_mask": np.sign(W),

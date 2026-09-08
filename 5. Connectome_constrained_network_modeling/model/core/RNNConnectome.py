@@ -103,6 +103,7 @@ class RNNConnectome(nn.Module):
             slow_antagonism_penalty_strength=5e-4,
             rho_target_fast=0.95,
             activation='softplus',
+            use_connectome_mask_U=False,
             seed=None,
             device=None,
             gcamp_tau_rise=0.25,
@@ -186,15 +187,19 @@ class RNNConnectome(nn.Module):
         else:
             mask_W = torch.sign(torch.as_tensor(np.asarray(dict_neurons["W"]), dtype=torch.float32))
 
-        if "U_mask" in dict_neurons.keys():
-            mask_U = torch.as_tensor(np.asarray(dict_neurons["U_mask"]), dtype=torch.float32)
+        if use_connectome_mask_U:
+            if "U_mask" in dict_neurons.keys():
+                mask_U = torch.as_tensor(np.asarray(dict_neurons["U_mask"]), dtype=torch.float32)
+            else:
+                mask_U = torch.sign(torch.as_tensor(np.asarray(dict_neurons["U"]), dtype=torch.float32))
+            if torch.max(mask_U) <= 0:
+                print("WARNING | all-zero mask U found. To keep stimulus dependency, mask U was set to all-ones.")
+                mask_U = torch.ones_like(mask_U, dtype=torch.float32)
         else:
-            mask_U = torch.sign(torch.as_tensor(np.asarray(dict_neurons["U"]), dtype=torch.float32))
-        if torch.max(mask_U) <= 0:
-            print("WARNING | all-zero mask U found. To keep stimulus dependency, mask U was set to all-ones.")
-            mask_U = torch.ones_like(mask_U, dtype=torch.float32)
+            mask_U = torch.ones(int(self.n_units), input_dim, dtype=torch.float32)
         if mask_U.dim() == 1:
             mask_U = mask_U.unsqueeze(1)  # (n_units,) -> (n_units, 1)
+
 
         self.register_buffer("mask_W", mask_W)
         self.register_buffer("mask_U", mask_U)
