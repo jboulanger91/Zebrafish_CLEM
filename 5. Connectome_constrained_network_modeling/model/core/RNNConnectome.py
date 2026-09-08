@@ -190,6 +190,9 @@ class RNNConnectome(nn.Module):
             mask_U = torch.as_tensor(np.asarray(dict_neurons["U_mask"]), dtype=torch.float32)
         else:
             mask_U = torch.sign(torch.as_tensor(np.asarray(dict_neurons["U"]), dtype=torch.float32))
+        if torch.max(mask_U) <= 0:
+            print("WARNING | all-zero mask U found. To keep stimulus dependency, mask U was set to all-ones.")
+            mask_U = torch.ones_like(mask_U, dtype=torch.float32)
         if mask_U.dim() == 1:
             mask_U = mask_U.unsqueeze(1)  # (n_units,) -> (n_units, 1)
 
@@ -229,7 +232,7 @@ class RNNConnectome(nn.Module):
             self.register_buffer("idx_W_nz", torch.empty(0, dtype=torch.long), persistent=False)
             self.W_raw = nn.Parameter(W_raw)
 
-        self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, input_dim)))
+        self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, self.n_units * input_dim)))
 
         # =====================================================================
         # Optionally pinned entries of W
