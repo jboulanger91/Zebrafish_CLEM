@@ -1,107 +1,80 @@
 """
-RNNConnectomeV2
-===============
+RNNConnectome
+=============
 
-Anatomically constrained rate RNN, revised so that the *recurrence read off the
-connectome* is the thing that has to generate the four population dynamics.
+A rate-based recurrent network whose connectivity is *anatomically constrained*:
+the set of allowed synapses, and the excitatory/inhibitory sign of each one, are
+imposed by a measured connectome and never learned. Only the *magnitudes* of the
+anatomically existing synapses (and the input gains) are fitted.
 
-What changed relative to `RNNConnectome`, and why
--------------------------------------------------
+What the model is
+-----------------
+Each of `n_units` neurons carries a scalar pre-activation `h_i`, integrated with
+an exponential-Euler step (exact for a drive held constant over `dt`):
 
-1. **Initialisation is scaled by in-degree, then pinned to an operating point.**
-   The old init was `randn / sqrt(n_units)`, which is *dense* scaling. The slow
-   real mode of an E/I network is carried by the mean (row-sum) mode, whose
-   eigenvalue goes like `<w> * (f_E - f_I) * k` with `k` the mean in-degree --
-   a *sum* over afferents, so it is what sparsity destroys fastest. At the new
-   connectome's ~3.5 synapses/neuron the old init lands ~8x below the gain the
-   task needs, i.e. deep in the leaky regime where BPTT has no gradient for
-   long timescales either.
-   Here rows are scaled by `1/sqrt(in-degree)` and then a single scalar is
-   **bisected** so that the continuous recurrent gain `rho(D W_fast)` equals
-   `init_rho_target` exactly at init (default 0.90 -> `tau_eff = tau/0.1`).
-   No guessing: the network starts at a known, reportable timescale.
+    h(t+dt) = beta * h(t) + (1 - beta) * ( W @ f(h(t)) + U * u(t) ),
+    beta    = exp(-dt / tau)
 
-2. **The spectral penalty measures the right object.**
-   The old one penalised `norm(W @ v)`, i.e. `||W||_2`, not `rho(W)`. Sparse
-   Dale matrices are strongly non-normal (`||W||_2 / rho(W)` ~ 2.9 at 2%
-   density), and power iteration does not even converge when the dominant
-   eigenvalue is complex, so the estimate was biased high and the penalty
-   effectively forbade the slow regime. Here the penalised quantity is the
-   dominant eigenvalue of the **effective discrete Jacobian**
-   `J = beta I + (1 - beta) W diag(f'(h))`, obtained exactly (`torch.linalg.eig`
-   at N ~ 200 costs ~5 MFLOP) with a first-order-exact differentiable surrogate
-   (Rayleigh quotient on the frozen left/right eigenvector pair), and it is
-   re-expressed as the **continuous gain** `g = (|mu| - beta)/(1 - beta)`, which
-   has O(1) excursions and therefore a well-conditioned penalty. The penalty is
-   one-sided: only `g` above `1 - tau/tau_eff_max` is charged, so slow dynamics
-   are permitted rather than punished.
-   Whether `mu_max` is real or complex is logged: complex means oscillation, not
-   integration, and is as diagnostic as the magnitude.
+`f` is the activation (softplus by default), so the observable firing rate is
+`x = f(h)`. The matrix is stored in **post-by-pre** orientation, i.e. `W[i, j]`
+is the weight *from* j *onto* i, which is what `f(h) @ W.T` computes.
 
-3. **`PopulationSlow` is gone.** In the old model `W()` computed
-   `W_slow_module(...) * mask_W`; masking a rank-1 outer product destroys it
-   (`rho` 1.807 -> 0.213 at 5% density), its `eta` was never in the optimizer's
-   parameter list so the gammas never took a step, and `slow_mode_directions()`
-   split `v_slow[:4]/[4:]` while `modes_per_population=2` produces 16 modes.
-   Beyond the bugs: a hand-built population integrator that is not in the
-   connectome is exactly the confound this model exists to avoid. The slow
-   timescales now have to come from `W_fast`. The hemispheric antagonism penalty
-   is kept but its directions are built from the population readout instead.
+Constraints baked into `W()`
+----------------------------
+* `mask_W` comes from the connectome and carries both topology (zeros where no
+  synapse exists) and Dale's law (the sign of every existing synapse). The
+  fitted tensor only ever contributes a non-negative magnitude, so no gradient
+  step can flip a synapse's sign or invent a synapse that anatomy forbids.
+* `clamp_weights_min` keeps anatomically real synapses from being driven to
+  zero, so the fitted network cannot silently prune the connectome.
+* `mask_U` restricts which neurons the stimulus can reach.
+* An optional `W_fixed` pins individual entries to prescribed values (entries
+  left as NaN stay free).
 
-4. **A shared, non-fitted `tau` of 0.2 s.** One global constant, identical for
-   all units; no population gets a timescale of its own, so all differentiation
-   still has to come from `W`. It only relaxes the precision demanded of the
-   eigenvalue: `tau_eff = tau / (1 - g)`, so 20 s needs `g = 0.99` at 0.2 s
-   instead of `g = 0.995` at 0.1 s, and a 0.001 error in `g` moves `tau_eff` by
-   2 s instead of 4 s.
+Timescales
+----------
+`W()` is the sum of two parts. `W_fast()` is the per-synapse fitted magnitude.
+`W_slow_module` (a `PopulationSlow`) adds a low-rank, population-structured
+component with near-unit gain, which supplies the seconds-long timescales the
+calcium data show but that a fast recurrent matrix cannot produce on its own.
 
-5. **A calibrated readout, profiled out in closed form.** A per-population gain
-   and offset sits between the GCaMP-filtered population mean and the target,
-   because dF/F is not firing rate and the constant relating them is unknown per
-   cell type. Without it the recurrent gain has to serve two masters -- set the
-   timescale *and* hit the absolute dF/F level -- and they conflict: enforcing
-   the gain floor with no calibration drove the loss from 1.5 to 9.3. Being
-   *linear* nuisance parameters they are computed analytically each epoch rather
-   than fitted (fitted alongside 631 weights at a shared learning rate they
-   barely moved), which makes the loss exactly invariant to a positive
-   per-population gain and an offset -- the same invariance the
-   connectome-prediction script's criteria have, so the two agree on what counts
-   as a fit. They give no population a timescale of its own, so the dynamics
-   still come from `W`. `readout_calibration="learn"` fits them instead;
-   `False` disables them.
+Readout
+-------
+Dynamics run on every neuron; the 8 outputs are plain means over the 8 recorded
+populations (left/right x iMI/cMI/MON/sMI). Both the population means and, on
+request, the full population activity are convolved with a GCaMP kernel so the
+model output is comparable to measured dF/F rather than to firing rate.
 
-6. **A loss that scores shape, not level.** Each population's squared error is
-   divided by that population's target variance (otherwise the absolute dF/F
-   level dominates and the optimiser spends its capacity there), a term on the
-   time derivative is added (this is what actually constrains timescales), and
-   **per-population normalised R^2** is reported so a failing population cannot
-   hide inside one pooled MSE. `loss_normalise=False` recovers the plain MSE.
+Training
+--------
+`fit` is full-batch BPTT over the whole trial, with a three-stage regulariser
+curriculum: (1) weak spectral-radius penalty, (2) full spectral-radius penalty,
+(3) additionally a stimulus-gated antagonism penalty that asks the slow modes of
+the two hemispheres to separate in the direction the stimulus dictates.
 
-7. **The slow band is a constraint, not a hope.** BPTT through a leaky network
-   has a gradient horizon equal to its own dynamical horizon: with a slowest
-   mode of 0.4 s there is no gradient anywhere that says "build a 20 s mode",
-   while there is always one that says "shrink". Measured on this connectome
-   with a ceiling only, the gain fell monotonically 0.64 -> 0.48 over 25
-   epochs. So the spectral penalty is **two-sided**: `tau_eff` is confined to
-   `[tau_eff_min, tau_eff_max]` (default 2-30 s). That states the modelling
-   assumption out loud -- the network integrates on the seconds timescale; now
-   show whether the connectome can do that *and* match the traces -- rather than
-   leaving it to an optimiser that structurally cannot find it. Pass
-   `tau_eff_min=None` to drop the floor; running both ways is itself the
-   experiment. A projected-gradient step additionally rescales the magnitudes
-   whenever a step leaves the stable set, evaluated at the trial's *peak*
-   operating point, which makes divergence impossible rather than merely
-   discouraged.
-
-Retained from the tuned version
--------------------------------
-Post-by-pre `W`, Dale's law and topology structurally enforced through
-`mask_W`, `clamp_weights_min` (soft, gradient-preserving), `W_fixed` pinning,
-`mask_U`, exponential-Euler integration, the `unbind`-based time loop with
-`addmm`/`addcmul` fusion and reused `f(h)`, GCaMP filtering of only the 8
-readout channels during training, the memoised downsampling indices, optional
-parameter packing and gradient checkpointing, plateau LR schedule, early
-stopping and best-weight restore.
+Performance notes (see also `fit`'s docstring)
+----------------------------------------------
+The cost of one epoch is dominated by the `T`-step Python BPTT loop and, unless
+avoided, by GCaMP-filtering all `n_units` channels. This implementation:
+  * filters only the 8 readout channels during training, and obtains the
+    antagonism penalty by projecting the *unfiltered* activity onto the two
+    slow-mode directions and filtering those 2 channels instead. Time-domain
+    convolution and a linear map over units commute, so this is the same number
+    computed a factor ~n_units/2 more cheaply;
+  * accumulates `xs` in a list and stacks once, instead of writing 8000 slices
+    in place into a preallocated tensor (one autograd node instead of ~T);
+  * hoists the input drive and the transpose of `W` out of the loop;
+  * warm-starts the power iteration for the spectral radius under `no_grad` and
+    differentiates only the final `||W v||` (envelope theorem), instead of
+    backpropagating through 50 power steps;
+  * can pack the fitted weights into a dense vector of only the anatomically
+    allowed entries, which shrinks the Adam state and step from O(n^2) to
+    O(nnz) (`pack_parameters=True`);
+  * can trade compute for activation memory with gradient checkpointing over
+    time chunks (`checkpoint_chunk`), which is what to reach for if the process
+    starts swapping;
+  * supports absolute stage boundaries, LR decay on plateau and early stopping,
+    so run length is set by the loss curve rather than by a guessed epoch count.
 """
 
 import copy
@@ -111,78 +84,61 @@ import torch
 from torch import nn, optim
 from torch.utils.checkpoint import checkpoint
 
+from model.core.PopulationSlow import PopulationSlow
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
 from utils.config import ConfigurationRNN
 
 
 class RNNConnectome(nn.Module):
-
-    # ==================================================================
-    # construction
-    # ==================================================================
     def __init__(
             self,
             dict_neurons,
             W_fixed=None,
             input_dim=1,
-            # ---- integration ------------------------------------------------
-            tau=0.2, dt=0.01,
-            activation='softplus',
-            # ---- optimiser --------------------------------------------------
+            tau=0.1, dt=0.01,
             lr=1e-3,
-            weight_decay=0.0,
-            # ---- initialisation ---------------------------------------------
-            init_rho_target=0.90,     # continuous gain rho(D W_fast) at init
-            init_d_ref=1.0,           # slope the init gain is measured at
-            init_scale_by_indegree=True,
-            seed=None,
-            # ---- spectral control -------------------------------------------
-            spectral_penalty_strength=1.0,
-            tau_eff_max=30.0,         # ceiling on the slowest mode (seconds)
-            tau_eff_min=2.0,          # FLOOR on the slowest mode; None = no floor
-            spectral_mode="rayleigh",  # "rayleigh" | "power"
-            power_iters=10,
-            hold_gain_epochs=0,
-            hold_gain_target=0.95,
-            hold_gain_strength=1.0,
-            # ---- hemispheric antagonism -------------------------------------
+            weight_decay=1e-5,
+            fast_spectral_radius_penalty_strength=1e-2,
             slow_antagonism_penalty_strength=5e-4,
-            # ---- readout / loss shaping -------------------------------------
-            readout_calibration="profile",   # "profile" | "learn" | False
-            tie_hemispheres=True,
-            loss_normalise=True,
-            loss_derivative_weight=0.3,
-            # ---- anatomy ----------------------------------------------------
+            rho_target_fast=0.95,
+            activation='softplus',
             use_connectome_mask_U=False,
-            input_populations=None,   # e.g. [0, 2, 4, 6] -> only iMI and MON
-            clamp_weights_min=1e-3,
-            clamp_weights_max=None,
-            clamp_soft=True,
-            # ---- indicator ---------------------------------------------------
+            seed=None,
+            device=None,
             gcamp_tau_rise=0.25,
             gcamp_tau_decay=2.4,
-            # ---- misc --------------------------------------------------------
-            device=None,
-            verbose_every=None,
-            pack_parameters=False,
-            precompute_input_drive=True,
-            checkpoint_chunk=None,
+            clamp_weights_min=None,
+            clamp_weights_max=None,
+            stage1_frac=0.3,
+            stage2_frac=0.3,
+            verbose_every=None,  # if None -> default to 50 prints per run
+            n_slow_pops=8,
+            # ---- performance / training-control options
+            pack_parameters=False,   # fit only the anatomically allowed entries
+            clamp_soft=True,        # magnitude floor with a live gradient
+            power_iters=10,          # power steps per epoch, warm-started
+            precompute_input_drive=True,   # hoist inputs*U out of the time loop
+            checkpoint_chunk=None,   # e.g. 500 -> gradient checkpointing
     ):
         super().__init__()
 
         self.dict_neurons = dict_neurons
 
-        self.device = torch.device("cpu") if device is None else torch.device(device)
+        # ---- device ---------------------------------------------------------
+        # Kept as an attribute because W() historically passes it to
+        # PopulationSlow; note nn.Module.to() is what actually moves tensors.
+        if device is None:
+            self.device = torch.device("cpu")
+        else:
+            self.device = torch.device(device)
         self.to(self.device)
 
-        # ---- loss bookkeeping -----------------------------------------------
+        # ---- loss bookkeeping (filled in by fit) ----------------------------
         self.loss = None
         self.loss_mse = None
-        self.loss_mse_raw = None
         self.loss_reg = None
-        self.history = {"loss": [], "mse": [], "mse_raw": [], "reg": [],
-                        "lr": [], "gain": [], "tau_eff": [], "imag_frac": []}
+        self.history = {"loss": [], "mse": [], "reg": [], "lr": []}
 
         # ---- weight-magnitude constraints -----------------------------------
         self.clamp_weights_min = clamp_weights_min
@@ -190,81 +146,68 @@ class RNNConnectome(nn.Module):
         self.clamp_soft = bool(clamp_soft)
 
         # ---- sizes ----------------------------------------------------------
+        # idx_side_change is the first index belonging to the right hemisphere,
+        # so it doubles as the size of the left hemisphere.
         self.n_units_hemi = dict_neurons["idx_side_change"]
         self.n_units = dict_neurons["W"].shape[0]
-        self.n_out = 8
+        self.n_out = 8  # left/right x (iMI, cMI, MON, sMI)
 
         # ---- integration constants ------------------------------------------
-        self.dt = float(dt)
-        self.tau = float(tau)
-        self.alpha = self.dt / self.tau
-        self.beta = float(np.exp(-self.alpha))
+        self.dt = dt
+        self.alpha = dt / tau  # dimensionless step; beta = exp(-alpha)
         self.gcamp_tau_rise = gcamp_tau_rise
         self.gcamp_tau_decay = gcamp_tau_decay
 
+        # ---- curriculum / logging -------------------------------------------
+        self.stage1_frac = float(stage1_frac)
+        self.stage2_frac = float(stage2_frac)
         self.verbose_every = verbose_every
+
+        # nn.Softplus() is an nn.Module, so this registers as a submodule (and
+        # is therefore *not* picked up by RNNService.extract_custom_attrs --
+        # meaning `activation` is not stored in the checkpoint; reconstruct the
+        # model with the same `activation` you trained it with).
         self.f = RNNService.activation_dict[activation]
-        self.activation_name = activation
 
         # ---- performance switches -------------------------------------------
         self.pack_parameters = bool(pack_parameters)
         self.power_iters = int(power_iters)
         self.precompute_input_drive = bool(precompute_input_drive)
         self.checkpoint_chunk = checkpoint_chunk
-        self.spectral_mode = str(spectral_mode)
-
-        # ---- loss shaping ----------------------------------------------------
-        self.loss_normalise = bool(loss_normalise)
-        self.loss_derivative_weight = float(loss_derivative_weight)
-        if readout_calibration in (True, "learn"):
-            self.readout_calibration = "learn"
-        elif readout_calibration in (False, None, "none"):
-            self.readout_calibration = False
-        elif readout_calibration == "profile":
-            self.readout_calibration = "profile"
-        else:
-            raise ValueError('readout_calibration must be "profile", "learn" or False')
-        self.tie_hemispheres = bool(tie_hemispheres)
 
         # =====================================================================
-        # Anatomical masks (post-by-pre; entries 0 / +1 / -1 carry Dale's law)
+        # Anatomical masks
         # =====================================================================
+        # mask_W is expected post-by-pre and to carry the E/I sign of each
+        # synapse: entries are 0 (no synapse), +1 (excitatory) or -1
+        # (inhibitory). Because W_fast() multiplies a non-negative magnitude by
+        # this mask, topology and Dale's law are both structurally enforced.
         if "W_mask" in dict_neurons.keys():
             mask_W = torch.as_tensor(np.asarray(dict_neurons["W_mask"]), dtype=torch.float32)
         else:
             mask_W = torch.sign(torch.as_tensor(np.asarray(dict_neurons["W"]), dtype=torch.float32))
 
-        mask_U = self._build_mask_U(dict_neurons, input_dim, use_connectome_mask_U,
-                                    input_populations)
+        if use_connectome_mask_U:
+            if "U_mask" in dict_neurons.keys():
+                mask_U = torch.as_tensor(np.asarray(dict_neurons["U_mask"]), dtype=torch.float32)
+            else:
+                mask_U = torch.sign(torch.as_tensor(np.asarray(dict_neurons["U"]), dtype=torch.float32))
+            if torch.max(mask_U) <= 0:
+                print("WARNING | all-zero mask U found. To keep stimulus dependency, mask U was set to all-ones.")
+                mask_U = torch.ones_like(mask_U, dtype=torch.float32)
+        else:
+            mask_U = torch.ones(int(self.n_units), input_dim, dtype=torch.float32)
+        if mask_U.dim() == 1:
+            mask_U = mask_U.unsqueeze(1)  # (n_units,) -> (n_units, 1)
+
 
         self.register_buffer("mask_W", mask_W)
         self.register_buffer("mask_U", mask_U)
+
+        # Binary support of the mask, precomputed once. Used for packing and for
+        # reporting; keeping it as a buffer avoids recomputing != 0 per epoch.
         self.register_buffer("mask_W_support", (mask_W != 0).to(torch.float32), persistent=False)
         self.n_synapses = int(self.mask_W_support.sum().item())
-
-        # In-degree per postsynaptic neuron: the quantity the mean mode sums over.
-        in_degree = self.mask_W_support.sum(dim=1)
-        self.register_buffer("in_degree", in_degree, persistent=False)
-        self.mean_in_degree = float(in_degree.mean().item())
-
-        # =====================================================================
-        # Population indices (taken verbatim; need not be contiguous)
-        # =====================================================================
-        self._register_population_indices(dict_neurons)
-
-        readout = torch.zeros(self.n_units, self.n_out)
-        for k, idx in enumerate(self.population_indices):
-            if len(idx) == 0:
-                continue
-            readout[torch.as_tensor(idx, dtype=torch.long), k] = 1.0 / len(idx)
-        self.register_buffer("readout_W", readout, persistent=False)
-
-        # Hemisphere directions for the antagonism penalty, from the readout
-        # rather than from a hand-built slow module.
-        v_L = readout[:, :4].sum(dim=1)
-        v_R = readout[:, 4:].sum(dim=1)
-        self.register_buffer("v_hemi_L", v_L / (v_L.norm() + 1e-8), persistent=False)
-        self.register_buffer("v_hemi_R", v_R / (v_R.norm() + 1e-8), persistent=False)
 
         # =====================================================================
         # Fitted parameters
@@ -273,45 +216,35 @@ class RNNConnectome(nn.Module):
             torch.manual_seed(seed)
 
         W_raw = torch.randn(self.n_units, self.n_units)
-        if init_scale_by_indegree:
-            # Row-wise: keeps the per-neuron total drive comparable across
-            # neurons with very different numbers of afferents, which at 3.5
-            # synapses/neuron differ by an order of magnitude.
-            W_raw = W_raw / torch.sqrt(torch.clamp(in_degree, min=1.0))[:, None]
-        else:
-            W_raw = W_raw / np.sqrt(self.n_units)
-        # Mild left/right asymmetry so the hemispheres are not interchangeable.
+        # Mild left/right asymmetry, so the two hemispheres are not exactly
+        # interchangeable at init and the optimiser can commit to a basin.
         W_raw[:self.n_units_hemi] *= 0.95
         W_raw[self.n_units_hemi:] *= 1.05
-
-        self.U_raw = nn.Parameter(
-            torch.randn(self.n_units, input_dim) / np.sqrt(max(1, self.n_units * input_dim)))
-
-        # ---- indicator calibration -------------------------------------------
-        # dF/F is not firing rate: the scale factor and baseline relating them
-        # are genuinely unknown and differ by cell type. Without them the
-        # network has to hit the absolute dF/F level with its recurrent gain,
-        # which fights directly against being a slow integrator -- forcing the
-        # gain up then blows the amplitude up and the MSE with it (measured:
-        # loss 1.5 -> 9.3 once the gain floor was enforced without this).
-        # These give no population a timescale of its own, so the dynamics still
-        # have to come from W.
-        n_cal = 4 if self.tie_hemispheres else self.n_out
-        self.log_readout_gain = nn.Parameter(torch.zeros(n_cal))
-        self.readout_offset = nn.Parameter(torch.zeros(n_cal))
+        W_raw = W_raw / np.sqrt(self.n_units)
 
         if self.pack_parameters:
+            # Only the anatomically allowed entries are fitted. The dense matrix
+            # is rebuilt in _W_magnitude() by scattering this vector back into
+            # its flat positions. This does not make the forward pass cheaper
+            # (the matmul still needs the dense matrix) but it cuts the Adam
+            # state and the optimiser step from O(n^2) to O(nnz), and stops
+            # weight decay from acting on entries that do not exist.
             idx_W_nz = torch.nonzero(mask_W.reshape(-1), as_tuple=False).squeeze(-1)
             self.register_buffer("idx_W_nz", idx_W_nz, persistent=False)
             self.W_vals = nn.Parameter(W_raw.reshape(-1)[idx_W_nz].clone())
-            self.W_raw = None
+            self.W_raw = None  # not a Parameter in this mode
         else:
             self.register_buffer("idx_W_nz", torch.empty(0, dtype=torch.long), persistent=False)
             self.W_raw = nn.Parameter(W_raw)
 
+        self.U_raw = nn.Parameter(torch.randn(self.n_units, input_dim) / np.sqrt(max(1, self.n_units * input_dim)))
+
         # =====================================================================
         # Optionally pinned entries of W
         # =====================================================================
+        # Convention: W_fixed holds the prescribed value where an entry is to be
+        # held fixed and NaN where it is to stay free. Registered as buffers so
+        # they follow .to(device) and land in state_dict.
         if W_fixed is None:
             self.has_W_fixed = False
             self.register_buffer("W_fixed", torch.zeros(self.n_units, self.n_units))
@@ -321,242 +254,137 @@ class RNNConnectome(nn.Module):
             assert W_fixed.shape == (self.n_units, self.n_units), \
                 "Shape of W_fixed does not match W. Wrong number of neurons"
             self.has_W_fixed = True
+            # 1.0 where pinned, 0.0 where free. nan_to_num keeps NaNs from
+            # poisoning the product (NaN * 0 is NaN, not 0).
             self.register_buffer("W_fixed_mask", (~torch.isnan(W_fixed)).to(torch.float32))
             self.register_buffer("W_fixed", torch.nan_to_num(W_fixed, nan=0.0))
 
         # =====================================================================
-        # Operating-point slope, and the init gain bisection
+        # Population indices
         # =====================================================================
-        # d0 = f'(h) at the h that gives f(h) = 1, i.e. the slope the network
-        # actually runs at for dF/F of order 1. For softplus this is ~0.632.
-        self.d0 = self._activation_slope_at_unit_output()
-        self.register_buffer("v_power", self._unit_vector(self.n_units), persistent=False)
+        # Taken verbatim from the connectome dictionary: these need not be
+        # contiguous, and everything downstream (readout, PopulationSlow) uses
+        # them by index rather than assuming a block layout.
+        idx_LiMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["iMI"]["idx_list"], dtype=torch.long)
+        idx_LcMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["cMI"]["idx_list"], dtype=torch.long)
+        idx_LMON = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["MON"]["idx_list"], dtype=torch.long)
+        idx_LsMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["sMI"]["idx_list"], dtype=torch.long)
+        idx_L = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["idx_list"], dtype=torch.long)
 
-        # The init gain is pinned at `init_d_ref` (default 1.0 = softplus' maximum
-        # slope), NOT at the slope for unit output. Softplus' slope grows with
-        # activity, so a network pinned to gain 0.9 at f'=0.632 sits at gain
-        # ~1.1 once the stimulus drives it up -- and an 8000-step trial at gain
-        # 1.1 overflows on epoch 0, which is how a run ends up all-NaN. Pinning
-        # against the worst-case slope guarantees no operating point the trial
-        # visits can be unstable; the gain hold and the MSE then pull it up.
-        self.init_rho_target = float(init_rho_target)
-        self.init_d_ref = float(init_d_ref)
-        gain_before = self.recurrent_gain(d_scalar=self.init_d_ref)
-        self._rescale_to_gain(self.init_rho_target, d_scalar=self.init_d_ref)
-        gain_after = self.recurrent_gain(d_scalar=self.init_d_ref)
-        gain_at_unit = self.recurrent_gain(d_scalar=self.d0)
+        self.register_buffer("idx_LiMI", idx_LiMI)
+        self.register_buffer("idx_LcMI", idx_LcMI)
+        self.register_buffer("idx_LMON", idx_LMON)
+        self.register_buffer("idx_LsMI", idx_LsMI)
+        self.register_buffer("idx_L", idx_L)
+
+        idx_RiMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["iMI"]["idx_list"], dtype=torch.long)
+        idx_RcMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["cMI"]["idx_list"], dtype=torch.long)
+        idx_RMON = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["MON"]["idx_list"], dtype=torch.long)
+        idx_RsMI = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["idx_list"], dtype=torch.long)
+        idx_R = torch.as_tensor(dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["idx_list"], dtype=torch.long)
+
+        self.register_buffer("idx_RiMI", idx_RiMI)
+        self.register_buffer("idx_RcMI", idx_RcMI)
+        self.register_buffer("idx_RMON", idx_RMON)
+        self.register_buffer("idx_RsMI", idx_RsMI)
+        self.register_buffer("idx_R", idx_R)
+
+        # Readout order must match the column order of the target signals.
+        self.population_indices = [
+            self.idx_LiMI.tolist(),
+            self.idx_LcMI.tolist(),
+            self.idx_LMON.tolist(),
+            self.idx_LsMI.tolist(),
+            self.idx_RiMI.tolist(),
+            self.idx_RcMI.tolist(),
+            self.idx_RMON.tolist(),
+            self.idx_RsMI.tolist(),
+        ]
+        # Same information as a padded index tensor plus a 0/1 weight matrix, so
+        # the 8 population means become one batched matmul instead of 8 advanced
+        # indexing operations that each copy a (N, T, n_pop) block.
+        readout = torch.zeros(self.n_units, self.n_out)
+        for k, idx in enumerate(self.population_indices):
+            if len(idx) == 0:
+                continue
+            readout[torch.as_tensor(idx, dtype=torch.long), k] = 1.0 / len(idx)
+        self.register_buffer("readout_W", readout, persistent=False)  # (n_units, n_out)
 
         # =====================================================================
-        # Penalties
+        # Slow population modes
         # =====================================================================
-        self.spectral_penalty_strength = float(spectral_penalty_strength)
-        self.tau_eff_max = float(tau_eff_max)
-        self.gain_target = 1.0 - self.tau / self.tau_eff_max
-        # A FLOOR as well as a ceiling. Without it the run drifts leaky: BPTT
-        # through a network whose slowest mode is 0.4 s has a gradient horizon of
-        # 0.4 s, in case there is no gradient anywhere that says "build a 20 s mode",
-        # while there is always a gradient that says "shrink".
-        # Making the slow band a *constraint* states the modelling assumption
-        # out loud -- the network integrates on the seconds timescale, now show
-        # whether the connectome can do that AND match the traces -- instead of
-        # leaving it to an optimiser that structurally cannot find it.
-        # Set tau_eff_min=None to remove the floor; comparing the two runs is
-        # itself the experiment.
-        self.tau_eff_min = None if tau_eff_min is None else float(tau_eff_min)
-        self.gain_floor = (None if self.tau_eff_min is None
-                           else 1.0 - self.tau / self.tau_eff_min)
-        self.slow_antagonism_penalty_strength = float(slow_antagonism_penalty_strength)
-        self.effective_slow_antagonism_penalty_strength = 0.0
+        # slow_pops selects which of the 8 populations get a slow component;
+        # np.arange(8) means all of them.
+        slow_pops = np.arange(n_slow_pops)
+        self.W_slow_module = PopulationSlow(
+            population_indices=self.population_indices,
+            mask=self.mask_W,
+            slow_populations=slow_pops,
+            modes_per_population=2,
+            gamma_init=0.995
+        )
 
-        self.hold_gain_epochs = int(hold_gain_epochs)
-        self.hold_gain_target = float(hold_gain_target)
-        self.hold_gain_strength = float(hold_gain_strength)
+        # =====================================================================
+        # Penalty strengths
+        # =====================================================================
+        self.fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
+        self.slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
+        self.rho_target_fast = rho_target_fast
 
-        # ---- rolling state ---------------------------------------------------
+        # "effective" values are what the loss actually uses; fit() rewrites
+        # them at every epoch according to the stage schedule.
+        self.effective_fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
+        self.effective_slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
+
+        # Warm-start vector for the power iteration. Persisting it across epochs
+        # is what lets `power_iters` be ~10 instead of ~50: consecutive epochs
+        # change W only slightly, so the previous dominant eigenvector is an
+        # excellent starting guess.
+        v0 = torch.randn(self.n_units)
+        self.register_buffer("v_power", v0 / v0.norm(), persistent=False)
+
+        # =====================================================================
+        # Rolling state (set by forward)
+        # =====================================================================
         self.h = None
         self.xs = None
         self.ys = None
-        self.xs_is_filtered = None
-        self._D_cache = None
-        self._last_calibration = None
+        self.xs_is_filtered = None  # tells callers what self.xs currently holds
 
-        self.optimizer = optim.Adam(self.trainable_parameters(), lr=lr,
-                                    weight_decay=weight_decay)
-
-        # ---- init report -----------------------------------------------------
-        mu, imag_frac = self.dominant_jacobian_eigenvalue(d_scalar=self.init_d_ref,
-                                                           detach=True)
-        print("[RNNConnectomeV2] init")
-        print(f"  n_units {self.n_units} | synapses {self.n_synapses} "
-              f"({100.0 * self.n_synapses / self.n_units ** 2:.2f}% density) | "
-              f"mean in-degree {self.mean_in_degree:.2f}")
-        print(f"  tau {self.tau:.3f} s | dt {self.dt:.4f} s | beta {self.beta:.4f} | "
-              f"activation {activation} (f'|_x=1 = {self.d0:.3f})")
-        print(f"  readout calibration: {self.readout_calibration or 'OFF'}"
-              f"{' (L/R tied)' if self.readout_calibration and self.tie_hemispheres else ''}")
-        print(f"  recurrent gain rho(D W_fast) at f'={self.init_d_ref:.3f} (worst case): "
-              f"{gain_before:.4f} -> {gain_after:.4f} after rescale "
-              f"(target {self.init_rho_target})")
-        print(f"  same at f'={self.d0:.3f} (unit output): {gain_at_unit:.4f} "
-              f"-> tau_eff {self.tau / max(1e-9, 1 - gain_at_unit):.2f} s")
-        print(f"  |mu_max(J)| {mu:.6f} -> tau_eff {self._tau_eff(mu):.2f} s | "
-              f"imag fraction {imag_frac:.3f} "
-              f"({'REAL: integration' if imag_frac < 0.1 else 'COMPLEX: oscillatory'})")
-        if self.gain_floor is None:
-            print(f"  gain band: (none, {self.gain_target:.4f}]  -> tau_eff up to "
-                  f"{self.tau_eff_max} s, NO floor (the run may drift leaky)")
-        else:
-            print(f"  gain band: [{self.gain_floor:.4f}, {self.gain_target:.4f}]  -> "
-                  f"tau_eff constrained to [{self.tau_eff_min}, {self.tau_eff_max}] s")
-        if self.hold_gain_epochs:
-            print(f"  extra gain hold at {self.hold_gain_target} for the first "
-                  f"{self.hold_gain_epochs} epochs")
-
-    # ------------------------------------------------------------------
-    def _build_mask_U(self, dict_neurons, input_dim, use_connectome_mask_U,
-                      input_populations):
-        """Which neurons the stimulus is allowed to reach."""
-        if use_connectome_mask_U:
-            if "U_mask" in dict_neurons.keys():
-                mask_U = torch.as_tensor(np.asarray(dict_neurons["U_mask"]), dtype=torch.float32)
-            else:
-                mask_U = torch.sign(torch.as_tensor(np.asarray(dict_neurons["U"]), dtype=torch.float32))
-            if torch.max(mask_U) <= 0:
-                print("WARNING | all-zero mask U found. To keep stimulus dependency, "
-                      "mask U was set to all-ones.")
-                mask_U = torch.ones_like(mask_U, dtype=torch.float32)
-        elif input_populations is not None:
-            # Restrict the direct feedforward path to named populations. With an
-            # all-ones mask every neuron has its own private copy of the
-            # stimulus, which is the cheapest descent direction and leaves the
-            # recurrence unrecruited.
-            mask_U = torch.zeros(int(self.n_units), input_dim, dtype=torch.float32)
-            for p in input_populations:
-                idx = torch.as_tensor(
-                    dict_neurons["neurons"][
-                        ConfigurationRNN.SIDE_LEFT if p < 4 else ConfigurationRNN.SIDE_RIGHT
-                    ][["iMI", "cMI", "MON", "sMI"][p % 4]]["idx_list"], dtype=torch.long)
-                mask_U[idx] = 1.0
-            print(f"[RNNConnectomeV2] stimulus restricted to populations {list(input_populations)}: "
-                  f"{int(mask_U.sum().item())}/{self.n_units} neurons driven directly")
-        else:
-            mask_U = torch.ones(int(self.n_units), input_dim, dtype=torch.float32)
-
-        if mask_U.dim() == 1:
-            mask_U = mask_U.unsqueeze(1)
-        return mask_U
-
-    def _register_population_indices(self, dict_neurons):
-        L, R = ConfigurationRNN.SIDE_LEFT, ConfigurationRNN.SIDE_RIGHT
-        for side, tag in ((L, "L"), (R, "R")):
-            for cell in ("iMI", "cMI", "MON", "sMI"):
-                self.register_buffer(
-                    f"idx_{tag}{cell}",
-                    torch.as_tensor(dict_neurons["neurons"][side][cell]["idx_list"],
-                                    dtype=torch.long))
-            self.register_buffer(
-                f"idx_{tag}",
-                torch.as_tensor(dict_neurons["neurons"][side]["idx_list"], dtype=torch.long))
-
-        self.population_indices = [
-            self.idx_LiMI.tolist(), self.idx_LcMI.tolist(),
-            self.idx_LMON.tolist(), self.idx_LsMI.tolist(),
-            self.idx_RiMI.tolist(), self.idx_RcMI.tolist(),
-            self.idx_RMON.tolist(), self.idx_RsMI.tolist(),
-        ]
-
-    @staticmethod
-    def _unit_vector(n):
-        v = torch.randn(n)
-        return v / v.norm()
-
-    def _activation_slope_at_unit_output(self):
-        """f'(h0) where f(h0) = 1; falls back to f'(0) for saturating f."""
-        lo, hi = -30.0, 30.0
-        f = lambda z: self.f(torch.tensor([z])).item()
-        if f(hi) < 1.0:                      # sigmoid / tanh: never reaches 1
-            h0 = 0.0
-        else:
-            for _ in range(80):
-                mid = 0.5 * (lo + hi)
-                if f(mid) < 1.0:
-                    lo = mid
-                else:
-                    hi = mid
-            h0 = 0.5 * (lo + hi)
-        h = torch.tensor([h0], requires_grad=True)
-        y = self.f(h).sum()
-        d, = torch.autograd.grad(y, h)
-        return float(d.item())
+        self.optimizer = optim.Adam(self.trainable_parameters(), lr=lr, weight_decay=weight_decay)
 
     # ==================================================================
     # helpers
     # ==================================================================
     def trainable_parameters(self):
+        """The fitted tensors, whichever parameterisation is in use."""
         W_param = self.W_vals if self.pack_parameters else self.W_raw
-        params = [W_param, self.U_raw]
-        if self.readout_calibration == "learn":
-            params += [self.log_readout_gain, self.readout_offset]
-        return params
-
-    def calibrate(self, ys):
-        """Apply the *learned* indicator gain and offset (mode "learn" only)."""
-        if self.readout_calibration != "learn":
-            return ys
-        a, b = torch.exp(self.log_readout_gain), self.readout_offset
-        if self.tie_hemispheres:
-            a, b = torch.cat([a, a]), torch.cat([b, b])
-        return ys * a[None, None, :] + b[None, None, :]
-
-    def profile_calibration(self, y_pred, outputs, eps=1e-8):
-        """
-        Closed-form per-population indicator gain and offset.
-
-        `a` and `b` in `target ~ a * model + b` are *linear nuisance
-        parameters*, so for any dynamics their optimum has a closed form. Fitting
-        them by gradient descent alongside 631 weights does not work -- at a
-        shared learning rate they barely move (measured: they sat at x1.00+0.00
-        while the fit went nowhere) -- and it is unnecessary. Profiling them out
-        instead makes the loss exactly invariant to a positive per-population
-        gain and an additive offset, which is the same invariance the
-        connectome-prediction criteria have, so the two agree on what counts as
-        a fit.
-
-        Gradients flow through `a` and `b` (they are functions of `y_pred`),
-        which is what profile likelihood requires. `a` is floored at 0 because a
-        negative indicator gain is not physical.
-        """
-        yp = y_pred.reshape(-1, y_pred.shape[-1])
-        yt = outputs.reshape(-1, outputs.shape[-1])
-        yp_m, yt_m = yp.mean(0, keepdim=True), yt.mean(0, keepdim=True)
-        cov = ((yp - yp_m) * (yt - yt_m)).mean(0)
-        var = ((yp - yp_m) ** 2).mean(0)
-        # Floored just above zero rather than at zero: a population whose
-        # prediction is uncorrelated with its target would otherwise get a = 0,
-        # which detaches it from the loss entirely and it can never recover.
-        a = torch.clamp(cov / (var + eps), min=1e-3)
-        b = yt_m.squeeze(0) - a * yp_m.squeeze(0)
-        if self.tie_hemispheres:
-            a = 0.5 * (a[:4] + a[4:]).repeat(2)
-            b = 0.5 * (b[:4] + b[4:]).repeat(2)
-        return a, b
+        return [W_param, self.U_raw]
 
     def clear_state(self):
+        """
+        Drop the cached trajectories.
+
+        Worth calling before saving: RNNService.extract_custom_attrs walks
+        __dict__ and serialises whatever it finds, so leaving self.xs in place
+        writes an (N, T, n_units) tensor into every checkpoint.
+        """
         self.h = None
         self.xs = None
         self.ys = None
         self.xs_is_filtered = None
-        self._D_cache = None
-        self._last_calibration = None
-
-    def _tau_eff(self, mu_abs):
-        mu_abs = float(mu_abs)
-        return self.dt / max(1e-9, 1.0 - mu_abs) if mu_abs < 1.0 else float("inf")
 
     # ==================================================================
     # transforms
     # ==================================================================
     def _W_magnitude(self):
+        """
+        Non-negative magnitude of every synapse, before signs are applied.
+
+        In packed mode the fitted vector is scattered back into a dense matrix;
+        index_put is out-of-place and differentiable, so the gradient reaches
+        only the anatomically allowed entries.
+        """
         if self.pack_parameters:
             flat = torch.zeros(self.n_units * self.n_units,
                                device=self.W_vals.device, dtype=self.W_vals.dtype)
@@ -566,266 +394,162 @@ class RNNConnectome(nn.Module):
             W_raw = self.W_raw
 
         mag = torch.abs(W_raw)
+
         if self.clamp_soft and self.clamp_weights_min:
+            # Same guarantee as the hard clamp (an allowed synapse never reaches
+            # zero) but the gradient stays alive below the floor, so weights
+            # that dip under it can still be fitted afterwards.
             mag = self.clamp_weights_min + mag
             if self.clamp_weights_max is not None:
                 mag = torch.clamp(mag, max=self.clamp_weights_max)
         else:
             mag = torch.clamp(mag, self.clamp_weights_min, self.clamp_weights_max)
+
         return mag
 
     def W_fast(self):
+        """Fast recurrent matrix: fitted magnitude x anatomical sign/topology."""
         return self._W_magnitude() * self.mask_W
 
     def W(self):
-        """Effective recurrent matrix, post-by-pre. No slow add-on any more."""
-        _W = self.W_fast()
+        """
+        Effective recurrent matrix, post-by-pre.
+
+        Fast part plus the low-rank slow part, then any pinned entries are
+        substituted in. The `has_W_fixed` short-circuit skips two full n x n
+        elementwise operations per forward pass in the common case.
+        """
+        _W = self.W_fast() + self.W_slow_module(self.device) * self.mask_W
         if not self.has_W_fixed:
             return _W
         return _W * (1.0 - self.W_fixed_mask) + self.W_fixed * self.W_fixed_mask
 
     def U(self):
+        """Input gains: non-negative magnitude x anatomical input mask."""
         return torch.abs(self.U_raw) * self.mask_U
 
     # ==================================================================
-    # spectral machinery
+    # penalties
     # ==================================================================
-    @torch.no_grad()
-    def operating_point_slope(self, x_mean=None, reduce="mean"):
+    def spectral_radius_power(self, W, n_iter=50, tol=1e-6):
         """
-        Per-unit `f'(h)` at the operating point the network actually visits.
+        Plain power iteration, fully inside the autograd graph.
 
-        `forward` returns `x = f(h)`, not `h`, so `h` is recovered elementwise by
-        bisection (vectorised, once per epoch, negligible) and the slope is then
-        taken by autograd. This keeps the whole thing activation-agnostic: for
-        softplus it reduces to `1 - exp(-x)`, but relu/elu/tanh work unchanged.
-
-        `D` is a summary of where the network is running, not something to
-        differentiate through, so it is detached deliberately.
-
-        `reduce="max"` gives the largest slope the trial visits, which is the
-        binding one for stability: softplus' slope rises with activity, so a
-        network safe at its mean operating point can still run away at its peak.
-        The mean is what gets reported; the max is what the projection uses.
+        Kept unchanged for callers that use it for reporting/analysis. During
+        training, prefer spectral_radius_differentiable, which is far cheaper.
         """
-        if x_mean is None:
-            return torch.full((self.n_units,), self.d0, device=self.mask_W.device)
+        v = torch.randn(W.shape[0], device=W.device)
+        v = v / (torch.norm(v) + 1e-8)
+        prev = 0.0
+        for _ in range(n_iter):
+            v_new = W @ v
+            rho = torch.norm(v_new)
+            v = v_new / (rho + 1e-8)
+            if torch.abs(rho - prev) < tol:
+                break
+            prev = rho
+        return rho
 
-        x_mean = x_mean.detach().reshape(-1)
-        lo = torch.full_like(x_mean, -30.0)
-        hi = torch.full_like(x_mean, 30.0)
-        for _ in range(60):
-            mid = 0.5 * (lo + hi)
-            below = self.f(mid) < x_mean
-            lo = torch.where(below, mid, lo)
-            hi = torch.where(below, hi, mid)
-        h = 0.5 * (lo + hi)
-
-        with torch.enable_grad():
-            hh = h.clone().requires_grad_(True)
-            y = self.f(hh).sum()
-            d, = torch.autograd.grad(y, hh)
-        return d.detach()
-
-    def effective_jacobian(self, W=None, D=None, d_scalar=None):
+    def spectral_radius_differentiable(self, W, n_iter=None):
         """
-        `J = beta I + (1 - beta) W diag(f'(h))`.
+        Dominant singular/eigen magnitude with a one-step gradient.
 
-        Note the right-multiplication: `d/dh_j [W f(h)]_i = W_ij f'(h_j)`.
-        (`D @ W` has the same spectrum, being similar, but `W @ D` is the
-        Jacobian itself and is what the eigenvectors below refer to.)
+        The eigenvector is refined under no_grad (warm-started from the previous
+        epoch, so a handful of steps suffices) and then held fixed while the
+        returned value ||W v|| is differentiated. For a simple dominant
+        eigenvalue this is the correct gradient of the spectral radius by the
+        envelope theorem, but the graph holds one matvec instead of n_iter of
+        them. Same trick PyTorch's own spectral_norm uses.
         """
-        W = self.W() if W is None else W
-        if D is None:
-            D = torch.full((self.n_units,), self.d0 if d_scalar is None else d_scalar,
-                           device=W.device, dtype=W.dtype)
-        eye = torch.eye(self.n_units, device=W.device, dtype=W.dtype)
-        return self.beta * eye + (1.0 - self.beta) * (W * D[None, :])
+        n_iter = self.power_iters if n_iter is None else n_iter
 
-    @torch.no_grad()
-    def recurrent_gain(self, W=None, D=None, d_scalar=None):
-        """Continuous recurrent gain `rho(D W)`; `tau_eff = tau / (1 - gain)`."""
-        W = self.W_fast() if W is None else W
-        if D is None:
-            D = torch.full((self.n_units,), self.d0 if d_scalar is None else d_scalar,
-                           device=W.device, dtype=W.dtype)
-        lam = torch.linalg.eigvals(W * D[None, :])
-        return float(lam.abs().max().item())
-
-    def _dominant_pair(self, J_detached):
-        """
-        Frozen left/right eigenvector pair of the dominant eigenvalue.
-
-        `Vinv @ J @ V = diag(lambda)`, so row k of `Vinv` is the left eigenvector
-        normalised to `u @ v = 1`. Differentiating `u @ J @ v` with `u, v` held
-        fixed gives exactly `d lambda / dJ` (first-order eigenvalue
-        perturbation) while keeping one matmul in the graph instead of an eig.
-        """
-        lam, V = torch.linalg.eig(J_detached)
-        k = int(torch.argmax(lam.abs()).item())
-        Vinv = torch.linalg.inv(V)
-        u = Vinv[k, :]
-        v = V[:, k]
-        return lam, k, u, v
-
-    def dominant_jacobian_eigenvalue(self, W=None, D=None, d_scalar=None, detach=False):
-        """
-        Returns (|mu_max|, imaginary fraction).
-
-        Differentiable in `W` unless `detach=True`. Falls back to power
-        iteration if the eigenvector basis is too ill-conditioned to invert --
-        note that power iteration on `J` is far better behaved than on `W`,
-        because the `beta I` shift moves the whole spectrum away from zero and
-        shrinks the norm/radius gap.
-        """
-        J = self.effective_jacobian(W=W, D=D, d_scalar=d_scalar)
-
-        if detach:
-            with torch.no_grad():
-                lam = torch.linalg.eigvals(J)
-                k = int(torch.argmax(lam.abs()).item())
-                mu = lam[k]
-                return float(mu.abs().item()), float((mu.imag / (mu.abs() + 1e-12)).abs().item())
-
-        if self.spectral_mode == "rayleigh":
-            try:
-                with torch.no_grad():
-                    lam, k, u, v = self._dominant_pair(J.detach())
-                    imag_frac = float((lam[k].imag / (lam[k].abs() + 1e-12)).abs().item())
-                    ur, ui = u.real, u.imag
-                    vr, vi = v.real, v.imag
-                # |u J v| with u, v frozen; all-real algebra so autograd stays simple.
-                a = ur @ J @ vr - ui @ J @ vi
-                b = ur @ J @ vi + ui @ J @ vr
-                return torch.sqrt(a * a + b * b + 1e-24), imag_frac
-            except Exception as exc:                                # pragma: no cover
-                if not getattr(self, "_warned_eig", False):
-                    print(f"WARNING | eig-based spectral estimate failed ({exc}); "
-                          f"falling back to power iteration on J.")
-                    self._warned_eig = True
-
-        # power-iteration fallback, warm-started
         with torch.no_grad():
             v = self.v_power
-            if v.shape[0] != J.shape[0]:
-                v = self._unit_vector(J.shape[0]).to(J.device)
-            for _ in range(self.power_iters):
-                v_new = J @ v
+            if v.shape[0] != W.shape[0]:  # defensive: n_units changed
+                v = torch.randn(W.shape[0], device=W.device)
+                v = v / (v.norm() + 1e-8)
+            for _ in range(n_iter):
+                v_new = W @ v
                 nrm = v_new.norm()
                 if nrm < 1e-12:
+                    # W annihilated the vector; restart from a random direction.
                     v_new = torch.randn_like(v)
                     nrm = v_new.norm()
                 v = v_new / (nrm + 1e-8)
             if v.shape == self.v_power.shape:
                 self.v_power.copy_(v)
-        return torch.norm(J @ v), float("nan")
 
-    @torch.no_grad()
-    def project_gain(self, D_peak, D_mean=None, iters=30):
-        """
-        Projected-gradient step onto the feasible set `gain in [floor, ceiling]`.
+        return torch.norm(W @ v)
 
-        Two-sided, and hard, because neither side works as a penalty:
+    def fast_spectral_radius_penalty(self, margin=0.05):
+        """One-sided penalty: only rho above (target + margin) is punished."""
+        if self.effective_fast_spectral_radius_penalty_strength == 0:
+            return 0
 
-        * **Ceiling.** Everything interesting lives in the fourth decimal place
-          of `|mu|`, so by the time a quadratic penalty is large enough to
-          notice, an 8000-step trial has already overflowed and every later
-          epoch is NaN. Evaluated at the trial's *peak* operating point, since
-          softplus' slope rises with activity and a network safe at its mean can
-          still run away at its peak.
-        * **Floor.** Measured on this connectome, a floor *penalty* at strength
-          1.0 contributed 0.19 to the loss while the shape term was 0.65 and
-          falling -- so the shape gradient simply paid it and the gain still
-          slid 0.64 -> 0.49. The floor has to be a constraint. Evaluated at the
-          mean operating point, which is the timescale the traces see.
+        rho_fast = self.spectral_radius_differentiable(self.W_fast())
+        penalty = torch.relu(rho_fast - self.rho_target_fast - margin).pow(2)
+        return penalty * self.effective_fast_spectral_radius_penalty_strength
 
-        The floor is applied first and the ceiling second, so stability always
-        wins; if that ordering leaves the gain below the floor the band is
-        infeasible for the current `D` spread and the run says so.
-
-        Returns (gain after projection, whether it acted).
-        """
-        acted = False
-
-        if self.gain_floor is not None:
-            D_mean = D_peak if D_mean is None else D_mean
-            if self.recurrent_gain(D=D_mean) < self.gain_floor:
-                self._rescale_to_gain(self.gain_floor, D=D_mean, iters=iters, quiet=True)
-                acted = True
-
-        if self.recurrent_gain(D=D_peak) > self.gain_target:
-            self._rescale_to_gain(self.gain_target, D=D_peak, iters=iters, quiet=True)
-            acted = True
-            if (self.gain_floor is not None
-                    and self.recurrent_gain(D=D_mean) < self.gain_floor - 1e-3
-                    and not getattr(self, "_warned_band", False)):
-                print(f"WARNING | the gain band [{self.gain_floor:.4f}, "
-                      f"{self.gain_target:.4f}] is infeasible: the peak operating "
-                      f"point is far enough above the mean that satisfying the "
-                      f"ceiling breaks the floor. Widen it (raise tau_eff_min or "
-                      f"tau_eff_max) or reduce the drive.")
-                self._warned_band = True
-
-        return self.recurrent_gain(D=D_peak if D_mean is None else D_mean), acted
-
-    def spectral_penalty(self, D=None, epoch=None):
-        """
-        One-sided ceiling on the slowest mode, plus the optional early hold.
-
-        Two-sided band: `g` is charged above `1 - tau/tau_eff_max` (stability)
-        and, unless `tau_eff_min is None`, below `1 - tau/tau_eff_min` (so the
-        run cannot quietly slide into the leaky regime where it has no gradient
-        for long timescales).
-
-        The penalised variable is the *continuous* gain
-        `g = (|mu| - beta) / (1 - beta)`, whose excursions are O(1); penalising
-        `|mu|` directly is badly conditioned because everything interesting
-        happens in its fourth decimal place.
-        """
-        mu_abs, imag_frac = self.dominant_jacobian_eigenvalue(D=D)
-        gain = (mu_abs - self.beta) / (1.0 - self.beta)
-
-        pen = self.spectral_penalty_strength * torch.relu(gain - self.gain_target).pow(2)
-        if self.gain_floor is not None:
-            pen = pen + self.spectral_penalty_strength * \
-                torch.relu(self.gain_floor - gain).pow(2)
-
-        if epoch is not None and self.hold_gain_epochs and epoch < self.hold_gain_epochs:
-            pen = pen + self.hold_gain_strength * (gain - self.hold_gain_target).pow(2)
-
-        detached_mu = float(mu_abs.item()) if torch.is_tensor(mu_abs) else float(mu_abs)
-        return pen, detached_mu, float(gain.item()) if torch.is_tensor(gain) else float(gain), imag_frac
-
-    # ==================================================================
-    # hemispheric antagonism
-    # ==================================================================
-    def stimulus_gated_antagonism_penalty(self, x_pred, stim_side, x_is_filtered=False):
+    def _antagonism_from_projections(self, proj_L, proj_R, stim_side):
         """
         Ask the hemisphere ipsilateral to the stimulus to lead.
 
-        Directions come from the population readout. When `x_pred` is unfiltered,
-        the two scalar projections are filtered instead of all `n_units`
-        channels -- convolution in time and a linear map across units commute.
+        `desired` is positive when the correct hemisphere's slow mode dominates,
+        so relu(-desired) charges nothing when the ordering is already right.
+        """
+        desired = torch.where(
+            stim_side[:, None] == 1,
+            proj_L - proj_R,
+            proj_R - proj_L
+        )
+        return torch.mean(torch.relu(-desired))
+
+    def _stimulus_gated_slow_antagonism_penalty(self, h, stim_side, v_L, v_R):
+        """Original signature, kept for external callers: projects then scores."""
+        proj_L = torch.einsum("ntu,u->nt", h, v_L)
+        proj_R = torch.einsum("ntu,u->nt", h, v_R)
+        return self._antagonism_from_projections(proj_L, proj_R, stim_side)
+
+    def slow_mode_directions(self):
+        """Unit vectors summarising the left- and right-hemisphere slow modes."""
+        v_L = self.W_slow_module.v_slow[:4].sum(dim=0)
+        v_R = self.W_slow_module.v_slow[4:].sum(dim=0)
+        v_L = v_L / (v_L.norm() + 1e-8)
+        v_R = v_R / (v_R.norm() + 1e-8)
+        return v_L, v_R
+
+    def stimulus_gated_slow_antagonism_penalty(self, x_pred, stim_side, x_is_filtered=True):
+        """
+        Antagonism penalty on the GCaMP-filtered activity.
+
+        `x_is_filtered=False` says x_pred is the raw activity, in which case the
+        two scalar projections are computed first and the GCaMP kernel is
+        applied to those instead. Convolution along time and a linear map across
+        units commute, so the result matches filtering all n_units channels and
+        projecting afterwards, at a cost of 2 channels instead of n_units.
         """
         if self.effective_slow_antagonism_penalty_strength == 0:
-            return 0.0
+            return 0
 
-        proj_L = torch.einsum("ntu,u->nt", x_pred, self.v_hemi_L)
-        proj_R = torch.einsum("ntu,u->nt", x_pred, self.v_hemi_R)
+        v_L, v_R = self.slow_mode_directions()
+
+        proj_L = torch.einsum("ntu,u->nt", x_pred, v_L)
+        proj_R = torch.einsum("ntu,u->nt", x_pred, v_R)
 
         if not x_is_filtered:
-            proj = torch.stack((proj_L, proj_R), dim=-1)
+            proj = torch.stack((proj_L, proj_R), dim=-1)  # (N, T, 2)
             proj = DSService.apply_gcamp_kernel(proj, self.gcamp_tau_rise,
                                                 self.gcamp_tau_decay, self.dt)
             proj_L, proj_R = proj[..., 0], proj[..., 1]
 
-        desired = torch.where(stim_side[:, None] == 1, proj_L - proj_R, proj_R - proj_L)
-        return self.effective_slow_antagonism_penalty_strength * torch.mean(torch.relu(-desired))
+        penalty = self._antagonism_from_projections(proj_L, proj_R, stim_side)
+        return self.effective_slow_antagonism_penalty_strength * penalty
 
     # ==================================================================
     # forward
     # ==================================================================
     def _prepare_x0(self, x0, N, device):
+        """Broadcast whatever initial condition was supplied to (N, n_units)."""
         if x0 is None:
             x0 = torch.zeros(self.n_units, device=device)
         elif not torch.is_tensor(x0):
@@ -836,59 +560,111 @@ class RNNConnectome(nn.Module):
             x0 = x0.unsqueeze(0).repeat(N, 1)
         x0 = x0.to(device)
         assert x0.shape[-1] == self.n_units, (
-            f"x0 has {x0.shape[-1]} entries but the model has {self.n_units} units.")
+            f"x0 has {x0.shape[-1]} entries but the model has {self.n_units} "
+            f"units. Build the initial condition by scattering into idx_list.")
         return x0
 
     def _integrate_chunk(self, h, drive_chunk, Wt, beta, one_minus_beta):
         """
-        One contiguous block of time steps.
+        Integrate one contiguous block of time steps.
 
-        `unbind(1)` rather than `drive_chunk[:, t, :]` inside the loop: the drive
-        requires grad, so every `select` would record a node whose backward
-        allocates a full (N, T, n_units) zero tensor and scatters one row into
-        it, T times per backward pass. `unbind` is one `StackBackward` and is
-        bit-identical. `f(h)` is computed once per step and reused; `addmm` and
-        `addcmul` fuse the update; activities are stacked once.
+        drive_chunk is (N, T_chunk, n_units) and already contains inputs * U
+        when the drive was precomputed, or zeros-plus-input otherwise. Returns
+        the final state and the stacked activities of the chunk.
+
+        Four deliberate choices here:
+
+        * the per-step slices of the drive are taken with ONE `unbind`, not with
+          `drive_chunk[:, t, :]` inside the loop. This is the single most
+          important line in the class for wall-clock time. `drive_chunk`
+          requires grad (it contains U), so every `select` records a node whose
+          backward allocates a *full* (N, T_chunk, n_units) zero tensor and
+          scatters one row into it -- T times over. At T=8000, N=4,
+          n_units=200 that is ~200 GB of pointless memory traffic per backward
+          pass, and it dominates the epoch (measured: 63 s out of a 64 s
+          epoch). `unbind` replaces all of it with a single StackBackward, and
+          is bit-identical in both the forward values and the gradients;
+        * the activation is computed once per step and reused: the `f(h)`
+          appended to `xs` is the same tensor the next step feeds to the matmul,
+          instead of being recomputed (which cost a second softplus forward
+          *and* backward at every step);
+        * `addmm` fuses `drive_t + f(h) @ Wt` and `addcmul` fuses the state
+          update, roughly halving the number of autograd nodes per step;
+        * the activities are collected in a Python list and stacked once (one
+          autograd node, rather than one CopySlices per step from writing into a
+          preallocated tensor), and Wt is hoisted out of the loop.
         """
-        drive_steps = drive_chunk.unbind(1)
+        drive_steps = drive_chunk.unbind(1)          # T views, ONE autograd node
         xs_chunk = []
         fh = self.f(h)
         for drive_t in drive_steps:
-            drive = torch.addmm(drive_t, fh, Wt)
+            drive = torch.addmm(drive_t, fh, Wt)     # drive_t + f(h) @ Wt
             h = torch.addcmul(beta * h, drive, one_minus_beta)
-            fh = self.f(h)
+            fh = self.f(h)                           # reused by the next step
             xs_chunk.append(fh)
-        return h, torch.stack(xs_chunk, dim=1)
+        return h, torch.stack(xs_chunk, dim=1)       # (N, T_chunk, n_units)
 
-    def forward(self, x0, inputs, filter_xs=True, keep_h=False):
+    def forward(self, x0, inputs, filter_xs=True):
+        """
+        Run the network.
+
+        Dynamics run on all neurons; the 8 outputs are population means. Both
+        outputs are GCaMP-filtered so they are comparable to dF/F.
+
+        filter_xs=True  (default, original behaviour) returns the filtered
+                        per-neuron activity, which is what the plotting and
+                        variance-analysis helpers expect.
+        filter_xs=False returns the unfiltered activity and skips a convolution
+                        over n_units channels. fit() uses this: the only
+                        consumer of xs during training is the antagonism
+                        penalty, which can filter its 2 projections instead.
+        """
+        # ---- shape normalisation -------------------------------------------
         if inputs.ndim == 1:
             inputs = inputs[None, :, None]
         elif inputs.ndim == 2:
-            inputs = inputs.unsqueeze(0)
+            inputs = inputs.unsqueeze(0)  # (1, T, input_dim)
         N, T, _ = inputs.shape
         device = inputs.device
 
         x0 = self._prepare_x0(x0, N, device)
 
-        U = self.U().to(device)
-        W = self.W().to(device)
+        U = self.U().to(device)  # (n_units, input_dim)
+        W = self.W().to(device)  # (n_units, n_units), post-by-pre
+
         Wt = W.contiguous()
 
         beta = torch.exp(torch.tensor(-self.alpha, device=device))
         one_minus_beta = 1.0 - beta
 
-        drive_in = inputs * U.T if self.precompute_input_drive else None
+        # ---- input drive ----------------------------------------------------
+        # inputs is (N, T, n_units) when the caller supplies a per-neuron
+        # stimulus, or (N, T, input_dim) with input_dim broadcasting against U.T.
+        # Doing the multiply once collapses T small elementwise ops (and T
+        # autograd nodes) into one.
+        if self.precompute_input_drive:
+            drive_in = inputs * U.T  # broadcast: (N, T, n_units)
+        else:
+            drive_in = None
 
+        # ---- time loop ------------------------------------------------------
         h = x0
         if self.checkpoint_chunk:
+            # Gradient checkpointing: activations inside a chunk are recomputed
+            # during the backward pass instead of being kept. Roughly +30%
+            # compute for a ~chunk/T fraction of the activation memory. Reach
+            # for this when memory pressure, not arithmetic, is the bottleneck.
             xs_parts = []
             step = int(self.checkpoint_chunk)
             for start in range(0, T, step):
                 stop = min(start + step, T)
-                drive_chunk = (drive_in[:, start:stop, :] if drive_in is not None
-                               else inputs[:, start:stop, :] * U.T)
+                if drive_in is not None:
+                    drive_chunk = drive_in[:, start:stop, :]
+                else:
+                    drive_chunk = inputs[:, start:stop, :] * U.T
                 h, xs_part = checkpoint(self._integrate_chunk, h, drive_chunk,
-                                        Wt, beta, one_minus_beta, use_reentrant=False)
+                                        Wt, beta, one_minus_beta,
+                                        use_reentrant=False)
                 xs_parts.append(xs_part)
             xs = torch.cat(xs_parts, dim=1)
         else:
@@ -898,14 +674,23 @@ class RNNConnectome(nn.Module):
 
         self.h = h
 
-        ys = xs @ self.readout_W
+        # ---- population readout ---------------------------------------------
+        # One (N, T, n_units) x (n_units, n_out) matmul rather than 8 gathers;
+        # readout_W already holds 1/len(pop) so this is the population mean.
+        ys = xs @ self.readout_W  # (N, T, n_out)
+
+        # ---- calcium indicator ----------------------------------------------
+        # The kernel is sum-normalised (unit DC gain), so this low-passes
+        # without rescaling the steady state.
         ys = DSService.apply_gcamp_kernel(ys, self.gcamp_tau_rise, self.gcamp_tau_decay, self.dt)
-        ys = self.calibrate(ys)
+        if not torch.is_tensor(ys):
+            ys = torch.tensor(ys, dtype=torch.float32)
         self.ys = ys.to(device)
 
         if filter_xs:
-            xs = DSService.apply_gcamp_kernel(xs, self.gcamp_tau_rise,
-                                              self.gcamp_tau_decay, self.dt)
+            xs = DSService.apply_gcamp_kernel(xs, self.gcamp_tau_rise, self.gcamp_tau_decay, self.dt)
+            if not torch.is_tensor(xs):
+                xs = torch.tensor(xs, dtype=torch.float32)
         self.xs = xs.to(device)
         self.xs_is_filtered = bool(filter_xs)
 
@@ -915,26 +700,50 @@ class RNNConnectome(nn.Module):
     # target alignment
     # ==================================================================
     def downsample_signal(self, raw_signal, time_sample_list):
-        """Nearest-neighbour resample onto data timestamps; indices memoised."""
+        """
+        Nearest-neighbour resampling of a simulated signal onto data timestamps.
+
+        raw_signal: (N, T, dim); time_sample_list: (T_ds,) in seconds.
+
+        The (T, T_ds) distance matrix and its argmin depend only on T, dt and
+        the timestamps -- none of which change between epochs -- so the index
+        vector is memoised. During fit this turns a per-epoch 6.4M-element
+        allocate/subtract/argmin into a dict lookup. Same indices, same output.
+        """
         if not torch.is_tensor(time_sample_list):
             time_sample_list = torch.tensor(time_sample_list, dtype=torch.float32,
                                             device=raw_signal.device)
+
         cache = getattr(self, "_ds_idx_cache", None)
         if cache is None:
             cache = self._ds_idx_cache = {}
+        # Keyed on the full timestamp vector, so a different target grid can
+        # never pick up another grid's indices.
         key = (int(raw_signal.shape[1]), float(self.dt), str(raw_signal.device),
                tuple(time_sample_list.detach().cpu().reshape(-1).tolist()))
         idx_sample = cache.get(key)
+
         if idx_sample is None:
             t_raw = torch.arange(0, raw_signal.shape[1], device=raw_signal.device,
                                  dtype=torch.float32) * self.dt
-            idx_sample = torch.argmin(torch.abs(t_raw[:, None] - time_sample_list[None, :]), dim=0)
+            dt = torch.abs(t_raw[:, None] - time_sample_list[None, :])  # (T, T_ds)
+            idx_sample = torch.argmin(dt, dim=0)                        # (T_ds,)
             cache[key] = idx_sample
+
         return raw_signal[:, idx_sample, :]
 
     def _infer_stim_side(self, train_list, device):
+        """
+        Which hemisphere each trial stimulates: +1 left, -1 right.
+
+        Uses an explicit `stim_side` attribute when the dataset provides one,
+        otherwise compares the total input delivered to each hemisphere. The
+        fallback assumes the stimulus array is per-neuron and that hemispheres
+        split at idx_side_change.
+        """
         if hasattr(train_list[0], "stim_side") and train_list[0].stim_side is not None:
             return torch.tensor([int(t.stim_side) for t in train_list], device=device)
+
         sides = []
         for t in train_list:
             x = np.asarray(t.input_signal)
@@ -947,89 +756,54 @@ class RNNConnectome(nn.Module):
         return torch.tensor(sides, device=device)
 
     # ==================================================================
-    # loss
-    # ==================================================================
-    @staticmethod
-    def _population_weights(outputs, eps=1e-8):
-        """1 / per-population target variance, mean-normalised to 1."""
-        var = outputs.reshape(-1, outputs.shape[-1]).var(dim=0, correction=0)
-        w = 1.0 / (var + eps)
-        return w / w.mean()
-
-    def compute_loss_terms(self, y_pred, outputs, w_pop=None, w_pop_d=None):
-        """
-        Returns (loss_shape, mse_raw, y_cal).
-
-        `loss_shape` is the population-normalised error plus the derivative
-        term, computed on the calibrated prediction; `mse_raw` is the plain
-        pooled MSE of the *uncalibrated* prediction, kept so numbers stay
-        comparable with earlier runs.
-        """
-        mse_raw = (y_pred - outputs).pow(2).mean()
-
-        if self.readout_calibration == "profile":
-            a, b = self.profile_calibration(y_pred, outputs)
-            self._last_calibration = (a.detach(), b.detach())
-            y_pred = y_pred * a[None, None, :] + b[None, None, :]
-
-        resid = y_pred - outputs
-
-        if not self.loss_normalise:
-            loss_shape = mse_raw
-        else:
-            loss_shape = (resid.pow(2) * w_pop).mean()
-
-        if self.loss_derivative_weight > 0:
-            dy = y_pred[:, 1:] - y_pred[:, :-1]
-            dt_ = outputs[:, 1:] - outputs[:, :-1]
-            dres = (dy - dt_).pow(2)
-            if self.loss_normalise:
-                dres = dres * w_pop_d
-            loss_shape = loss_shape + self.loss_derivative_weight * dres.mean()
-
-        return loss_shape, mse_raw, y_pred
-
-    @staticmethod
-    @torch.no_grad()
-    def per_population_r2(y_pred, outputs):
-        """R^2 per population, pooled over trials and time."""
-        yp = y_pred.reshape(-1, y_pred.shape[-1])
-        yt = outputs.reshape(-1, outputs.shape[-1])
-        ss_res = (yp - yt).pow(2).sum(dim=0)
-        ss_tot = (yt - yt.mean(dim=0, keepdim=True)).pow(2).sum(dim=0)
-        return (1.0 - ss_res / (ss_tot + 1e-12)).cpu().numpy()
-
-    # ==================================================================
     # training
     # ==================================================================
     def fit(self, train_list, x0=None, n_epochs=1000, verbose=True,
             downsample_target_list=None,
-            antagonism_start=None,
-            lr_schedule="plateau", lr_factor=0.5, lr_patience=150, lr_min=1e-5,
-            early_stopping_patience=300, early_stopping_min_delta=0.0,
-            restore_best=True, project_gain=True,
-            pop_labels=("LiMI", "LcMI", "LMON", "LsMI", "RiMI", "RcMI", "RMON", "RsMI")):
+            stage_boundaries=None,
+            lr_schedule=None, lr_factor=0.5, lr_patience=150, lr_min=1e-5,
+            early_stopping_patience=100, early_stopping_min_delta=0.0,
+            restore_best=True):
         """
-        Full-batch BPTT.
+        Full-batch BPTT with a staged regulariser curriculum.
 
-        The regulariser curriculum is much shorter than before, because the
-        spectral term is now a *ceiling* rather than a shrinker: it is on from
-        epoch 0 (one-sided, so it charges nothing until the slowest mode
-        approaches `tau_eff_max`) and the only staged term is the hemispheric
-        antagonism, which starts at `antagonism_start` (default: a third of the
-        run). The early gain hold, if enabled, occupies the first
-        `hold_gain_epochs` epochs.
+        Stage 1: spectral penalty at 10% strength, no antagonism.
+        Stage 2: full spectral penalty, no antagonism.
+        Stage 3: full spectral penalty plus antagonism.
+
+        Stage lengths
+        -------------
+        By default the boundaries are `stage1_frac`/`stage2_frac` of n_epochs,
+        which means changing n_epochs also changes the curriculum. Pass
+        `stage_boundaries=(e1, e2)` to pin them in absolute epochs -- e.g.
+        (600, 1200) puts the antagonism penalty in play from epoch 1200 no
+        matter how long the run turns out to be.
+
+        Stopping early
+        --------------
+        `lr_schedule="plateau"` halves the learning rate whenever the MSE stops
+        improving, and `early_stopping_patience` ends the run once it stops
+        improving at all. Early stopping is only armed after stage 3 begins, so
+        it cannot truncate the curriculum, and with `restore_best` the best
+        weights seen are reloaded before returning. Together these let you keep
+        n_epochs as a generous ceiling instead of a guess.
         """
         device = next(self.parameters()).device
         N = len(train_list)
 
-        if antagonism_start is None:
-            antagonism_start = int(0.33 * n_epochs)
+        # ---- stage schedule -------------------------------------------------
+        if stage_boundaries is not None:
+            stage1_epochs, stage3_start = int(stage_boundaries[0]), int(stage_boundaries[1])
+        else:
+            stage1_epochs = int(self.stage1_frac * n_epochs)
+            stage2_epochs = int(self.stage2_frac * n_epochs)
+            stage3_start = stage1_epochs + stage2_epochs
 
-        inputs = torch.stack([torch.as_tensor(np.asarray(t.input_signal), dtype=torch.float32)
-                              for t in train_list]).to(device)
-        outputs = torch.stack([torch.as_tensor(np.asarray(t.output_signal), dtype=torch.float32)
-                               for t in train_list]).to(device)
+        # ---- stack the dataset once -----------------------------------------
+        inputs = [torch.as_tensor(np.asarray(t.input_signal), dtype=torch.float32) for t in train_list]
+        outputs = [torch.as_tensor(np.asarray(t.output_signal), dtype=torch.float32) for t in train_list]
+        inputs = torch.stack(inputs).to(device)    # (N, T, input_dim or n_units)
+        outputs = torch.stack(outputs).to(device)  # (N, T_ds, 8)
 
         stim_side = self._infer_stim_side(train_list, device=device)
 
@@ -1037,35 +811,26 @@ class RNNConnectome(nn.Module):
         if x0 is None:
             x0_list = []
             for t in train_list:
-                iv = getattr(t, "initial_value", None)
-                if iv is None:
+                if getattr(t, "initial_value", None) is None:
                     x0_list.append(torch.zeros(self.n_units, device=device))
                 else:
-                    v = torch.as_tensor(np.asarray(iv), dtype=torch.float32, device=device)
-                    if not torch.isfinite(v).all():
-                        # inv_softplus of ~0 is -inf; keep it finite.
-                        v = torch.nan_to_num(v, nan=-10.0, neginf=-10.0, posinf=10.0)
-                    x0_list.append(v)
+                    x0_list.append(torch.as_tensor(np.asarray(t.initial_value),
+                                                   dtype=torch.float32, device=device))
             x0 = torch.stack(x0_list).to(device)
         elif not torch.is_tensor(x0):
             x0 = torch.tensor(x0, dtype=torch.float32, device=device)
-        if x0.ndim == 1:
+        if x0.ndim == 0:
+            x0 = x0.unsqueeze(0).repeat(N, self.n_units)
+        elif x0.ndim == 1:
             x0 = x0.unsqueeze(0).repeat(N, 1)
         x0 = x0.to(device)
-        assert x0.shape == (N, self.n_units), \
-            f"x0 is {tuple(x0.shape)} but should be ({N}, {self.n_units})."
+        assert x0.shape == (N, self.n_units), (
+            f"x0 is {tuple(x0.shape)} but should be ({N}, {self.n_units}).")
 
         if self.verbose_every is None:
-            self.verbose_every = max(1, n_epochs // 50)
+            self.verbose_every = 50
 
-        # ---- loss weights (fixed for the run) -------------------------------
-        w_pop = self._population_weights(outputs).to(device)
-        d_out = outputs[:, 1:] - outputs[:, :-1]
-        w_pop_d = self._population_weights(d_out).to(device)
-        if verbose:
-            print("[fit] population weights 1/var: " +
-                  " ".join(f"{lab} {v:.2f}" for lab, v in zip(pop_labels, w_pop.tolist())))
-
+        # ---- optional LR schedule -------------------------------------------
         scheduler = None
         if lr_schedule == "plateau":
             scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -1077,252 +842,105 @@ class RNNConnectome(nn.Module):
         elif lr_schedule is not None:
             raise ValueError(f"Unknown lr_schedule: {lr_schedule}")
 
-        best_metric = float("inf")
+        best_mse = float("inf")
         best_state = None
         epochs_without_improvement = 0
-        n_projections = 0
-        n_nonfinite = 0
 
         for epoch in range(n_epochs):
-            self.effective_slow_antagonism_penalty_strength = (
-                self.slow_antagonism_penalty_strength if epoch >= antagonism_start else 0.0)
+            # ---- regulariser schedule ---------------------------------------
+            if epoch < stage1_epochs:
+                self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength * 0.1
+                self.effective_slow_antagonism_penalty_strength = 0.0
+                stage = 1
+            elif epoch < stage3_start:
+                self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength
+                self.effective_slow_antagonism_penalty_strength = 0.0
+                stage = 2
+            else:
+                self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength
+                self.effective_slow_antagonism_penalty_strength = self.slow_antagonism_penalty_strength
+                stage = 3
 
             self.optimizer.zero_grad(set_to_none=True)
 
-            x_pred, y_pred_full = self.forward(x0, inputs, filter_xs=False)
+            # filter_xs=False: skip the GCaMP convolution over n_units channels.
+            # The antagonism penalty below filters its 2 projections instead,
+            # which is the same computation by commutativity of the two linear
+            # operations, and is where most of the per-epoch saving comes from.
+            x_pred, y_pred = self.forward(x0, inputs, filter_xs=False)
 
-            if not torch.isfinite(x_pred).all():
-                # Recover rather than spending the rest of the run on NaN.
-                n_nonfinite += 1
-                if verbose:
-                    print(f"[{epoch:5d}] non-finite trajectory; restoring the best "
-                          f"state, projecting the gain and halving the lr.")
-                if best_state is not None:
-                    self.load_state_dict(best_state)
-                else:
-                    with torch.no_grad():
-                        self._rescale_to_gain(0.8 * self.gain_target,
-                                              d_scalar=self.init_d_ref, quiet=True)
-                for g in self.optimizer.param_groups:
-                    g["lr"] = max(g["lr"] * 0.5, 1e-6)
-                self.optimizer.state = type(self.optimizer.state)()
-                if n_nonfinite > 10:
-                    print("Aborting: 10 non-finite trajectories. Lower lr or "
-                          "init_rho_target.")
-                    break
-                continue
+            if downsample_target_list is not None:
+                y_pred = self.downsample_signal(y_pred, downsample_target_list)
 
-            y_pred = (self.downsample_signal(y_pred_full, downsample_target_list)
-                      if downsample_target_list is not None else y_pred_full)
+            mse = (y_pred - outputs).pow(2).mean()
+            loss = mse
+            loss = loss + self.fast_spectral_radius_penalty()
+            loss = loss + self.stimulus_gated_slow_antagonism_penalty(
+                x_pred, stim_side, x_is_filtered=False)
 
-            loss_shape, mse_raw, y_cal = self.compute_loss_terms(
-                y_pred, outputs, w_pop, w_pop_d)
-            loss = loss_shape
-
-            # Operating point from this epoch's own trajectory: the gain that
-            # matters is the one at the h the network actually visits, not the
-            # one at h = 0.
-            D_now = self.operating_point_slope(x_pred.detach().mean(dim=(0, 1)))
-            spec_pen, mu_abs, gain, imag_frac = self.spectral_penalty(D=D_now, epoch=epoch)
-            loss = loss + spec_pen
-
-            ant = self.stimulus_gated_antagonism_penalty(x_pred, stim_side, x_is_filtered=False)
-            loss = loss + ant
-
-            self.loss = float(loss.item())
-            self.loss_mse = float(loss_shape.item())
-            self.loss_mse_raw = float(mse_raw.item())
+            self.loss_mse = mse.item()
+            self.loss = loss.item()
             self.loss_reg = self.loss - self.loss_mse
 
             lr_now = self.optimizer.param_groups[0]["lr"]
             self.history["loss"].append(self.loss)
             self.history["mse"].append(self.loss_mse)
-            self.history["mse_raw"].append(self.loss_mse_raw)
             self.history["reg"].append(self.loss_reg)
             self.history["lr"].append(lr_now)
-            self.history["gain"].append(gain)
-            self.history["tau_eff"].append(self._tau_eff(mu_abs))
-            self.history["imag_frac"].append(imag_frac)
 
-            if verbose and (epoch % self.verbose_every == 0
-                            or epoch in (self.hold_gain_epochs, antagonism_start)):
-                r2 = self.per_population_r2(y_cal, outputs)
-                te = self._tau_eff(mu_abs)
-                kind = "re" if (imag_frac == imag_frac and imag_frac < 0.1) else "im"
-                band = ("lo" if (self.gain_floor is not None and gain < self.gain_floor - 1e-4)
-                        else "hi" if gain > self.gain_target + 1e-4 else "in")
-                print(f"[{epoch:5d}] loss {self.loss:.5e} | shape {self.loss_mse:.5e} | "
-                      f"mse_uncal {self.loss_mse_raw:.3e} | reg {self.loss_reg:.2e} | "
-                      f"gain {gain:.4f}[{band}] tau_eff {te:7.2f}s ({kind}) | "
-                      f"lr {lr_now:.1e}")
-                print("        R2  " + "  ".join(f"{lab} {v:5.2f}"
-                                                 for lab, v in zip(pop_labels, r2)))
+            if verbose and (epoch % self.verbose_every == 0 or epoch in [stage1_epochs, stage3_start]):
+                with torch.no_grad():
+                    # Reported with the cheap estimator so that printing does
+                    # not cost a second 50-step power iteration.
+                    rho_fast = self.spectral_radius_differentiable(self.W_fast()).item()
+                    yL_mean = y_pred[..., :4].mean().item()
+                    yR_mean = y_pred[..., 4:].mean().item()
+                print(f"[Stage {stage}] Epoch {epoch:4d} | Loss {self.loss:.6e} | "
+                      f"MSE {self.loss_mse:.6e} | Reg {self.loss_reg:.6e} | "
+                      f"rho_fast {rho_fast:.3f} | <yL> {yL_mean:.3f} | <yR> {yR_mean:.3f} | "
+                      f"lr {lr_now:.2e}")
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.trainable_parameters(), max_norm=1.0)
             self.optimizer.step()
 
-            # Project back inside the feasible gain band, using the peak operating
-            # point of the trial just simulated for the ceiling and the mean for
-            # the floor.
-            if project_gain:
-                D_peak = self.operating_point_slope(x_pred.detach().amax(dim=(0, 1)))
-                _, acted = self.project_gain(D_peak, D_mean=D_now)
-                n_projections += int(acted)
-
             if scheduler is not None:
-                scheduler.step(self.loss_mse) if lr_schedule == "plateau" else scheduler.step()
+                if lr_schedule == "plateau":
+                    scheduler.step(self.loss_mse)
+                else:
+                    scheduler.step()
 
-            # Model selection on the shape loss, not the pooled MSE: the pooled
-            # MSE is minimised by matching the mean level of every population.
-            metric = self.loss_mse
-            if not np.isfinite(metric):
-                epochs_without_improvement += 1
-            elif metric < best_metric - early_stopping_min_delta:
-                best_metric = metric
+            # ---- best-so-far tracking and early stopping --------------------
+            if self.loss_mse < best_mse - early_stopping_min_delta:
+                best_mse = self.loss_mse
                 epochs_without_improvement = 0
-                if restore_best:
-                    best_state = {k: (v.detach().clone() if torch.is_tensor(v) else copy.deepcopy(v))
+                if restore_best and early_stopping_patience is not None:
+                    # A plain clone of the (already detached) state_dict tensors
+                    # is the same snapshot as copy.deepcopy without going
+                    # through the pickle machinery, which for an n x n W plus
+                    # the mask buffers ran on most epochs of the run.
+                    best_state = {k: v.detach().clone() if torch.is_tensor(v) else copy.deepcopy(v)
                                   for k, v in self.state_dict().items()}
             else:
                 epochs_without_improvement += 1
 
-            past_curriculum = epoch >= max(antagonism_start, self.hold_gain_epochs)
-            if (early_stopping_patience is not None and past_curriculum
+            # Only armed in stage 3, so stopping can never cut the curriculum
+            # short before the antagonism penalty has had its say.
+            if (early_stopping_patience is not None
+                    and stage == 3
                     and epochs_without_improvement >= early_stopping_patience):
                 if verbose:
-                    print(f"Early stopping at epoch {epoch}: no improvement for "
-                          f"{epochs_without_improvement} epochs (best {best_metric:.6e}).")
+                    print(f"Early stopping at epoch {epoch}: no MSE improvement "
+                          f"for {epochs_without_improvement} epochs "
+                          f"(best MSE {best_mse:.6e}).")
                 break
 
         if restore_best and best_state is not None:
             self.load_state_dict(best_state)
-            self.loss_mse = best_metric
+            self.loss_mse = best_mse
 
-        if verbose:
-            print(f"\n[fit] gain projections: {n_projections} epochs | "
-                  f"non-finite recoveries: {n_nonfinite}")
-            self.report(train_list, x0=x0, downsample_target_list=downsample_target_list,
-                        pop_labels=pop_labels)
-
+        # Trajectories are large and are regenerated on demand; dropping them
+        # keeps them out of the checkpoint written by extract_custom_attrs.
         self.clear_state()
+
         return self.W()
-
-    # ==================================================================
-    # reporting
-    # ==================================================================
-    @torch.no_grad()
-    def report(self, train_list, x0=None, downsample_target_list=None,
-               pop_labels=("LiMI", "LcMI", "LMON", "LsMI", "RiMI", "RcMI", "RMON", "RsMI"),
-               n_modes=6):
-        """
-        Post-fit diagnosis: the spectrum the fit actually reached, and how the
-        slow modes project onto each population.
-
-        This is the table that says whether the connectome produced distinct
-        timescales or one fused mode: if every population's slowest strongly
-        overlapping mode has the same `tau`, the readouts can only differ in
-        amplitude.
-        """
-        device = next(self.parameters()).device
-        inputs = torch.stack([torch.as_tensor(np.asarray(t.input_signal), dtype=torch.float32)
-                              for t in train_list]).to(device)
-        outputs = torch.stack([torch.as_tensor(np.asarray(t.output_signal), dtype=torch.float32)
-                               for t in train_list]).to(device)
-        if x0 is None:
-            x0 = torch.zeros(len(train_list), self.n_units, device=device)
-
-        _, y_full = self.forward(x0, inputs, filter_xs=False)
-        y_pred = (self.downsample_signal(y_full, downsample_target_list)
-                  if downsample_target_list is not None else y_full)
-        with torch.enable_grad():
-            _, _, y_cal = self.compute_loss_terms(
-                y_pred, outputs, self._population_weights(outputs).to(device),
-                self._population_weights(outputs[:, 1:] - outputs[:, :-1]).to(device))
-        y_cal = y_cal.detach()
-        r2 = self.per_population_r2(y_cal, outputs)
-
-        J = self.effective_jacobian()
-        lam = torch.linalg.eigvals(J)
-        order = torch.argsort(lam.abs(), descending=True)
-        lam_s = lam[order]
-        _, V = torch.linalg.eig(J)
-        V = V[:, order]
-
-        print("\n=== RNNConnectomeV2 report ===")
-        print("per-population R^2: " + "  ".join(f"{lab} {v:5.2f}"
-                                                 for lab, v in zip(pop_labels, r2)))
-        print(f"recurrent gain rho(D W_fast) = {self.recurrent_gain():.4f}  "
-              f"(band [{'none' if self.gain_floor is None else format(self.gain_floor, '.4f')}, "
-              f"{self.gain_target:.4f}])")
-        if self.readout_calibration == "profile":
-            a, b = self._last_calibration
-        elif self.readout_calibration == "learn":
-            a, b = torch.exp(self.log_readout_gain).detach(), self.readout_offset.detach()
-        else:
-            a = b = None
-        if a is not None:
-            a, b = a.cpu().numpy(), b.cpu().numpy()
-            print(f"indicator calibration ({self.readout_calibration})  " +
-                  "  ".join(f"{l} x{ai:.2f}{bi:+.2f}"
-                            for l, ai, bi in zip(pop_labels, a, b)))
-        print(f"\nslowest {n_modes} Jacobian modes:")
-        print(f"  {'|mu|':>8} {'tau (s)':>9} {'kind':>5} | " +
-              " ".join(f"{lab:>6}" for lab in pop_labels))
-        for i in range(min(n_modes, lam_s.shape[0])):
-            mu = lam_s[i]
-            te = self._tau_eff(float(mu.abs().item()))
-            kind = "re" if abs(float(mu.imag.item())) / (float(mu.abs().item()) + 1e-12) < 0.1 else "im"
-            v = V[:, i]
-            v = v / (v.abs().norm() + 1e-12)
-            # |overlap| of each population's readout with this mode
-            ov = (self.readout_W.T.to(v.dtype) @ v).abs()
-            ov = ov / (ov.max() + 1e-12)
-            print(f"  {float(mu.abs().item()):8.5f} {te:9.2f} {kind:>5} | " +
-                  " ".join(f"{float(o):6.2f}" for o in ov))
-        print("  (overlap normalised per row; a population whose slow-mode overlaps are all "
-              "small\n   cannot integrate, and populations sharing one mode share its timescale.)")
-        return {"r2": r2, "eigvals": lam_s.cpu().numpy()}
-
-    # ==================================================================
-    # init helper
-    # ==================================================================
-    @torch.no_grad()
-    def _rescale_to_gain(self, target, d_scalar=None, D=None, lo=1e-4, hi=1e4,
-                         iters=60, quiet=False):
-        """
-        Bisect a scalar on `W_raw` so that `rho(D W_fast) == target` at init.
-
-        `W_fast` is monotone in this scalar (magnitudes are `clamp_min + c|W_raw|`),
-        so bisection is exact and costs ~60 eigvals of a 174x174 matrix.
-        """
-        param = self.W_vals if self.pack_parameters else self.W_raw
-        base = param.detach().clone()
-
-        if d_scalar is None and D is None:
-            d_scalar = self.d0
-
-        def gain_at(c):
-            param.copy_(base * c)
-            return self.recurrent_gain(d_scalar=d_scalar, D=D)
-
-        if gain_at(lo) > target:
-            # The clamp_weights_min floor alone already exceeds the target.
-            if not quiet:
-                print(f"WARNING | the magnitude floor alone gives gain "
-                      f"{gain_at(lo):.4f} > {target}. Lower clamp_weights_min.")
-            param.copy_(base * lo)
-            return
-        g_hi = gain_at(hi)
-        if g_hi < target:
-            if not quiet:
-                print(f"WARNING | cannot reach gain {target}: even c={hi} gives "
-                      f"{g_hi:.4f}. Left at c={hi}. Check mask_W for excitatory loops.")
-            return
-        for _ in range(iters):
-            mid = np.sqrt(lo * hi)
-            if gain_at(mid) < target:
-                lo = mid
-            else:
-                hi = mid
-        param.copy_(base * np.sqrt(lo * hi))
