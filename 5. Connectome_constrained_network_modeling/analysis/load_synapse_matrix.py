@@ -65,7 +65,7 @@ def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=Tr
     else:
         return df
 
-def load_synapse_matrix(csv_path, drop_non_functionally_identified=True):
+def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, is_W_csv_datavis_ready_transposed=True):
     # First column becomes the index automatically because it has no header
     # name aligned with a real column count (typical "presynaptic" style CSV).
     df = pd.read_csv(csv_path, index_col=0)
@@ -87,6 +87,9 @@ def load_synapse_matrix(csv_path, drop_non_functionally_identified=True):
 
     # Numpy array copy of the cleaned matrix
     matrix = df_clean.to_numpy(dtype=float).copy()
+
+    if not is_W_csv_datavis_ready_transposed:
+        matrix = matrix.T
 
     # Index -> original neuron id mapping (and the reverse)
     idx_to_id = {i: label for i, label in enumerate(df_clean.index)}
@@ -150,14 +153,16 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
 
     return W, dict_neurons
 
-def get_W(path_W_csv, do_symmetry_transform=False):
-    W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv)
+def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True):
+    W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv,
+                                                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed)
     W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
     if np.sum(U) == 0:
         U = np.ones_like(U)
     U_norm = U / np.sum(U)
+
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
                     "W_mask": np.sign(W),

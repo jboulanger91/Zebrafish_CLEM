@@ -29,9 +29,10 @@ if __name__ == '__main__':
     duration_stimulus = 40
     duration_rest_end = 20
     n_input_signal = 2
-    tau_neuron = 0.1
+    tau_neuron = 0.2
 
     # Training
+    is_W_csv_datavis_ready_transposed = False
     do_symmetry_transform = False
     n_epochs = 5001
     seed = 0
@@ -64,7 +65,8 @@ if __name__ == '__main__':
         rnn = rnn_load
     else:
         path_W_csv = Path(env["PATH_W_CSV"])
-        W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=do_symmetry_transform)
+        W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=do_symmetry_transform,
+                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed)
 
         n_units_LiMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["iMI"]["n_neurons"]
         n_units_LcMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["cMI"]["n_neurons"]
