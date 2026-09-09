@@ -112,21 +112,14 @@ class RNNConnectome(nn.Module):
             clamp_weights_max=None,
             stage1_frac=0.3,
             stage2_frac=0.3,
-            verbose_every=None,             # if None -> default to 50 prints per run
+            verbose_every=None,  # if None -> default to 50 prints per run
             n_slow_pops=8,
-            slow_populations=None,          # explicit list; None -> range(n_slow_pops)
-            modes_per_population=1,         # rank of the PopulationSlow contribution to W
-            gamma_init=0.50,                # see PopulationSlow
-            init_gain_target=0.90,          # rho(D W_fast) pinned here at init
-            init_d_ref=1.0,                 # activation slope the pin uses
-            rho_min=0.98,                   # floor on rho(W); None = one-sided
-            readout_calibration=True,       # profile out the dF/F gain+offset
             # ---- performance / training-control options
-            pack_parameters=False,          # fit only the anatomically allowed entries
-            clamp_soft=True,                # magnitude floor with a live gradient
-            power_iters=10,                 # power steps per epoch, warm-started
-            precompute_input_drive=True,    # hoist inputs*U out of the time loop
-            checkpoint_chunk=None,          # e.g. 500 -> gradient checkpointing
+            pack_parameters=False,   # fit only the anatomically allowed entries
+            clamp_soft=True,        # magnitude floor with a live gradient
+            power_iters=10,          # power steps per epoch, warm-started
+            precompute_input_drive=True,   # hoist inputs*U out of the time loop
+            checkpoint_chunk=None,   # e.g. 500 -> gradient checkpointing
     ):
         super().__init__()
 
@@ -151,8 +144,6 @@ class RNNConnectome(nn.Module):
         self.clamp_weights_min = clamp_weights_min
         self.clamp_weights_max = clamp_weights_max
         self.clamp_soft = bool(clamp_soft)
-        self.rho_min = None if rho_min is None else float(rho_min)
-        self.readout_calibration = bool(readout_calibration)
 
         # ---- sizes ----------------------------------------------------------
         # idx_side_change is the first index belonging to the right hemisphere,
@@ -229,15 +220,7 @@ class RNNConnectome(nn.Module):
         # interchangeable at init and the optimiser can commit to a basin.
         W_raw[:self.n_units_hemi] *= 0.95
         W_raw[self.n_units_hemi:] *= 1.05
-        # Scale each row by its own in-degree.
-        # What carries the slow real mode of an E/I network is the row-sum
-        # (mean) mode, whose eigenvalue goes like <w> * (f_E - f_I) * k with
-        # k the mean in-degree -- a *sum* over afferents.
-        # WIth 174 neurons, t 1.6-2% density k is ~3, not 174, so dense scaling
-        # starts rho(W) roughly sqrt(174/3) ~ 8x too small, deep in the leaky
-        # regime where BPTT also has no gradient for long timescales.
-        in_degree = self.mask_W_support.sum(dim=1).clamp(min=1.0)
-        W_raw = W_raw / torch.sqrt(in_degree)[:, None]
+        W_raw = W_raw / np.sqrt(self.n_units)
 
         if self.pack_parameters:
             # Only the anatomically allowed entries are fitted. The dense matrix
@@ -331,28 +314,14 @@ class RNNConnectome(nn.Module):
         # Slow population modes
         # =====================================================================
         # slow_pops selects which of the 8 populations get a slow component;
-        # np.arange(8) means all of them. It takes the unsigned support plus an
-        # explicit per-neuron Dale sign vector, and applies the sign exactly once.
-        # `slow_populations` is a list so inhibitory or empty-block populations
-        # can be excluded (the module prints which ones those are).
-        col_sign = torch.sign(self.mask_W.sum(dim=0))
-        mixed = ((self.mask_W > 0).any(dim=0) & (self.mask_W < 0).any(dim=0))
-        if bool(mixed.any()):
-            print(f"WARNING | {int(mixed.sum())} presynaptic neurons have BOTH "
-                  f"excitatory and inhibitory outgoing entries in mask_W. Dale's "
-                  f"law is violated in the mask; the column-sum sign was used.")
-        col_sign = torch.where(col_sign == 0, torch.ones_like(col_sign), col_sign)
-        self.register_buffer("dale_sign", col_sign, persistent=False)
-
-        if slow_populations is None:
-            slow_populations = list(range(int(n_slow_pops)))
+        # np.arange(8) means all of them.
+        slow_pops = np.arange(n_slow_pops)
         self.W_slow_module = PopulationSlow(
             population_indices=self.population_indices,
-            support=self.mask_W_support,
-            slow_populations=slow_populations,
-            signs=self.dale_sign,
-            modes_per_population=modes_per_population,
-            gamma_init=gamma_init,
+            mask=self.mask_W,
+            slow_populations=slow_pops,
+            modes_per_population=2,
+            gamma_init=0.995
         )
 
         # =====================================================================
@@ -368,8 +337,9 @@ class RNNConnectome(nn.Module):
         self.effective_slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
 
         # Warm-start vector for the power iteration. Persisting it across epochs
-        # as consecutive epochs change W only slightly, so the previous dominant
-        # eigenvector is an excellent starting guess.
+        # is what lets `power_iters` be ~10 instead of ~50: consecutive epochs
+        # change W only slightly, so the previous dominant eigenvector is an
+        # excellent starting guess.
         v0 = torch.randn(self.n_units)
         self.register_buffer("v_power", v0 / v0.norm(), persistent=False)
 
@@ -381,52 +351,7 @@ class RNNConnectome(nn.Module):
         self.ys = None
         self.xs_is_filtered = None  # tells callers what self.xs currently holds
 
-        # FIX 2b: with in-degree scaling the init is well-conditioned but its
-        # absolute gain still depends on the mask. Bisect one scalar D so that
-        # rho(D W_fast) equals `init_gain_target` exactly, measured at
-        # `init_d_ref` (default 1.0 = softplus' MAXIMUM slope).
-        self.init_gain_target = float(init_gain_target)
-        self.init_d_ref = float(init_d_ref)
-        # NB the target is on the FULL W (fast + slow blocks), because that is
-        # what sets stability and the slowest timescale. Pinning W_fast alone
-        # and letting the slow blocks add on top gave rho(D W) = 1.73 at
-        # gamma_init = 0.995 -- unstable before the first epoch.
-        gain_before = self.recurrent_gain(W=self.W(), d_scalar=self.init_d_ref)
-        self._rescale_to_gain(self.init_gain_target, d_scalar=self.init_d_ref,
-                              use_full_W=True)
-        gain_after = self.recurrent_gain(W=self.W(), d_scalar=self.init_d_ref)
-
         self.optimizer = optim.Adam(self.trainable_parameters(), lr=lr, weight_decay=weight_decay)
-
-        print(f"[RNNConnectome] init | n_units {self.n_units} | synapses "
-              f"{self.n_synapses} ({100.0 * self.n_synapses / self.n_units ** 2:.2f}%) "
-              f"| mean in-degree {float(self.mask_W_support.sum(1).mean()):.2f}")
-        print(f"  tau {dt / self.alpha:.3f} s | dt {self.dt} s | "
-              f"beta {float(np.exp(-self.alpha)):.4f}")
-        tau_s = dt / self.alpha
-        print(f"  rho(D W) at f'={self.init_d_ref:.2f} (fast + slow): "
-              f"{gain_before:.4f} -> {gain_after:.4f} (target "
-              f"{self.init_gain_target})  => tau_eff "
-              f"{tau_s / max(1e-9, 1 - gain_after):.2f} s")
-        print(f"  of which W_fast alone: "
-              f"{self.recurrent_gain(d_scalar=self.init_d_ref):.4f}; "
-              f"slow blocks alone: "
-              f"{self.recurrent_gain(W=self.W_slow_module(), d_scalar=self.init_d_ref):.4f}")
-        gmin, gmax = self.W_slow_module.gamma_min, self.W_slow_module.gamma_max
-        dead = [p for p, st in zip(self.W_slow_module.slow_populations,
-                                   self.W_slow_module.pop_status) if st != "ok"]
-        print(f"  gamma band [{gmin}, {gmax}]; gamma is trainable now")
-        if dead:
-            print(f"  populations {dead} have an empty or acyclic diagonal block, so "
-                  f"their gamma\n    has exactly zero gradient and will never move. "
-                  f"Harmless, but it means the\n    slow-mode mechanism is "
-                  f"unavailable for them at this density.")
-        rho_pen = float(self.spectral_radius_differentiable(self.W_fast()).item())
-        ceiling = self.rho_target_fast + 0.05
-        warn = ("  <-- ALREADY ABOVE: the penalty will pull the init back down"
-                if rho_pen > ceiling else "")
-        print(f"  penalty sees rho(W_fast) = {rho_pen:.4f}; its ceiling is "
-              f"rho_target_fast + margin = {ceiling:.2f}{warn}")
 
     # ==================================================================
     # helpers
@@ -434,10 +359,7 @@ class RNNConnectome(nn.Module):
     def trainable_parameters(self):
         """The fitted tensors, whichever parameterisation is in use."""
         W_param = self.W_vals if self.pack_parameters else self.W_raw
-        params = [W_param, self.U_raw]
-        if self.W_slow_module is not None:
-            params.append(self.W_slow_module.eta)
-        return params
+        return [W_param, self.U_raw]
 
     def clear_state(self):
         """
@@ -497,7 +419,7 @@ class RNNConnectome(nn.Module):
         substituted in. The `has_W_fixed` short-circuit skips two full n x n
         elementwise operations per forward pass in the common case.
         """
-        _W = self.W_fast() + self.W_slow_module()
+        _W = self.W_fast() + self.W_slow_module(self.device) * self.mask_W
         if not self.has_W_fixed:
             return _W
         return _W * (1.0 - self.W_fixed_mask) + self.W_fixed * self.W_fixed_mask
@@ -505,139 +427,6 @@ class RNNConnectome(nn.Module):
     def U(self):
         """Input gains: non-negative magnitude x anatomical input mask."""
         return torch.abs(self.U_raw) * self.mask_U
-
-    # ==================================================================
-    # readout calibration (FIX 8)
-    # ==================================================================
-    def calibrate_readout(self, y_pred, outputs, eps=1e-8):
-        """
-        Per-population dF/F gain and offset, solved in closed form.
-
-        Without this the network has to hit dF/F of order 0.1-1 with its
-        own firing rates, which pins the operating rate near that scale -- and
-        for softplus the slope at rate x is D = 1 - e^-x, so with rho(W) <= 1
-        (the stability bound) the slowest achievable mode is
-
-            tau_eff <= tau / (1 - D) = tau * e^x
-
-        dF/F is not firing rate and the constant relating them is unknown per
-        cell type, so these are legitimate nuisance parameters. Being *linear*
-        they have a closed-form optimum, which is both exact and free -- fitting
-        them by gradient descent alongside the weights does not work (at a
-        shared learning rate they barely move). Solving them also makes the loss
-        exactly invariant to a positive per-population gain and an offset, i.e.
-        it scores shape rather than level.
-
-        Returns (calibrated prediction, (gain, offset)).
-        """
-        if not self.readout_calibration:
-            return y_pred, None
-        yp = y_pred.reshape(-1, y_pred.shape[-1])
-        yt = outputs.reshape(-1, outputs.shape[-1])
-        yp_m, yt_m = yp.mean(0, keepdim=True), yt.mean(0, keepdim=True)
-        cov = ((yp - yp_m) * (yt - yt_m)).mean(0)
-        var = ((yp - yp_m) ** 2).mean(0)
-        # floored just above zero: a population whose prediction is uncorrelated
-        # with its target would otherwise detach from the loss entirely
-        a = torch.clamp(cov / (var + eps), min=1e-3)
-        b = yt_m.squeeze(0) - a * yp_m.squeeze(0)
-        return y_pred * a[None, None, :] + b[None, None, :], (a, b)
-
-    @torch.no_grad()
-    def operating_rate(self, xs):
-        """Mean / p90 / peak firing rate, and the tau_eff each rate permits."""
-        x = xs.detach().reshape(-1)
-        tau = self.dt / self.alpha
-        out = {}
-        for lab, v in (("mean", x.mean()), ("p90", x.quantile(0.9)), ("peak", x.amax())):
-            xv = float(v)
-            out[lab] = (xv, 1.0 - float(np.exp(-xv)), tau * float(np.exp(xv)))
-        return out
-
-    @torch.no_grad()
-    def realised_tau_eff(self, xs):
-        """
-        The timescale the data actually see: `tau / (1 - rho(W diag(D)))` with
-        the true PER-NEURON D, not `rho(W) * D_mean`.
-        """
-        tau = self.dt / self.alpha
-        xbar = xs.detach().mean(dim=tuple(range(xs.dim() - 1)))
-        D = 1.0 - torch.exp(-xbar) if isinstance(self.f, nn.Softplus) else None
-        if D is None:                     # generic: slope by autograd
-            h = torch.zeros_like(xbar)
-            lo, hi = torch.full_like(xbar, -30.0), torch.full_like(xbar, 30.0)
-            for _ in range(60):
-                mid = 0.5 * (lo + hi)
-                below = self.f(mid) < xbar
-                lo, hi = torch.where(below, mid, lo), torch.where(below, hi, mid)
-            h = 0.5 * (lo + hi)
-            with torch.enable_grad():
-                hh = h.clone().requires_grad_(True)
-                D, = torch.autograd.grad(self.f(hh).sum(), hh)
-        M = self.W() * D[None, :]
-        if not torch.isfinite(M).all():
-            return float("nan"), float("nan")
-        rho_eff = float(torch.linalg.eigvals(M).abs().max())
-        return (tau / max(1e-9, 1.0 - rho_eff)) if rho_eff < 1 else float("inf"), rho_eff
-
-    # ==================================================================
-    # gain bookkeeping (used by the init rescale and for reporting)
-    # ==================================================================
-    @torch.no_grad()
-    def recurrent_gain(self, W=None, d_scalar=1.0):
-        """
-        Continuous recurrent gain `rho(D W)`, with `D = d_scalar * I`.
-
-        This is the quantity that sets the slowest timescale:
-        `tau_eff = tau / (1 - rho(D W))`. Reported rather than inferred, so a
-        run's timescale is never a mystery.
-        """
-        W = self.W_fast() if W is None else W
-        M = W * d_scalar
-        if not torch.isfinite(M).all():
-            return float("nan")
-        return float(torch.linalg.eigvals(M).abs().max().item())
-
-    @torch.no_grad()
-    def _rescale_to_gain(self, target, d_scalar=1.0, lo=1e-4, hi=1e4, iters=50,
-                         use_full_W=False):
-        """
-        Bisect one scalar on the fitted magnitudes so `rho(D W_fast) == target`.
-
-        `W_fast` is monotone in this scalar (magnitudes are
-        `clamp_min + c * |W_raw|`), so bisection is exact. ~50 eigvals of a
-        174x174 matrix, i.e. a few tens of ms, once.
-        """
-        param = self.W_vals if self.pack_parameters else self.W_raw
-        base = param.detach().clone()
-
-        def gain_at(c):
-            param.copy_(base * c)
-            W = self.W() if use_full_W else None
-            return self.recurrent_gain(W=W, d_scalar=d_scalar)
-
-        if gain_at(lo) > target:
-            floor_gain = gain_at(lo)
-            extra = ""
-            if use_full_W:
-                extra = (f" With c=0 the slow blocks alone give "
-                         f"{self.recurrent_gain(W=self.W_slow_module(), d_scalar=d_scalar):.4f}"
-                         f"; lower gamma_init / gamma_min, or shorten "
-                         f"slow_populations.")
-            print(f"WARNING | cannot reach gain {target} from below: even "
-                  f"c={lo:g} gives {floor_gain:.4f}.{extra}")
-            return
-        if gain_at(hi) < target:
-            print(f"WARNING | cannot reach gain {target}: even c={hi:g} gives "
-                  f"{gain_at(hi):.4f}. The mask may have no excitatory loops.")
-            return
-        for _ in range(iters):
-            mid = float(np.sqrt(lo * hi))
-            if gain_at(mid) < target:
-                lo = mid
-            else:
-                hi = mid
-        param.copy_(base * float(np.sqrt(lo * hi)))
 
     # ==================================================================
     # penalties
@@ -671,30 +460,8 @@ class RNNConnectome(nn.Module):
         eigenvalue this is the correct gradient of the spectral radius by the
         envelope theorem, but the graph holds one matvec instead of n_iter of
         them. Same trick PyTorch's own spectral_norm uses.
-
-        Power iteration is kept below as the fallback.
         """
         n_iter = self.power_iters if n_iter is None else n_iter
-
-        with torch.no_grad():
-            Wd = W.detach()
-            use_eig = bool(torch.isfinite(Wd).all())   # never hand inf/nan to LAPACK
-            if use_eig:
-                try:
-                    lam, V = torch.linalg.eig(Wd)
-                    k = int(torch.argmax(lam.abs()).item())
-                    Vinv = torch.linalg.inv(V)         # returns inf/nan silently
-                    uL, vR = Vinv[k, :], V[:, k]       # if V is near-defective
-                    use_eig = bool(torch.isfinite(uL).all() and torch.isfinite(vR).all())
-                except Exception:
-                    use_eig = False
-        if use_eig:
-            ur, ui, vr, vi = uL.real, uL.imag, vR.real, vR.imag
-            a = ur @ W @ vr - ui @ W @ vi
-            b = ur @ W @ vi + ui @ W @ vr
-            out = torch.sqrt(a * a + b * b + 1e-24)
-            if torch.isfinite(out):
-                return out
 
         with torch.no_grad():
             v = self.v_power
@@ -719,10 +486,8 @@ class RNNConnectome(nn.Module):
         if self.effective_fast_spectral_radius_penalty_strength == 0:
             return 0
 
-        rho = self.spectral_radius_differentiable(self.W())
-        penalty = torch.relu(rho - self.rho_target_fast - margin).pow(2)
-        if self.rho_min is not None:
-            penalty = penalty + torch.relu(self.rho_min - rho).pow(2)
+        rho_fast = self.spectral_radius_differentiable(self.W_fast())
+        penalty = torch.relu(rho_fast - self.rho_target_fast - margin).pow(2)
         return penalty * self.effective_fast_spectral_radius_penalty_strength
 
     def _antagonism_from_projections(self, proj_L, proj_R, stim_side):
@@ -746,11 +511,9 @@ class RNNConnectome(nn.Module):
         return self._antagonism_from_projections(proj_L, proj_R, stim_side)
 
     def slow_mode_directions(self):
-        """
-        Unit vectors summarising the left- and right-hemisphere slow modes.
-        """
-        v_L = self.readout_W[:, :4].sum(dim=1)
-        v_R = self.readout_W[:, 4:].sum(dim=1)
+        """Unit vectors summarising the left- and right-hemisphere slow modes."""
+        v_L = self.W_slow_module.v_slow[:4].sum(dim=0)
+        v_R = self.W_slow_module.v_slow[4:].sum(dim=0)
         v_L = v_L / (v_L.norm() + 1e-8)
         v_R = v_R / (v_R.norm() + 1e-8)
         return v_L, v_R
@@ -869,7 +632,7 @@ class RNNConnectome(nn.Module):
         U = self.U().to(device)  # (n_units, input_dim)
         W = self.W().to(device)  # (n_units, n_units), post-by-pre
 
-        Wt = W.T.contiguous()
+        Wt = W.contiguous()
 
         beta = torch.exp(torch.tensor(-self.alpha, device=device))
         one_minus_beta = 1.0 - beta
@@ -1127,16 +890,15 @@ class RNNConnectome(nn.Module):
 
             if verbose and (epoch % self.verbose_every == 0 or epoch in [stage1_epochs, stage3_start]):
                 with torch.no_grad():
-                    rho_w = self.recurrent_gain(W=self.W(), d_scalar=1.0)
-                    x_m, D_m, cap = self.operating_rate(x_pred)["mean"]
-                    te, rho_eff = self.realised_tau_eff(x_pred)
-                # rho(W) is the stability-relevant gain; x and D say where the
-                # network is sitting; tau_eff is what the data actually see, and
-                # `cap` = tau*e^x is the ceiling the operating point imposes.
-                print(f"[Stage {stage}] Epoch {epoch:4d} | Loss {self.loss:.4e} | "
-                        f"MSE {self.loss_mse:.4e} | Reg {self.loss_reg:.2e} | "
-                        f"rho(W) {rho_w:.4f} rho(WD) {rho_eff:.4f} | x {x_m:.2f} | "
-                        f"tau_eff {te:.2f}s | lr {lr_now:.1e}")
+                    # Reported with the cheap estimator so that printing does
+                    # not cost a second 50-step power iteration.
+                    rho_fast = self.spectral_radius_differentiable(self.W_fast()).item()
+                    yL_mean = y_pred[..., :4].mean().item()
+                    yR_mean = y_pred[..., 4:].mean().item()
+                print(f"[Stage {stage}] Epoch {epoch:4d} | Loss {self.loss:.6e} | "
+                      f"MSE {self.loss_mse:.6e} | Reg {self.loss_reg:.6e} | "
+                      f"rho_fast {rho_fast:.3f} | <yL> {yL_mean:.3f} | <yR> {yR_mean:.3f} | "
+                      f"lr {lr_now:.2e}")
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.trainable_parameters(), max_norm=1.0)
