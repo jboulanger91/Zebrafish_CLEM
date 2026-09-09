@@ -9,7 +9,7 @@ import pickle
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
 
-from model.core.RNNConnectome import RNNConnectome
+from model.core.RNNConnectomeTauPop import RNNConnectomeTauPop
 from analysis.load_synapse_matrix import get_W
 from utils.config import ConfigurationRNN
 from utils.services.ds_service import DSService
@@ -78,9 +78,10 @@ if __name__ == '__main__':
         n_units_RsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["n_neurons"]
         n_units = W_norm.shape[0]
 
-        rnn = RNNConnectome(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
-                            slow_populations=set(range(8))-{2, 6},            # exclude MON cells
-                            activation=activation, clamp_weights_min=1e-2)
+        rnn = RNNConnectomeTauPop(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
+                                  verbose_every=1,
+                                  slow_populations=set(range(8))-{2, 6},            # exclude MON cells
+                                  activation=activation, clamp_weights_min=1e-2)
 
     # Define input/output signals for training
     amplitude_input_signal_list = np.linspace(0.1, 1, n_input_signal)
