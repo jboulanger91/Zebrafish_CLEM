@@ -88,47 +88,47 @@ class PopulationSlow(nn.Module):
 
         # One normalised, masked, signed block per population, precomputed once.
         blocks = torch.zeros(P, N, N)
-        self.pop_rho = []  # spectral radius of the raw masked block
-        self.pop_status = []  # "ok" | "acyclic" | "empty" | "ok (loop with pop X)"
-        self.partner_pop = []  # None or int index of partnered population
-
-        # Symmetrized connectome to identify contralateral homologue or reciprocal pairs
-        n_all_pops = len(population_indices)
+        self.pop_rho = []          # spectral radius of the raw masked block
+        self.pop_status = []       # "ok" | "acyclic" | "empty"
 
         for k, p in enumerate(self.slow_populations):
-            idx_p = torch.as_tensor(population_indices[p], dtype=torch.long)
-            B = self._build_intra_block(idx_p, support, N, g)
-            rho = self._spectral_radius(B[idx_p][:, idx_p])
+            idx = torch.as_tensor(population_indices[p], dtype=torch.long)
+            B = torch.zeros(N, N)
 
-            n_syn = int(support[idx_p][:, idx_p].sum().item())
-            status = "ok"
-            partner = None
+            for _ in range(self.modes_per_population):
+                v = torch.zeros(N)
+                u = torch.zeros(N)
+                if self.modes_per_population == 1:
+                    pattern = torch.ones(len(idx))
+                else:
+                    pattern = torch.rand(len(idx), generator=g).float()
+                v[idx] = pattern
+                u[idx] = pattern
+                v = torch.abs(v)
+                v = v / (v.norm() + 1e-8)
+                u = torch.abs(u)
+                u = u / (u.norm() + 1e-8)
+                B = B + torch.outer(v, u)
 
+            # mask with the UNSIGNED support, then apply the Dale sign.
+            B = B * support
+            rho = self._spectral_radius(B[idx][:, idx])
+            self.pop_rho.append(float(rho))
+
+            n_syn = int(support[idx][:, idx].sum().item())
             if n_syn == 0:
                 status = "empty"
             elif rho < 1e-8:
                 status = "acyclic"
-
-            # Fallback to multi-population reciprocal loop if intra-population is degenerate
-            if status in ("empty", "acyclic"):
-                B_loop, rho_loop, partner_found = self._find_reciprocal_partner_loop(
-                    p, idx_p, support, n_all_pops, N, g
-                )
-                if partner_found is not None and rho_loop >= 1e-8:
-                    B = B_loop
-                    rho = rho_loop
-                    status = f"ok (loop with pop {partner_found})"
-                    partner = partner_found
-
-            self.pop_rho.append(float(rho))
+            else:
+                status = "ok"
             self.pop_status.append(status)
-            self.partner_pop.append(partner)
 
-            if "ok" in status and rho >= 1e-8:
-                # Normalise so that rho(block) == 1, ensuring rho(gamma_p * block) == gamma_p
+            if status == "ok":
+                # normalise so that rho(block) == 1 and therefore
+                # rho(gamma_p * block) == gamma_p, independent of density.
                 B = B / rho
-                # Apply Dale's sign column-wise (post-by-pre orientation: presynaptic column Dale sign)
-                B = B * self.signs[None, :]
+                B = B * self.signs[None, :]        # apply Dale sign
             else:
                 B = torch.zeros_like(B)
 
@@ -139,75 +139,7 @@ class PopulationSlow(nn.Module):
         if verbose:
             self._report()
 
-    def _build_intra_block(self, idx, support, N, g):
-        """Constructs low-rank outer products within a single population."""
-        B = torch.zeros(N, N)
-        if len(idx) == 0:
-            return B
-        for _ in range(self.modes_per_population):
-            v = torch.zeros(N)
-            u = torch.zeros(N)
-            if self.modes_per_population == 1:
-                pattern = torch.ones(len(idx))
-            else:
-                pattern = torch.rand(len(idx), generator=g).float()
-            v[idx] = pattern
-            u[idx] = pattern
-            v = v / (v.norm() + 1e-8)
-            u = u / (u.norm() + 1e-8)
-            B = B + torch.outer(v, u)
-        # Apply sparse connectome mask
-        return B * support
-
-    def _find_reciprocal_partner_loop(self, p, idx_p, support, n_all_pops, N, g):
-        """
-        Searches other populations for surviving reciprocal loops (p <-> q),
-        prioritizing contralateral homologues (e.g. p ^ 4 in standard 8-pop layout)
-        or populations with the densest bidirectional connectivity.
-        """
-        # Prioritize contralateral counterpart (if 8 populations: 0<->4, 1<->5, 2<->6, 3<->7)
-        candidates = []
-        if n_all_pops == 8:
-            homologue = (p + 4) % 8
-            candidates.append(homologue)
-        for other in range(n_all_pops):
-            if other != p and other not in candidates:
-                candidates.append(other)
-
-        for q in candidates:
-            idx_q = torch.as_tensor(self.population_indices[q], dtype=torch.long)
-            if len(idx_p) == 0 or len(idx_q) == 0:
-                continue
-
-            # Check if reciprocal synapses exist: p -> q and q -> p
-            syn_pq = support[idx_q][:, idx_p].sum().item()  # from p into q
-            syn_qp = support[idx_p][:, idx_q].sum().item()  # from q into p
-
-            if syn_pq > 0 and syn_qp > 0:
-                # Build low-rank loop block
-                B = torch.zeros(N, N)
-                vp = torch.zeros(N)
-                up = torch.zeros(N)
-                vq = torch.zeros(N)
-                uq = torch.zeros(N)
-
-                vp[idx_p] = 1.0 / np.sqrt(len(idx_p))
-                up[idx_p] = 1.0 / np.sqrt(len(idx_p))
-                vq[idx_q] = 1.0 / np.sqrt(len(idx_q))
-                uq[idx_q] = 1.0 / np.sqrt(len(idx_q))
-
-                # Off-diagonal bipartite coupling: p -> q and q -> p
-                B = B + torch.outer(vq, up)  # drive from p into q
-                B = B + torch.outer(vp, uq)  # drive from q into p
-
-                B = B * support
-                idx_both = torch.cat([idx_p, idx_q])
-                rho = self._spectral_radius(B[idx_both][:, idx_both])
-                if rho >= 1e-8:
-                    return B, rho, q
-
-        return torch.zeros(N, N), 0.0, None
-
+    # ------------------------------------------------------------------
     @staticmethod
     def _spectral_radius(A):
         if A.numel() == 0:
@@ -224,21 +156,20 @@ class PopulationSlow(nn.Module):
                         .sum().item())
             q = n_syn / max(1, len(idx) ** 2)
             sign = float(self.signs[idx[0]].item()) if len(idx) else 0.0
-            status = self.pop_status[k]
             note = ""
-            if status == "empty":
-                note = "  <-- EMPTY: no intra- or reciprocal multi-pop loop found"
-            elif status == "acyclic":
-                note = "  <-- ACYCLIC: no cycle found at this density"
-            elif "loop with pop" in status:
-                note = f"  <-- RESCUED: using multi-pop reciprocal loop ({status})"
+            if self.pop_status[k] == "empty":
+                note = "  <-- EMPTY diagonal block: gamma has NO effect for this population"
+            elif self.pop_status[k] == "acyclic":
+                note = "  <-- ACYCLIC block (rho=0): no self-sustaining mode at any weight"
             elif sign < 0:
                 note = ("  <-- INHIBITORY population: gamma gives a NEGATIVE eigenvalue, "
-                        "which shortens the timescale. Consider excluding it.")
+                        "which shortens\n                     the timescale. Consider "
+                        "excluding it from slow_populations.")
             print(f"  pop {p}: n={len(idx):3d}  intra-pop synapses={n_syn:4d} "
                   f"(q={q:.4f})  raw rho={self.pop_rho[k]:.4f}  "
                   f"sign={'E' if sign > 0 else 'I'}{note}")
 
+    # ------------------------------------------------------------------
     def gammas(self):
         s = torch.sigmoid(self.eta)
         return self.gamma_min + (self.gamma_max - self.gamma_min) * s
@@ -246,11 +177,16 @@ class PopulationSlow(nn.Module):
     def forward(self, device=None):
         """
         `sum_p gamma_p * normalised_signed_block_p`.
+
+        One einsum instead of a Python loop of outer products, and no `device`
+        argument is needed any more -- the buffers already live wherever the
+        module was moved. The argument is kept so the old call site still works.
         """
         gam = self.gammas()
         W_slow = torch.einsum("p,pij->ij", gam, self.blocks)
         return W_slow if device is None else W_slow.to(device)
 
+    # ------------------------------------------------------------------
     def population_gains(self):
         """`gamma_p` as a dict, plus the timescale it implies for a given tau."""
         return {int(p): float(g) for p, g in zip(self.slow_populations,
