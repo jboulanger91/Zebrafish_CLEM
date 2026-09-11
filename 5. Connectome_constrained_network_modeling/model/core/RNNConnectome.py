@@ -113,11 +113,12 @@ class RNNConnectome(nn.Module):
             stage1_frac=0.3,
             stage2_frac=0.3,
             verbose_every=None,             # if None -> default to 50 prints per run
+            verbose=False,
             n_slow_pops=8,
             slow_populations=None,          # explicit list; None -> range(n_slow_pops)
             modes_per_population=1,         # rank of the PopulationSlow contribution to W
             gamma_init=0.50,                # see PopulationSlow
-            init_gain_target=0.90,          # rho(D W_fast) pinned here at init
+            init_gain_target=1.05,          # rho(D W_fast) pinned close to stability at init
             init_d_ref=1.0,                 # activation slope the pin uses
             rho_min=0.98,                   # floor on rho(W); None = one-sided
             readout_calibration=True,       # profile out the dF/F gain+offset
@@ -353,6 +354,7 @@ class RNNConnectome(nn.Module):
             signs=self.dale_sign,
             modes_per_population=modes_per_population,
             gamma_init=gamma_init,
+            seed=seed
         )
 
         # =====================================================================
@@ -398,35 +400,36 @@ class RNNConnectome(nn.Module):
 
         self.optimizer = optim.Adam(self.trainable_parameters(), lr=lr, weight_decay=weight_decay)
 
-        print(f"[RNNConnectome] init | n_units {self.n_units} | synapses "
-              f"{self.n_synapses} ({100.0 * self.n_synapses / self.n_units ** 2:.2f}%) "
-              f"| mean in-degree {float(self.mask_W_support.sum(1).mean()):.2f}")
-        print(f"  tau {dt / self.alpha:.3f} s | dt {self.dt} s | "
-              f"beta {float(np.exp(-self.alpha)):.4f}")
-        tau_s = dt / self.alpha
-        print(f"  rho(D W) at f'={self.init_d_ref:.2f} (fast + slow): "
-              f"{gain_before:.4f} -> {gain_after:.4f} (target "
-              f"{self.init_gain_target})  => tau_eff "
-              f"{tau_s / max(1e-9, 1 - gain_after):.2f} s")
-        print(f"  of which W_fast alone: "
-              f"{self.recurrent_gain(d_scalar=self.init_d_ref):.4f}; "
-              f"slow blocks alone: "
-              f"{self.recurrent_gain(W=self.W_slow_module(), d_scalar=self.init_d_ref):.4f}")
-        gmin, gmax = self.W_slow_module.gamma_min, self.W_slow_module.gamma_max
-        dead = [p for p, st in zip(self.W_slow_module.slow_populations,
-                                   self.W_slow_module.pop_status) if st != "ok"]
-        print(f"  gamma band [{gmin}, {gmax}]; gamma is trainable now")
-        if dead:
-            print(f"  populations {dead} have an empty or acyclic diagonal block, so "
-                  f"their gamma\n    has exactly zero gradient and will never move. "
-                  f"Harmless, but it means the\n    slow-mode mechanism is "
-                  f"unavailable for them at this density.")
-        rho_pen = float(self.spectral_radius_differentiable(self.W_fast()).item())
-        ceiling = self.rho_target_fast + 0.05
-        warn = ("  <-- ALREADY ABOVE: the penalty will pull the init back down"
-                if rho_pen > ceiling else "")
-        print(f"  penalty sees rho(W_fast) = {rho_pen:.4f}; its ceiling is "
-              f"rho_target_fast + margin = {ceiling:.2f}{warn}")
+        if verbose:
+            print(f"[RNNConnectome] init | n_units {self.n_units} | synapses "
+                  f"{self.n_synapses} ({100.0 * self.n_synapses / self.n_units ** 2:.2f}%) "
+                  f"| mean in-degree {float(self.mask_W_support.sum(1).mean()):.2f}")
+            print(f"  tau {dt / self.alpha:.3f} s | dt {self.dt} s | "
+                  f"beta {float(np.exp(-self.alpha)):.4f}")
+            tau_s = dt / self.alpha
+            print(f"  rho(D W) at f'={self.init_d_ref:.2f} (fast + slow): "
+                  f"{gain_before:.4f} -> {gain_after:.4f} (target "
+                  f"{self.init_gain_target})  => tau_eff "
+                  f"{tau_s / max(1e-9, 1 - gain_after):.2f} s")
+            print(f"  of which W_fast alone: "
+                  f"{self.recurrent_gain(d_scalar=self.init_d_ref):.4f}; "
+                  f"slow blocks alone: "
+                  f"{self.recurrent_gain(W=self.W_slow_module(), d_scalar=self.init_d_ref):.4f}")
+            gmin, gmax = self.W_slow_module.gamma_min, self.W_slow_module.gamma_max
+            dead = [p for p, st in zip(self.W_slow_module.slow_populations,
+                                       self.W_slow_module.pop_status) if st != "ok"]
+            print(f"  gamma band [{gmin}, {gmax}]; gamma is trainable now")
+            if dead:
+                print(f"  populations {dead} have an empty or acyclic diagonal block, so "
+                      f"their gamma\n    has exactly zero gradient and will never move. "
+                      f"Harmless, but it means the\n    slow-mode mechanism is "
+                      f"unavailable for them at this density.")
+            rho_pen = float(self.spectral_radius_differentiable(self.W_fast()).item())
+            ceiling = self.rho_target_fast + 0.05
+            warn = ("  <-- ALREADY ABOVE: the penalty will pull the init back down"
+                    if rho_pen > ceiling else "")
+            print(f"  penalty sees rho(W_fast) = {rho_pen:.4f}; its ceiling is "
+                  f"rho_target_fast + margin = {ceiling:.2f}{warn}")
 
     # ==================================================================
     # helpers

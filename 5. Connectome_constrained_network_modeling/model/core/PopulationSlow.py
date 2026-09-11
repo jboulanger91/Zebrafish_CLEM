@@ -16,6 +16,13 @@ Two structural facts this cannot address:
   0.00 for original iMI (q=0.1125), 0.35 for augmented iMI (q=0.0230), 0.66 
   for augmented cMI (q=0.0123).
 
+Stochastic mode vectors for ANY modes_per_population (including modes_per_population=1):
+   - Rather than forcing an identical flat vector `torch.ones(...)` when
+     `modes_per_population=1`, mode vectors `u` and `v` are sampled randomly
+     from `torch.rand` (or using a dedicated Generator if `seed` is provided).
+   - This ensures distinct initial conditions across different random seeds
+     or runs, preventing initialization collapse across multiple model instances.
+
 A note on the interpretation around gamma paramgers:
 
 Despite naively the hard floor `gamma_min` is supposedly around 0.90 in 
@@ -51,8 +58,9 @@ class PopulationSlow(nn.Module):
         gamma_min=0.0,           # Final desired effective value is 0.900, but this allows for W_fast contribution (see note)
         gamma_max=0.9995,
         modes_per_population=1,
+        randomize_modes=True,    # if True, randomise mode vectors even for modes_per_population=1
         seed=None,
-        verbose=True,
+        verbose=False,
     ):
         super().__init__()
         self.population_indices = population_indices
@@ -60,6 +68,7 @@ class PopulationSlow(nn.Module):
         self.gamma_min = float(gamma_min)
         self.gamma_max = float(gamma_max)
         self.modes_per_population = int(modes_per_population)
+        self.randomize_modes = bool(randomize_modes)
 
         support = torch.as_tensor(np.asarray(support), dtype=torch.float32)
         support = (support != 0).to(torch.float32)
@@ -139,6 +148,15 @@ class PopulationSlow(nn.Module):
         if verbose:
             self._report()
 
+    def _sample_pattern(self, length, g=None):
+        """Samples positive mode weights across neurons in a population."""
+        if length == 0:
+            return torch.empty(0)
+        if not self.randomize_modes and self.modes_per_population == 1:
+            return torch.ones(length)
+        # Sample heterogeneous strictly positive participation weights
+        return 0.1 + 0.9 * torch.rand(length, generator=g).float()
+
     def _build_intra_block(self, idx, support, N, g):
         """Constructs low-rank outer products within a single population."""
         B = torch.zeros(N, N)
@@ -147,13 +165,13 @@ class PopulationSlow(nn.Module):
         for _ in range(self.modes_per_population):
             v = torch.zeros(N)
             u = torch.zeros(N)
-            if self.modes_per_population == 1:
-                pattern = torch.ones(len(idx))
-            else:
-                pattern = torch.rand(len(idx), generator=g).float()
-            v[idx] = pattern
-            u[idx] = pattern
+            pat_v = self._sample_pattern(len(idx), g)
+            pat_u = self._sample_pattern(len(idx), g)
+            v[idx] = pat_v
+            u[idx] = pat_u
+            v = torch.abs(v)
             v = v / (v.norm() + 1e-8)
+            u = torch.abs(u)
             u = u / (u.norm() + 1e-8)
             B = B + torch.outer(v, u)
         # Apply sparse connectome mask
@@ -191,10 +209,15 @@ class PopulationSlow(nn.Module):
                 vq = torch.zeros(N)
                 uq = torch.zeros(N)
 
-                vp[idx_p] = 1.0 / np.sqrt(len(idx_p))
-                up[idx_p] = 1.0 / np.sqrt(len(idx_p))
-                vq[idx_q] = 1.0 / np.sqrt(len(idx_q))
-                uq[idx_q] = 1.0 / np.sqrt(len(idx_q))
+                pat_vp = self._sample_pattern(len(idx_p), g)
+                pat_up = self._sample_pattern(len(idx_p), g)
+                pat_vq = self._sample_pattern(len(idx_q), g)
+                pat_uq = self._sample_pattern(len(idx_q), g)
+
+                vp[idx_p] = pat_vp / (pat_vp.norm() + 1e-8)
+                up[idx_p] = pat_up / (pat_up.norm() + 1e-8)
+                vq[idx_q] = pat_vq / (pat_vq.norm() + 1e-8)
+                uq[idx_q] = pat_uq / (pat_uq.norm() + 1e-8)
 
                 # Off-diagonal bipartite coupling: p -> q and q -> p
                 B = B + torch.outer(vq, up)  # drive from p into q
