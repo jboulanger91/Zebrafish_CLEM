@@ -347,6 +347,7 @@ class RNNConnectome(nn.Module):
 
         if slow_populations is None:
             slow_populations = list(range(int(n_slow_pops)))
+        self.slow_populations = slow_populations
         self.W_slow_module = PopulationSlow(
             population_indices=self.population_indices,
             support=self.mask_W_support,
