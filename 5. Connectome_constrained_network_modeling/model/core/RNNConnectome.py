@@ -117,7 +117,7 @@ class RNNConnectome(nn.Module):
             n_slow_pops=8,
             slow_populations=None,          # explicit list; None -> range(n_slow_pops)
             modes_per_population=1,         # rank of the PopulationSlow contribution to W
-            gamma_init=0.50,                # see PopulationSlow
+            gamma_init=0.30,                # see PopulationSlow
             init_gain_target=1.05,          # rho(D W_fast) pinned close to stability at init
             init_d_ref=1.0,                 # activation slope the pin uses
             rho_min=0.98,                   # floor on rho(W); None = one-sided

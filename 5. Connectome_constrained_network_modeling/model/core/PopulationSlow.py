@@ -58,7 +58,7 @@ class PopulationSlow(nn.Module):
         gamma_min=0.0,           # Final desired effective value is 0.900, but this allows for W_fast contribution (see note)
         gamma_max=0.9995,
         modes_per_population=1,
-        randomize_modes=True,    # if True, randomise mode vectors even for modes_per_population=1
+        randomize_modes=False,    # if True, randomise mode vectors even for modes_per_population=1
         seed=None,
         verbose=False,
     ):
