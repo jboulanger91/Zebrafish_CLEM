@@ -79,7 +79,7 @@ if __name__ == '__main__':
         n_units = W_norm.shape[0]
 
         rnn = RNNConnectome(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
-                            slow_populations=set(range(8))-{2, 6},            # exclude MON cells
+                            slow_populations=[0, 1, 4, 5],            # exclude MON cells
                             activation=activation, clamp_weights_min=1e-2)
 
     # Define input/output signals for training

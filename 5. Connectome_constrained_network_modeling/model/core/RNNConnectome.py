@@ -395,8 +395,7 @@ class RNNConnectome(nn.Module):
         # and letting the slow blocks add on top gave rho(D W) = 1.73 at
         # gamma_init = 0.995 -- unstable before the first epoch.
         gain_before = self.recurrent_gain(W=self.W(), d_scalar=self.init_d_ref)
-        self._rescale_to_gain(self.init_gain_target, d_scalar=self.init_d_ref,
-                              use_full_W=True)
+        self._rescale_to_gain(self.init_gain_target, d_scalar=self.init_d_ref, use_full_W=True)
         gain_after = self.recurrent_gain(W=self.W(), d_scalar=self.init_d_ref)
 
         self.optimizer = optim.Adam(self.trainable_parameters(), lr=lr, weight_decay=weight_decay)
@@ -511,7 +510,7 @@ class RNNConnectome(nn.Module):
         return torch.abs(self.U_raw) * self.mask_U
 
     # ==================================================================
-    # readout calibration (FIX 8)
+    # readout calibration
     # ==================================================================
     def calibrate_readout(self, y_pred, outputs, eps=1e-8):
         """
@@ -720,14 +719,19 @@ class RNNConnectome(nn.Module):
 
     def fast_spectral_radius_penalty(self, margin=0.05):
         """One-sided penalty: only rho above (target + margin) is punished."""
-        if self.effective_fast_spectral_radius_penalty_strength == 0:
+        if self.effective_fast_spectral_radius_penalty_strength <= 0:
             return 0
 
-        rho = self.spectral_radius_differentiable(self.W())
-        penalty = torch.relu(rho - self.rho_target_fast - margin).pow(2)
-        if self.rho_min is not None:
-            penalty = penalty + torch.relu(self.rho_min - rho).pow(2)
-        return penalty * self.effective_fast_spectral_radius_penalty_strength
+        # 1. Fast core must remain strictly subcritical (cannot integrate)
+        rho_fast = self.spectral_radius_differentiable(self.W_fast())
+        pen_fast = torch.relu(rho_fast - 0.80 - margin).pow(2)
+
+        # 2. Total network can reach the critical integration line (0.98 - 1.0),
+        #    penalizing only true supercritical explosions (> 1.01)
+        rho_total = self.spectral_radius_differentiable(self.W())
+        pen_total = torch.relu(rho_total - 1.01).pow(2)
+
+        return self.effective_fast_spectral_radius_penalty_strength * (pen_fast + 5.0 * pen_total)
 
     def _antagonism_from_projections(self, proj_L, proj_R, stim_side):
         """
@@ -841,6 +845,7 @@ class RNNConnectome(nn.Module):
         for drive_t in drive_steps:
             drive = torch.addmm(drive_t, fh, Wt)     # drive_t + f(h) @ Wt
             h = torch.addcmul(beta * h, drive, one_minus_beta)
+            h = torch.clamp(h, min=-30.0, max=30.0)  # Clamp hidden pre-activation state to prevent float overflow under transient gain spikes
             fh = self.f(h)                           # reused by the next step
             xs_chunk.append(fh)
         return h, torch.stack(xs_chunk, dim=1)       # (N, T_chunk, n_units)
@@ -1062,6 +1067,9 @@ class RNNConnectome(nn.Module):
         device = next(self.parameters()).device
         N = len(train_list)
 
+        pop_weights = torch.tensor([1.0, 1.0, 2.0, 3.0, 1.0, 1.0, 2.0, 3.0], device=device)
+        pop_weights = pop_weights / pop_weights.sum()  # normalize
+
         # ---- stage schedule -------------------------------------------------
         if stage_boundaries is not None:
             stage1_epochs, stage3_start = int(stage_boundaries[0]), int(stage_boundaries[1])
@@ -1143,7 +1151,8 @@ class RNNConnectome(nn.Module):
             if downsample_target_list is not None:
                 y_pred = self.downsample_signal(y_pred, downsample_target_list)
 
-            mse = (y_pred - outputs).pow(2).mean()
+            mse_per_pop = (y_pred - outputs).pow(2).mean(dim=(0, 1))  # mean over (N, T) -> shape (8,)
+            mse = (mse_per_pop * pop_weights).sum()
             loss = mse
             loss = loss + self.fast_spectral_radius_penalty()
             loss = loss + self.stimulus_gated_slow_antagonism_penalty(
