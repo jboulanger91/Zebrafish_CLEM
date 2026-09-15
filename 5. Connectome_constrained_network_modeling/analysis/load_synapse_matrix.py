@@ -98,7 +98,8 @@ def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, is_W_cs
     return matrix, axon_values, idx_to_id, id_to_idx, df_clean, idx_side_change
 
 def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
-    # normalize W_raw
+    # take absolute and normalize W_raw
+    W_raw = np.abs(W_raw)
     W_sum_neuron = np.sum(W_raw, axis=0)
     W_sum_neuron = np.array([1 if sum_neuron == 0 else sum_neuron for sum_neuron in W_sum_neuron])
     W_norm = W_raw / W_sum_neuron
@@ -148,15 +149,17 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
             for i, idx_U in enumerate(dict_neurons[side][pop]["unknown"]):
                 W_sign[idx_U] = 1 if i<n_unknown_E else -1
 
+    dict_neurons["W_sign"] = W_sign
+
     # compute W
     W = (W_norm * W_sign).T
 
-    return W, dict_neurons
+    return W, W_sign.T, dict_neurons
 
 def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True):
     W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv,
                                                                      is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed)
-    W, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
+    W, W_sign, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
     if np.sum(U) == 0:
@@ -166,6 +169,7 @@ def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transp
     dict_neurons = {"neurons": _dict_neurons,
                     "W": W,
                     "W_mask": np.sign(W),
+                    "W_sign": W_sign,
                     "U": U,
                     "U_norm": U_norm,
                     "U_mask": np.sign(U),
