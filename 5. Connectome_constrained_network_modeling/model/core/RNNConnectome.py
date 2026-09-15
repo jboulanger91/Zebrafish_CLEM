@@ -845,7 +845,30 @@ class RNNConnectome(nn.Module):
             xs_chunk.append(fh)
         return h, torch.stack(xs_chunk, dim=1)       # (N, T_chunk, n_units)
 
-    def forward(self, x0, inputs, filter_xs=True):
+    def _sample_readout_W(self, subsample_ratio=0.5, min_units=2):
+        """
+        Construct a transient readout matrix by randomly subsampling a fraction
+        of units from each population and normalizing by the sample size.
+        """
+        device = self.readout_W.device
+        W_sub = torch.zeros(self.n_units, self.n_out, device=device)
+        for k, idx in enumerate(self.population_indices):
+            n_p = len(idx)
+            if n_p == 0:
+                continue
+            # Determine number of units to sample for this population
+            k_sample = max(min_units, int(round(n_p * subsample_ratio)))
+            k_sample = min(k_sample, n_p)
+
+            # Random subset without replacement
+            perm = torch.randperm(n_p, device=device)[:k_sample]
+            chosen_indices = torch.as_tensor(idx, device=device, dtype=torch.long)[perm]
+
+            # Mean over the sampled subset
+            W_sub[chosen_indices, k] = 1.0 / k_sample
+        return W_sub
+
+    def forward(self, x0, inputs, filter_xs=True, subsample_ratio=None):
         """
         Run the network.
 
@@ -918,7 +941,14 @@ class RNNConnectome(nn.Module):
         # ---- population readout ---------------------------------------------
         # One (N, T, n_units) x (n_units, n_out) matmul rather than 8 gathers;
         # readout_W already holds 1/len(pop) so this is the population mean.
-        ys = xs @ self.readout_W  # (N, T, n_out)
+        # readout_W is randomly subsampled at training to force activity profile
+        # to be represented across neurons in a population
+        if self.training and subsample_ratio is not None and subsample_ratio < 1.0:
+            readout_mat = self._sample_readout_W(subsample_ratio)
+        else:
+            readout_mat = self.readout_W
+
+        ys = xs @ readout_mat  # (N, T, n_out)
 
         # ---- calcium indicator ----------------------------------------------
         # The kernel is sum-normalised (unit DC gain), so this low-passes
@@ -1000,7 +1030,7 @@ class RNNConnectome(nn.Module):
     # training
     # ==================================================================
     def fit(self, train_list, x0=None, n_epochs=1000, verbose=True,
-            downsample_target_list=None,
+            downsample_target_list=None, subsample_ratio=0.5,
             stage_boundaries=None,
             lr_schedule=None, lr_factor=0.5, lr_patience=150, lr_min=1e-5,
             early_stopping_patience=100, early_stopping_min_delta=0.0,
@@ -1108,7 +1138,7 @@ class RNNConnectome(nn.Module):
             # The antagonism penalty below filters its 2 projections instead,
             # which is the same computation by commutativity of the two linear
             # operations, and is where most of the per-epoch saving comes from.
-            x_pred, y_pred = self.forward(x0, inputs, filter_xs=False)
+            x_pred, y_pred = self.forward(x0, inputs, filter_xs=False, subsample_ratio=subsample_ratio)
 
             if downsample_target_list is not None:
                 y_pred = self.downsample_signal(y_pred, downsample_target_list)
