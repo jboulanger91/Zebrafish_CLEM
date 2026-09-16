@@ -1035,7 +1035,7 @@ class RNNConnectome(nn.Module):
     # training
     # ==================================================================
     def fit(self, train_list, x0=None, n_epochs=1000, verbose=True,
-            downsample_target_list=None, subsample_ratio=0.5,
+            downsample_target_list=None, subsample_ratio=1,
             stage_boundaries=None,
             lr_schedule=None, lr_factor=0.5, lr_patience=150, lr_min=1e-5,
             early_stopping_patience=100, early_stopping_min_delta=0.0,
