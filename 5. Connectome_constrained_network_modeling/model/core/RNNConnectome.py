@@ -99,6 +99,7 @@ class RNNConnectome(nn.Module):
             tau=0.1, dt=0.01,
             lr=1e-3,
             weight_decay=1e-5,
+            let_neurons_free_list=[],
             fast_spectral_radius_penalty_strength=1e-2,
             slow_antagonism_penalty_strength=5e-4,
             rho_target_fast=0.95,
@@ -308,7 +309,7 @@ class RNNConnectome(nn.Module):
         self.register_buffer("idx_R", idx_R)
 
         # Readout order must match the column order of the target signals.
-        self.population_indices = [
+        self.population_indices_all = [
             self.idx_LiMI.tolist(),
             self.idx_LcMI.tolist(),
             self.idx_LMON.tolist(),
@@ -317,6 +318,16 @@ class RNNConnectome(nn.Module):
             self.idx_RcMI.tolist(),
             self.idx_RMON.tolist(),
             self.idx_RsMI.tolist(),
+        ]
+        self.population_indices = [
+            [i for i in self.idx_LiMI.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_LcMI.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_LMON.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_LsMI.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_RiMI.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_RcMI.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_RMON.tolist() if i not in let_neurons_free_list],
+            [i for i in self.idx_RsMI.tolist() if i not in let_neurons_free_list],
         ]
         # Same information as a padded index tensor plus a 0/1 weight matrix, so
         # the 8 population means become one batched matmul instead of 8 advanced
@@ -349,7 +360,7 @@ class RNNConnectome(nn.Module):
             slow_populations = list(range(int(n_slow_pops)))
         self.slow_populations = slow_populations
         self.W_slow_module = PopulationSlow(
-            population_indices=self.population_indices,
+            population_indices=self.population_indices_all,
             support=self.mask_W_support,
             slow_populations=slow_populations,
             signs=self.dale_sign,

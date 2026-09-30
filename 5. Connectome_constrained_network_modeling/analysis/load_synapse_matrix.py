@@ -38,7 +38,7 @@ def get_idx_side_change(df,
             return i  # positional value
     return None
 
-def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=True, return_axon_values=True):
+def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=True, drop_lda_predicted=False, return_axon_values=True):
     is_axon = df.index.str.strip().str.startswith("axon")
     axon_labels = df.index[is_axon]
     axon_rostral_idx = [i for i, is_axon_rostral in enumerate(axon_labels.str.strip().str.contains("rostral")) if not is_axon_rostral]
@@ -54,18 +54,26 @@ def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=Tr
 
     # Identify nodes to discard: anything whose identifier starts with "myelinated"
     if drop_unknown_cells:
-        is_unknown_cell = df.index.str.strip().str.contains("myelinated | not functionally imaged")
+        searchfor = ["myelinated | not functionally imaged", "not available"]
+        is_unknown_cell = df.index.str.strip().str.contains(" | ".join(searchfor))
         non_unknown_cell_labels = df.index[~is_unknown_cell]
         non_unknown_cell_idx = df.index.get_indexer(non_unknown_cell_labels)
         df = df.loc[non_unknown_cell_labels, non_unknown_cell_labels]
         axon_values = axon_values[non_unknown_cell_idx]
+
+    if drop_lda_predicted:
+        is_predicted_cell = df.index.str.strip().str.contains("lda: predicted")
+        non_predicted_cell_labels = df.index[~is_predicted_cell]
+        non_predicted_cell_idx = df.index.get_indexer(non_predicted_cell_labels)
+        df = df.loc[non_predicted_cell_labels, non_predicted_cell_labels]
+        axon_values = axon_values[non_predicted_cell_idx]
 
     if return_axon_values:
         return df, axon_values
     else:
         return df
 
-def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, is_W_csv_datavis_ready_transposed=True):
+def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, drop_lda_predicted=False, is_W_csv_datavis_ready_transposed=True):
     # First column becomes the index automatically because it has no header
     # name aligned with a real column count (typical "presynaptic" style CSV).
     df = pd.read_csv(csv_path, index_col=0)
@@ -78,7 +86,7 @@ def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, is_W_cs
         df = df.loc[common, common]
 
     if drop_non_functionally_identified:
-        df_clean, axon_values = _drop_non_functionally_identified(df)
+        df_clean, axon_values = _drop_non_functionally_identified(df, drop_lda_predicted=drop_lda_predicted)
     else:
         axon_values = None
 
@@ -156,9 +164,10 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
 
     return W, W_sign.T, dict_neurons
 
-def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True):
+def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True, drop_non_functionally_identified=True, flag_lda_predicted=False):
     W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv,
-                                                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed)
+                                                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed,
+                                                                     drop_non_functionally_identified=drop_non_functionally_identified)
     W, W_sign, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
@@ -176,6 +185,9 @@ def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transp
                     "idx_side_change": idx_side_change,
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}
+    if flag_lda_predicted:
+        dict_neurons["lda_predicted_idx"] = [i for i in range(len(idx_to_id)) if "lda: predicted" in idx_to_id[i]]
+        dict_neurons["lda_native_idx"] = [i for i in range(len(idx_to_id)) if "lda: native" in idx_to_id[i]]
     return W, dict_neurons
 
 def update_W(path_csv, W_new, path_save=None, drop_non_functionally_identified=True):

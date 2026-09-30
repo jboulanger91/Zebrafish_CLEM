@@ -32,7 +32,8 @@ if __name__ == '__main__':
     tau_neuron = 0.2
 
     # Training
-    is_W_csv_datavis_ready_transposed = False
+    is_W_csv_datavis_ready_transposed = True
+    flag_lda_predicted = False
     do_symmetry_transform = False
     n_epochs = 5001
     seed = 0
@@ -66,7 +67,8 @@ if __name__ == '__main__':
     else:
         path_W_csv = Path(env["PATH_W_CSV"])
         W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=do_symmetry_transform,
-                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed)
+                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed,
+                                     flag_lda_predicted=flag_lda_predicted)
 
         n_units_LiMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["iMI"]["n_neurons"]
         n_units_LcMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["cMI"]["n_neurons"]
@@ -78,9 +80,10 @@ if __name__ == '__main__':
         n_units_RsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["n_neurons"]
         n_units = W_norm.shape[0]
 
+        let_neurons_free_list = dict_neurons["lda_predicted_idx"] if flag_lda_predicted else []
         rnn = RNNConnectome(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
-                            slow_populations=[0, 1, 4, 5],            # exclude MON cells
-                            activation=activation, clamp_weights_min=1e-2)
+                            slow_populations=[0, 1, 4, 5], use_connectome_mask_U=True,           # exclude MON and sMI cells
+                            activation=activation, clamp_weights_min=0, let_neurons_free_list=let_neurons_free_list)
 
     # Define input/output signals for training
     amplitude_input_signal_list = np.linspace(0.1, 1, n_input_signal)
