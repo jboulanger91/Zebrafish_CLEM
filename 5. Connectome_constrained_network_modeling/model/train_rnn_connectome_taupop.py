@@ -29,13 +29,13 @@ if __name__ == '__main__':
     duration_stimulus = 40
     duration_rest_end = 20
     n_input_signal = 2
-    tau_neuron = 0.2
+    tau_neuron = 0.1
 
     # Training
     is_W_csv_datavis_ready_transposed = False
     do_symmetry_transform = False
     n_epochs = 5001
-    seed = 0
+    seed = 42
 
     # Resolve env
     # When calling the script you can provide the path to the .env file as argument.
@@ -79,7 +79,6 @@ if __name__ == '__main__':
         n_units = W_norm.shape[0]
 
         rnn = RNNConnectomeTauPop(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
-                                  verbose_every=1,
                                   slow_populations=set(range(8))-{2, 6},            # exclude MON cells
                                   activation=activation, clamp_weights_min=1e-2)
 

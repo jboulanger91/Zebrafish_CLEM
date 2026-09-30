@@ -35,7 +35,7 @@ def generate_slurm(script_path, python_file_path, env_file_path_root, label_scri
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32gb
-#SBATCH --time=96:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=/home/kn/kn_kn/kn_pop542534/output/job_output_%j.out
 #SBATCH --mail-type=NONE
 #SBATCH --mail-user=roberto.garza@uni.kn
@@ -61,15 +61,15 @@ export PYTHONPATH="${PYTHONPATH}:/home/kn/kn_pop542534/code:/home/kn/kn_pop54253
 # path_experiment = "benchmarking/5_param"
 # path = f"{path_root}/{path_experiment}"
 # path_save = path
-path_dir = "/home/kn/kn_pop542534/data/rnn_ds/connectome_enhancement"
+path_dir = "/home/kn/kn_pop542534/data/rnn_ds/connectome_iMI_cut100"
 path_data = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon"
 path_noise_estimation = "/home/kn/kn_pop542534/data/rnn_ds/traces/from_jon/noise_estimation/contralateral_motion_integrator_preferred_noise_estimation.pkl"
-path_save = path_data + "/connectome_enhancement"
-path_save_env = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/connectome_enhancement"
+path_save = path_data + "/results/connectome_iMI_cut100"
+path_save_env = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/env_connectome_iMI_cut100"
 generate_env(path_dir, path_data, path_noise_estimation, path_save, path_save_env)
 
-script_path = "/home/kn/kn_pop542534/script/rnn_ds/connectome_enhancement"  # where to save scripts
-label_script = "rnn_connectome"  # scripts root name
+script_path = "/home/kn/kn_pop542534/script/rnn_ds/connectome_iMI_cut100"  # where to save scripts
+label_script = "connectome_iMI_cut100"  # scripts root name
 python_file_path = "/home/kn/kn_pop542534/code/Zebrafish_CLEM/5. Connectome_constrained_network_modeling/model/train_rnn_connectome.py"  # path to python script to execute
 env_file_path_root = path_save_env + "/.env"  # path and root label for env file
 label_env_list = [str(l.name).split(".")[-1] for l in Path(path_save_env).glob('.env.*')]  # end label for env file

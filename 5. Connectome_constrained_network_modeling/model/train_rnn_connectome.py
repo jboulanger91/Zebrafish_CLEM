@@ -29,14 +29,14 @@ if __name__ == '__main__':
     duration_stimulus = 40
     duration_rest_end = 20
     n_input_signal = 2
-    tau_neuron = 0.2
+    tau_neuron = 0.05
 
     # Training
     is_W_csv_datavis_ready_transposed = True
     flag_lda_predicted = False
     do_symmetry_transform = False
     n_epochs = 5001
-    seed = 0
+    seed = None
 
     # Resolve env
     # When calling the script you can provide the path to the .env file as argument.
