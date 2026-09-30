@@ -29,7 +29,7 @@ if __name__ == '__main__':
     duration_stimulus = 40
     duration_rest_end = 20
     n_input_signal = 2
-    tau_neuron = 0.05
+    tau_neuron = 0.2
 
     # Training
     is_W_csv_datavis_ready_transposed = True
