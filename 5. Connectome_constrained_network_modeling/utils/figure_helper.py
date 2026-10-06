@@ -1145,6 +1145,10 @@ class SuperPlot():
                                alpha=artist_dict["alpha"],
                                zorder=self.current_zorder)
 
+    def draw_violin(self, dataset, orientation="vertical", widths=0.5, showmeans=False, showextrema=False, facecolor=None, linecolor=None):
+        self.ax.violinplot(dataset, orientation=orientation, widths=widths,
+                           showmeans=showmeans, showextrema=showextrema)
+
 
 class PolarPlot(SuperPlot):
     def __init__(self, figure, opts_dict):

@@ -1,11 +1,8 @@
-import pickle
-import torch
 import numpy as np
 
 from datetime import datetime
 from pathlib import Path
 from dotenv import dotenv_values
-
 
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
@@ -21,14 +18,18 @@ except IndexError:
     env_path = "../.env"
 env = dotenv_values(env_path)
 
+path_dir = Path(env["PATH_DIR"])
+path_W_csv = path_dir / "data" / "connectome.csv"
+path_save = path_dir / "PathToMyFolder"
+
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
 do_shuffling = False
 do_ablation = True
 
-ablate_rate = 0.04
-n_repeats = 100
+ablate_rate = 1
+n_repeats = 300
 ablate_config_list = [
   # {"population_label": "RMON",
   #  "population_index": 6,
@@ -38,19 +39,19 @@ ablate_config_list = [
   #  "population_index": 5,
   #  "n_ablate": 2,
   #  "mode": "neuron"},
-  # {"population_label": "LiMI-LiMI",
-  #  "population_from": "LiMI",
-  #  "population_to": "LiMI",
-  #  "n_ablate": int(18*ablate_rate),
-  #  "mode": "synapse"},
-  # {"population_label": "RiMI-RiMI",
-  #  "population_from": "RiMI",
-  #  "population_to": "RiMI",
-  #  "n_ablate": int(24*ablate_rate),
-  #  "mode": "synapse"},
-  {"population_label": "all",
-   "ablate_rate": ablate_rate,
-   "mode": "synapse"}
+  {"population_label": "LiMI-LiMI",
+   "population_from": "LiMI",
+   "population_to": "LiMI",
+   "n_ablate": int(22*ablate_rate),
+   "mode": "synapse"},
+  {"population_label": "RiMI-RiMI",
+   "population_from": "RiMI",
+   "population_to": "RiMI",
+   "n_ablate": int(29*ablate_rate),
+   "mode": "synapse"},
+  # {"population_label": "all",
+  #  "ablate_rate": ablate_rate,
+  #  "mode": "synapse"}
 ]
 
 # ------------------------------------------------
@@ -91,23 +92,12 @@ def zero_random_nonzero_entries(arr, percentage, copy=True):
 # ------------------------------------------------
 # Loop over all repeats
 # ------------------------------------------------
-path_W_csv = Path(env["PATH_W_CSV"])
-W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=False,
-                             is_W_csv_datavis_ready_transposed=True)
+W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True)
 
 # Extract mask
 mask_W = dict_neurons["W_mask"]
 mask_W_init = mask_W.copy()
 mask_U = np.ones(mask_W.shape[0])
-
-mask_W_img_init = np.zeros_like(mask_W, dtype=int)
-mask_W_img_init[mask_W != 0] = 1
-mask_W_img_init *= 255
-
-# # check number of edges in population
-# pop_idx = dict_neurons["neurons"]["R"]["iMI"]["idx_list"]
-# mask_W_self_iMI = mask_W[np.ix_(pop_idx, pop_idx)]
-# np.sum(np.abs(mask_W_self_iMI))
 
 for i_repeat in range(n_repeats):
     mask_W = mask_W_init.copy()
@@ -157,9 +147,5 @@ for i_repeat in range(n_repeats):
 
     model_name = f"connectivity_mask_{i_repeat:03}-{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}.csv"
 
-    mask_W_img = np.zeros_like(mask_W, dtype=int)
-    mask_W_img[mask_W!=0] = 1
-    mask_W_img *= 255
-
-    update_W(path_W_csv, np.abs(mask_W.T), path_save=Path(env["PATH_SAVE"]) / model_name)
+    update_W(path_W_csv, np.abs(mask_W.T), path_save=path_save / model_name)
 

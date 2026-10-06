@@ -1,3 +1,4 @@
+import pickle
 import random
 import torch
 import numpy as np
@@ -265,7 +266,7 @@ class RNNService:
         x0 = torch.zeros(model.n_units) if x0 is None else x0
         with torch.no_grad():
             inputs = torch.tensor(input_signal, dtype=torch.float32)
-            xs, y_pred = model.forward(x0, inputs)
+            xs, y_pred = model.forward(x0, inputs, filter_xs=True)
 
         xs = np.squeeze(xs.detach().numpy())
         y_pred = np.squeeze(y_pred.detach().numpy())
@@ -372,10 +373,10 @@ class RNNService:
     @classmethod
     def plot_response_by_cell(cls, model_list, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list,
                               t_exp=None, output_signal_array=None, x0=None,
-                      fig=None, plot_title_label="", show_xaxis=True, show_yaxis=True, show_xs=False,
+                      fig=None, plot_title_label="", show_xaxis=True, show_yaxis=True, yrange=(0, 1), show_xs=False,
                       palette=RNNDSStyle.palette["neurons_4"], plot_size=RNNDSStyle.plot_size_big * 0.4,
                       padding=RNNDSStyle.padding / 2, compute_tau=False,
-                      time_structure=ConfigurationRNN.time_structure_simulation_test, compute_performance_method=None):
+                      time_structure=ConfigurationRNN.time_structure_simulation_test, compute_performance_method="pearson"):
         # Loop over model, simulate them and extract mean and SEM of activity
         if torch.is_tensor(model_list):
             model_list = [model_list]
@@ -385,7 +386,7 @@ class RNNService:
             x0 = torch.zeros(model.n_units) if x0 is None else x0
             with torch.no_grad():
                 inputs = torch.tensor(input_signal, dtype=torch.float32)
-                xs, y_pred = model.forward(x0, inputs)
+                xs, y_pred = model.forward(x0, inputs, filter_xs=True)
                 xs_list.append(xs)
                 y_pred_list.append(y_pred)
 
@@ -394,7 +395,6 @@ class RNNService:
         y_pred_array = torch.stack(y_pred_list, dim=0)
         y_pred_mean = torch.nanmean(y_pred_array, dim=0)
         y_pred_std = nanstd(y_pred_array, dim=0)
-
 
         # Draw network response to low step function (used in training)
         if inputs.dim() < 3:
@@ -437,11 +437,6 @@ class RNNService:
                     if i_ct in [0, 1, 3, 4, 5, 7]:
                         tau_rise = DSService.compute_time_rise(t[stimulus_window_model_index_list],
                                                                y_pred_list[0][i_input, stimulus_window_model_index_list, i_ct])
-                        # tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(y_pred[i_input, :, i_ct],
-                        #                                                       ConfigurationRNN.dt_simulation,
-                        #                                                       time_structure["rest_start"],
-                        #                                                       time_structure["rest_start"] +
-                        #                                                       time_structure["stimulus"])
                         print(f"Population {i_ct}")
                         print(f"MODEL | input {i_input} | tau_rise: {tau_rise}")
                         if output_signal_array is not None:
@@ -451,43 +446,46 @@ class RNNService:
                                 window_index_list = stimulus_window_data_index_list
                             tau_rise = DSService.compute_time_rise(t_exp[window_index_list],
                                                                    output_signal_array[0, i_input, window_index_list, i_ct])
-
-                            # tau_rise, tau_decay, _ = DSService.fit_tau_rise_decay(
-                            #     output_signal_mean[i_input, :, i_ct],
-                            #     ConfigurationRNN.dt_data,
-                            #     time_structure["rest_start"],
-                            #     time_structure["rest_start"] +
-                            #     time_structure["stimulus"])
                             print(f"DATA | input {i_input} | tau_rise: {tau_rise}")
 
+        # plot input signals
+        plot_height_input = plot_size / 10
+        for i_side, side in enumerate(ConfigurationRNN.side_list):
+            offset_hemisphere = i_side * model.n_units_hemi
+            plot_input = fig.create_plot(
+                xpos=xpos + i_side * (plot_size + padding), ypos=ypos, plot_height=plot_height_input,
+                plot_width=plot_size,
+                xmin=0, xmax=time_structure["duration"], xticks=None,
+                ymin=yrange[0], ymax=yrange[-1], yticks=yrange if show_yaxis and side == 0 else None,
+                yl=f"Input {side}")
+            for i_input in range_input:
+                alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 else 1
+                plot_input.draw_line(t, input_signal[i_input, :, offset_hemisphere], lc="k", alpha=alpha_here)
+
+        # plot activity traces by cell type and hemisphere side
         ymin = 0
         ymax = 2
-        ypos_start_here = ypos
-        plot_height_input = plot_size / 10
+        xpos_start_here = xpos
         for i_ct, ct in enumerate(ct_list):
-            for i_side, side in enumerate(ConfigurationRNN.side_list):
-                offset_hemisphere = i_side * model.n_units_hemi
-                plot_title = f"{ct['label']}" if i_side == 0 else None
-                plot_input = fig.create_plot(
-                    plot_title=plot_title,
-                    xpos=xpos, ypos=ypos - plot_height_input * 3 * i_side, plot_height=plot_height_input,
-                    plot_width=plot_size,
-                    xmin=0, xmax=time_structure["duration"], xticks=None,
-                    ymin=0, ymax=1, yticks=[0, 1] if show_yaxis and side == 0 else None,
-                    yl=f"Input {side}" if i_ct == 0 else None)
-                for i_input in range_input:
-                    alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 else 1
-                    plot_input.draw_line(t, input_signal[i_input, :, offset_hemisphere], lc="k", alpha=alpha_here)
             for i_data in data_range:
                 plot_response = fig.create_plot(
                     # plot_title="\nActivity L" if side == 0 else plot_title + "\nActivity R",
                     xpos=xpos, ypos=ypos - plot_size - padding , plot_height=plot_size,
                     plot_width=plot_size,
-                    xmin=0, xmax=time_structure["duration"], xl="Time (s)" if show_xaxis and i_data == len(data_range)-1 else None,
-                    xticks=[time_structure["rest_start"],
-                            time_structure["rest_start"] + time_structure["stimulus"]] if show_xaxis and i_data==len(data_range)-1 else None,
-                    ymin=ymin, ymax=ymax, yticks=[ymin, ymax] if show_yaxis and i_ct == 0 else None,
-                    yl=r"Shifted $\Delta$F/F" + f"\n({'Data' if i_data == 0 else 'Model'})" if show_yaxis and i_ct == 0 else None)
+                    xmin=0, xmax=time_structure["duration"],
+                    ymin=ymin, ymax=ymax,
+                    yl=ct["label"] if i_data == 0 else None,
+                    vspans=[[time_structure["rest_start"], time_structure["rest_start"]+time_structure["stimulus"], "k", 0.1]]
+                )
+                
+                # draw reference units
+                if i_ct == len(ct_list)-1 and i_data == 0:
+                    xdelta = time_structure["duration"] / 10
+                    ydelta = (ymax - ymin) / 10
+                    plot_response.draw_line((time_structure["duration"]-5-xdelta, time_structure["duration"]-xdelta), (ymin+ydelta*2)*np.ones(2), lc="k")
+                    plot_response.draw_text(time_structure["duration"]-5-xdelta, ymin+ydelta, "5 s")
+                    plot_response.draw_line(xdelta*2*np.ones(2), (ydelta, 0.5+ydelta), lc="k")
+                    plot_response.draw_text(1, ymin+ydelta, r"$\Delta$F/F"+"\n0.5", textlabel_rotation=270)
 
                 for i_input in range_input:
                     alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 or i_input<len(range_input)-1 else 1
@@ -500,21 +498,13 @@ class RNNService:
                         else:
                             plot_response.draw_line(t, y_pred_mean[i_input, :, ct[f"index{len(ct_list)}"] + offset_index], lc=palette[ct[f"index{len(ct_list)}"]], line_dashes=line_dashes, alpha=alpha_here, yerr=y_pred_std[i_input, :, ct[f"index{len(ct_list)}"]])
 
-                ypos -= plot_size + padding / 3
-            xpos += plot_size + padding
-            ypos = ypos_start_here
+                xpos += plot_size + padding
+            ypos -= plot_size + padding / 3
+            xpos = xpos_start_here
 
         # Compute amplitude-independent performance
         performance = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, compute_performance_method)
-        print(f"{compute_performance_method}: {performance}")
-
-        # # for debug purposes only
-        # performance_corr = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "corr")
-        # print(f"DEBUG | pearson corr: {performance_corr}")
-        # performance_acf = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "acf")
-        # print(f"DEBUG | acf distance: {performance_acf}")
-        # performance_psd = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, "psd")
-        # print(f"DEBUG | JSD PSD: {performance_psd}")
+        print(f"Performance in reproducing data | {compute_performance_method}: {performance}")
 
         res = {"fig": fig,
                "xpos": xpos,
@@ -555,15 +545,19 @@ class RNNService:
 
     @staticmethod
     def plot_connectivity(W, U=None, neuron_identity_array=None, grid_pop=None, fig=None, xpos=RNNDSStyle.xpos_start, ypos=RNNDSStyle.ypos_start,
-                          plot_size_matrix=RNNDSStyle.plot_size_big * 1.2, padding=RNNDSStyle.padding, value_lim=[-1, 1], plot_title="W",
-                          cmap=RNNDSStyle.cmap_list["neurons_5"], show_colorbar=True):
+                          plot_size_matrix=RNNDSStyle.plot_size_big * 1.2, padding=RNNDSStyle.padding, value_lim=[-1, 1], value_lim_U=None, plot_title="W", plot_title_U="U",
+                          cmap='PiYG', cmap_U=None, cmap_pop=RNNDSStyle.cmap_list["neurons_4"], show_colorbar=True, plot_size_vector_neurons=0.025, show_text=False, logscale=True):
 
         n_neurons = W.shape[0]
         # Draw input vector U after training
         plot_size_vector = plot_size_matrix / n_neurons
 
         if U is not None:
-            plot_U = fig.create_plot(plot_title="U",
+            if value_lim_U is None:
+                value_lim_U = value_lim
+            if cmap_U is None:
+                cmap_U = cmap
+            plot_U = fig.create_plot(plot_title=plot_title_U,
                                      xpos=xpos, ypos=ypos, plot_height=plot_size_matrix,
                                      plot_width=plot_size_vector,
                                      xmin=-0.5, xmax=0.5,  # xticklabels_rotation=90,
@@ -572,9 +566,14 @@ class RNNService:
 
             xpos += plot_size_vector + padding
             im = plot_U.draw_image(U, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                                   colormap='PiYG', zmin=-1, zmax=1, image_interpolation=None)
+                                   colormap=cmap_U, zmin=value_lim_U[0], zmax=value_lim_U[-1],
+                                   image_interpolation=None)
 
-        scale_width = 1.1 if show_colorbar else 1
+            if show_text:
+                for i in range(len(U)):
+                    plot_U.ax.text(0, i, f"{U[-i-1, 0]:.02f}", ha="center", va="center", color="k")
+
+        scale_width = 1 if show_colorbar else 1
 
         # Draw connectivity matrix W
         plot_W = fig.create_plot(plot_title=plot_title,
@@ -586,26 +585,34 @@ class RNNService:
 
         if neuron_identity_array is not None:
             # Draw neuron identity vectors around W
-            plot_ni_c = fig.create_plot(xpos=xpos - plot_size_vector, ypos=ypos, plot_height=plot_size_matrix,
-                                        plot_width=plot_size_vector,
+            plot_ni_c = fig.create_plot(xpos=xpos - plot_size_vector_neurons, ypos=ypos, plot_height=plot_size_matrix,
+                                        plot_width=plot_size_vector_neurons,
                                         xmin=-0.5, xmax=0.5,
                                         ymin=-0.5, ymax=n_neurons - 0.5)
             im = plot_ni_c.draw_image(neuron_identity_array, (-0.5, 0.5, n_neurons - 0.5, -0.5),
-                                      colormap=cmap, zmin=0, zmax=1, image_interpolation=None)
+                                      colormap=cmap_pop, zmin=0, zmax=1, image_interpolation=None)
 
-            plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector,
+            plot_ni_r = fig.create_plot(xpos=xpos, ypos=ypos + plot_size_matrix, plot_height=plot_size_vector_neurons,
                                         plot_width=plot_size_matrix,
                                         xmin=-0.5, xmax=n_neurons - 0.5,
                                         ymin=-0.5, ymax=0.5)
             im = plot_ni_r.draw_image(neuron_identity_array.T, (-0.5, n_neurons - 0.5, -0.5, 0.5),
-                                      colormap=cmap, zmin=0, zmax=1, image_interpolation=None)
+                                      colormap=cmap_pop, zmin=0, zmax=1, image_interpolation=None)
 
         x_ = np.arange(n_neurons)
         x = np.tile(x_, (n_neurons, 1))
         y = x.T
-        norm = SymLogNorm(linthresh=0.03, linscale=1.0, vmin=-1, vmax=1, base=10)
+        if logscale:
+            norm = SymLogNorm(linthresh=0.03, linscale=1.0, vmin=-1, vmax=1, base=10)
+        else:
+            norm = None
         im = plot_W.draw_image(W, (-0.5, n_neurons - 0.5, n_neurons - 0.5, -0.5), norm_colormap=norm,
-                               colormap='PiYG', zmin=value_lim[0], zmax=value_lim[-1], image_interpolation=None)
+                               colormap=cmap, zmin=value_lim[0], zmax=value_lim[-1], image_interpolation=None)
+
+        if show_text:
+            for i in range(len(neuron_identity_array)):
+                for j in range(len(neuron_identity_array)):
+                    plot_W.ax.text(j, i, f"{W[-i-1, j]:.02f}", ha="center", va="center", color="k")
 
         if grid_pop is not None:
             plot_W_grid = fig.create_plot(xpos=xpos, ypos=ypos, plot_height=plot_size_matrix, plot_width=plot_size_matrix,
@@ -614,9 +621,12 @@ class RNNService:
                                           hlines=n_neurons - grid_pop - 0.5,
                                           vlines=grid_pop - 0.5)
         if show_colorbar:
-            divider = make_axes_locatable(plot_W.ax)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            plot_W.figure.fig.colorbar(im, cax=cax, orientation='vertical',
+            plot_bar = fig.create_plot(xpos=xpos + plot_size_matrix + 5*plot_size_vector_neurons, ypos=ypos,
+                                       plot_height=plot_size_matrix,
+                                       plot_width=plot_size_vector_neurons * 10,
+                                       xmin=-0.5, xmax=0.5,
+                                       ymin=-0.5, ymax=n_neurons - 0.5)
+            plot_bar.figure.fig.colorbar(im, cax=plot_bar.ax, orientation='vertical',
                                        ticks=[value_lim[0], np.mean(value_lim), value_lim[-1]])
         xpos += plot_size_matrix + padding * 1.5
 
@@ -760,86 +770,22 @@ class RNNService:
             sparsity_cell[i_side] = sparsity_side_cell
         return sparsity_cell
 
-    @classmethod
-    def augment_connectivity_sparsity(cls, W_binary, dict_neurons, verbose=False, target_sparsity=ConfigurationNeural.P_balanced):
-        W_binary_augment = W_binary.copy()
-        i_pop = 0
-        for side in ConfigurationRNN.side_list:
-            for cell in ConfigurationRNN.cell_list:
-                idx_pop = dict_neurons["neurons"][side][cell]["idx_list"]
-
-                # zoom in quadrant defining connectivity between this pop and each other pop
-                _i_pop = 0
-                for _side in ConfigurationRNN.side_list:
-                    for _cell in ConfigurationRNN.cell_list:
-                        _idx_pop = dict_neurons["neurons"][_side][_cell]["idx_list"]
-                        W_binary_popX = W_binary_augment[np.ix_(_idx_pop, idx_pop)]
-
-                        # Compute sparsity
-                        W_binary_popX_img = np.zeros_like(W_binary_popX, dtype=int)
-                        W_binary_popX_img[W_binary_popX] = 1
-                        sparsity_popX = np.sum(W_binary_popX_img) / W_binary_popX_img.size
-                        target_sparsity_popX = target_sparsity.T[i_pop, _i_pop]
-
-                        while sparsity_popX < target_sparsity_popX:
-                            group_inactive_edges = set(map(tuple, np.argwhere(~W_binary_popX)))
-                            new_edge = random.choice(list(group_inactive_edges))
-                            group_inactive_edges -= {new_edge}
-                            W_binary_popX[new_edge] = True
-                            W_binary_popX_img[new_edge] = 1
-                            sparsity_popX = np.sum(W_binary_popX_img) / W_binary_popX_img.size
-
-                            W_binary_augment[np.ix_(_idx_pop, idx_pop)] = W_binary_popX
-                        _i_pop += 1
-                        if verbose:
-                            print(f"{side}_{cell} - {_side}_{_cell} | sparsity: {sparsity_popX}")
-                i_pop += 1
-
-                if verbose:
-                    # Compute network statistics
-                    recurrency_pop = cls.check_connectivity_selected_neurons(W_binary_augment, idx_pop)
-                    group_to_discover = recurrency_pop["presynaptic"] | recurrency_pop["seed"] | recurrency_pop["postsynaptic"]
-                    recurrency_rate_pop = len(recurrency_pop["rediscovered_group"]) / len(group_to_discover)
-                    print(f"{side}_{cell} | recurrency: {recurrency_rate_pop}\n")
-
-        W_binary_img = np.zeros_like(W_binary_augment)
-        W_binary_img[W_binary_augment] = 1
-
-        return W_binary_img
+    @staticmethod
+    def compute_sparsity(W, pop_idx_list):
+        sparsity = np.zeros((len(pop_idx_list), len(pop_idx_list)))
+        W_binary = np.abs(np.sign(W))
+        for i, pop_idx in enumerate(pop_idx_list):
+            for i_, pop_idx_ in enumerate(pop_idx_list):
+                block = W_binary[np.ix_(pop_idx, pop_idx_)]
+                sparsity[i, i_] = np.sum(block) / np.size(block)
+        return sparsity
 
     @classmethod
-    def augment_connectivity_recurrency(cls, W_binary, dict_neurons, cell_seed_recurrency="iMI", target_recurrency_rate_pop=0.36):
-        W_binary_augment = W_binary.copy()
-        for side in ConfigurationRNN.side_list:
-            idx_pop = dict_neurons["neurons"][side][cell_seed_recurrency]["idx_list"]
-
-            # Compute sparsity
-            W_binary_pop = W_binary_augment[np.ix_(idx_pop, idx_pop)]
-            W_binary_pop_img = np.zeros_like(W_binary_pop, dtype=int)
-            W_binary_pop_img[W_binary_pop] = 1
-            # sparsity_pop = np.sum(W_binary_pop_img) / W_binary_pop_img.size
-
-            # Compute network statistics
-            recurrency_pop = cls.check_connectivity_selected_neurons(W_binary_augment, idx_pop)
-
-            # Compute node-based recurrency
-            recurrency_rate_pop = len(recurrency_pop["rediscovered_group"]) / len(
+    def compute_rediscovery_rate(cls, W, pop_idx_list):
+        rediscovery_rate = np.zeros(len(pop_idx_list))
+        W_binary = np.abs(np.sign(W))
+        for i, pop_idx in enumerate(pop_idx_list):
+            recurrency_pop = cls.check_connectivity_selected_neurons(W_binary, pop_idx)
+            rediscovery_rate[i] = len(recurrency_pop["rediscovered_group"]) / len(
                 recurrency_pop["presynaptic"] | recurrency_pop["seed"] | recurrency_pop["postsynaptic"])
-
-            while recurrency_rate_pop < target_recurrency_rate_pop:
-                group_inactive_edges = set(map(tuple, np.argwhere(~W_binary_pop)))
-                new_edge = random.choice(list(group_inactive_edges))
-                group_inactive_edges -= {new_edge}
-                W_binary_pop[new_edge] = True
-                W_binary_pop_img[new_edge] = 1
-
-                W_binary_augment[np.ix_(idx_pop, idx_pop)] = W_binary_pop
-
-                recurrency_pop = cls.check_connectivity_selected_neurons(W_binary_augment, idx_pop)
-                recurrency_rate_pop = len(recurrency_pop["rediscovered_group"]) / len(
-                    recurrency_pop["presynaptic"] | recurrency_pop["seed"] | recurrency_pop["postsynaptic"])
-
-        W_binary_img = np.zeros_like(W_binary_augment)
-        W_binary_img[W_binary_augment] = 1
-
-        return W_binary_img
+        return rediscovery_rate

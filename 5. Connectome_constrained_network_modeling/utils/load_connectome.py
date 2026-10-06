@@ -164,10 +164,12 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
 
     return W, W_sign.T, dict_neurons
 
-def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True, drop_non_functionally_identified=True, flag_lda_predicted=False):
+def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True,
+          drop_non_functionally_identified=True, drop_lda_predicted=False, flag_lda_predicted=False):
     W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv,
                                                                      is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed,
-                                                                     drop_non_functionally_identified=drop_non_functionally_identified)
+                                                                     drop_non_functionally_identified=drop_non_functionally_identified,
+                                                                     drop_lda_predicted=drop_lda_predicted)
     W, W_sign, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     if do_symmetry_transform:
         W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
@@ -241,8 +243,4 @@ def symmetry_transform(W, U, dict_neurons):
     U_sim = np.repeat(U[idx_REF], 2)
 
     return W_sim, U_sim, dict_neurons
-
-# if __name__ == "__main__":
-#     csv_path = r"C:\Users\Roberto\Desktop\left-right_matrix_e-i_raster_native.csv"
-#     get_W(csv_path)
 

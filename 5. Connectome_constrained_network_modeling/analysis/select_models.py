@@ -1,5 +1,3 @@
-import pickle
-
 import torch
 import numpy as np
 from pathlib import Path
@@ -12,21 +10,24 @@ import sys; sys.path.insert(0, "..")
 from utils.load_model import load_model
 from utils.services.rnn_service import RNNService
 
-# ------------------------------------------------
-# Env variables and paths
-# ------------------------------------------------
-env = dotenv_values()
-path_noise_estimation = Path("../noise_estimation.pkl")
-path_models = Path(env["PATH_MODELS"])   # directory containing model_X.pkl
-path_save = path_models
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
-TOP_AMOUNT = 10
-mode_select_top = "count"  # "percentage"  #
+label_model_dir = "connectome_noLDA_matrix"
+n_models_select = 5
+mode_select_top = "count"  # Options are: "percentage", "count".  It is used to interpret the value in n_models_select
 save_selected_models = True
-select_models = "top"  # "median"
+select_models = "top"  # "median"  #
+
+# ------------------------------------------------
+# Env variables and paths
+# ------------------------------------------------
+env = dotenv_values()
+path_dir = Path(env["PATH_DIR"])
+path_noise_estimation = path_dir / "data" / "noise_estimation"
+path_models = path_dir / "models" / label_model_dir   # directory containing model_X.pkl
+path_save = path_models
 
 # ------------------------------------------------
 # Loop over all trained models
@@ -34,37 +35,38 @@ select_models = "top"  # "median"
 loss_list = []
 model_path_list = []
 i_model = 0
-for path_model in path_models.glob(f"model_*.pt"):
+for path_model in path_models.glob(f"model_*"):
     print(f"Evaluating model {i_model}")
     i_model += 1
 
-    model_path_list.append(path_model)
     # Load model instance
-    try:
-        model = load_model(path_model)
-    except:
-        with open(path_model, 'rb') as f:
-            model = pickle.load(f)
-        model.eval()
+    model = load_model(path_model)
+    model.eval()
 
     x0 = torch.zeros(model.n_units)
     try:
-        loss = model.loss_mse
+        raw_loss = model.loss_mse
+        if raw_loss is None:
+            continue
+        loss = float(raw_loss)
+        if np.isnan(loss) or np.isinf(loss):
+            continue
     except AttributeError:
         continue
 
     loss_list.append(loss)
+    model_path_list.append(path_model)
 
 
 N_MODELS = len(loss_list)
 
 # Select top-performant models
 if mode_select_top.lower().startswith("perc"):
-    perc_selected = TOP_AMOUNT / 100
+    perc_selected = n_models_select / 100
     num_selected = int(perc_selected * N_MODELS)
 elif mode_select_top.lower() == "count":
-    perc_selected = TOP_AMOUNT / N_MODELS
-    num_selected = TOP_AMOUNT
+    perc_selected = n_models_select / N_MODELS
+    num_selected = n_models_select
 else:
     raise Exception(f"Configuration mode_select_top must have value 'percentage' or 'count'. {mode_select_top} was provided.")
 
@@ -76,19 +78,19 @@ else:
 
 top_label = 0
 for i in selected_indices:
-    try:
-        model = load_model(path_model)
-    except:
-        with open(model_path_list[i], 'rb') as f:
-            model = pickle.load(f)
-        model.eval()
+    path_model = model_path_list[i]
+    model = load_model(path_model)
+    model.eval()
 
     # ── Build checkpoint ────────────────────────────────────────────────────
     checkpoint = {
         "state_dict": model.state_dict(),
         "custom_attrs": RNNService.extract_custom_attrs(model),
         "class_name": type(model).__name__,  # useful as a sanity check
+        "selection_loss_mse": model.loss_mse,
     }
+    if type(model).__name__ in ["RNNFixedConnectivity", "RNNConnectome"]:
+        checkpoint["dict_neurons"] = model.dict_neurons
 
     # Save trained model
     model_name_split = model_path_list[i].name.replace(".pkl", "").split('_')
@@ -97,6 +99,4 @@ for i in selected_indices:
     path_save_top_model.mkdir(parents=True, exist_ok=True)
 
     torch.save(checkpoint, path_save_top_model / model_name_top)
-    # with open(path_save_top_model / model_name_top, 'wb') as f:
-    #     pickle.dump(model, f)
     top_label += 1

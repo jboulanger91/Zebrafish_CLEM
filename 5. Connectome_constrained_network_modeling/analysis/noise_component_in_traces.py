@@ -12,8 +12,9 @@ from scipy.optimize import curve_fit
 # Env and paths
 # ------------------------------------------------------------
 env = dotenv_values()
-path_trace = Path(env["PATH_DATA_NOISE"])
-path_save = Path("../")
+path_dir = Path(env["PATH_DIR"])
+path_trace = path_dir / "data" / "avgresponses_cMI_preferred_constant.csv"
+path_save = path_dir / "noise_estimation"
 
 # ------------------------------------------------------------
 # 0. Configuration

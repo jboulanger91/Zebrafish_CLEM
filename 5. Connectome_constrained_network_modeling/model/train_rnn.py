@@ -2,19 +2,20 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import dotenv_values
 
+import torch
 import numpy as np
 import pickle
-import torch
 
 # Manually add root path for imports to improve interoperability
 import sys; sys.path.insert(0, "..")
 
-from model.core.RNNFreePop import RNNFreePop
+from model.core.RNNConnectome import RNNConnectome
+from utils.load_connectome import get_W
+from utils.config import ConfigurationRNN
 from utils.services.ds_service import DSService
 from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus
 from utils.math.train_batch import TrainSignal
-
 
 if __name__ == '__main__':
     # Configurations
@@ -22,17 +23,19 @@ if __name__ == '__main__':
     fit_model = True
 
     # Generate a 1D input and target
-    activation = "softplus"  # "relu"  #
+    activation = "softplus"
     dt = 0.01
     duration_rest_start = 20
     duration_stimulus = 40
     duration_rest_end = 20
     n_input_signal = 2
     tau_neuron = 0.1
-    n_free_neurons = 16
-    n_slow_pops = 8
 
     # Training
+    is_W_csv_datavis_ready_transposed = True
+    flag_lda_predicted = False
+    drop_lda_predicted = False
+    do_symmetry_transform = False
     n_epochs = 5001
     seed = None
 
@@ -44,6 +47,9 @@ if __name__ == '__main__':
     except IndexError:
         env_path = "../.env"
     env = dotenv_values(env_path)
+    label_model_instance = "_" + env["LABEL"] if "LABEL" in env.keys() else ""
+    if label_model_instance == "_":
+        label_model_instance += f"{np.random.randint(0,999999):06d}"
 
     # Paths
     path_traces = Path(env["PATH_DATA"])
@@ -60,27 +66,26 @@ if __name__ == '__main__':
         n_units_hemi = int(n_units/2)
         rnn = rnn_load
     else:
-        n_units_A = 15
-        n_units_B = 15
-        n_units_C = 2
-        n_units_D = 11
-        n_units_hemi = n_units_A + n_units_B + n_units_C + n_units_D
-        n_units = n_units_hemi * 2 + n_free_neurons
-        rnn = RNNFreePop(nA=n_units_A, nB=n_units_B, nC=n_units_C, nD=n_units_D, nX=n_free_neurons,
-                         E_frac_A=0.85, E_frac_B=0.1, E_frac_C=0.1, E_frac_D=1/3, E_frac_X=0.37,
-                          # intra-hemispheric sparsity
-            sparsity_AA=0.1125, sparsity_AB=0.18, sparsity_AC=0.475, sparsity_AD=0.065, sparsity_AX=0.07,
-            sparsity_BA=0, sparsity_BB=0, sparsity_BC=0, sparsity_BD=0, sparsity_BX=0.1,
-            sparsity_CA=0.08, sparsity_CB=0.45, sparsity_CC=0.09, sparsity_CD=0.04, sparsity_CX=0.13,
-            sparsity_DA=0.02, sparsity_DB=0, sparsity_DC=0, sparsity_DD=0, sparsity_DX=0.02,
-                          # inter-hemispheric sparsity
-            sparsity_LA_RA=0, sparsity_LA_RB=0, sparsity_LA_RC=0, sparsity_LA_RD=0,
-            sparsity_LB_RA=0.2, sparsity_LB_RB=0.3, sparsity_LB_RC=0.04, sparsity_LB_RD=0.06,
-            sparsity_LC_RA=0.03, sparsity_LC_RB=0.15, sparsity_LC_RC=0, sparsity_LC_RD=0,
-            sparsity_LD_RA=0.05, sparsity_LD_RB=0.05, sparsity_LD_RC=0.05, sparsity_LD_RD=0,
-                         sparsity_XA=0.07, sparsity_XB=0.1, sparsity_XC=0.1, sparsity_XD=0.02, sparsity_XX=0.074,  # Free population X is just one for both hemispheres
-                         sparsity_U=1,
-                         tau=tau_neuron, dt=dt, seed=seed, activation=activation, clamp_weights_min=1e-2, n_slow_pops=n_slow_pops)
+        path_W_csv = Path(env["PATH_W_CSV"])
+        W_norm, dict_neurons = get_W(path_W_csv, do_symmetry_transform=do_symmetry_transform,
+                                     is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed,
+                                     flag_lda_predicted=flag_lda_predicted, drop_lda_predicted=drop_lda_predicted)
+
+        n_units_LiMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["iMI"]["n_neurons"]
+        n_units_LcMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["cMI"]["n_neurons"]
+        n_units_LMON = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["MON"]["n_neurons"]
+        n_units_LsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_LEFT]["sMI"]["n_neurons"]
+        n_units_RiMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["iMI"]["n_neurons"]
+        n_units_RcMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["cMI"]["n_neurons"]
+        n_units_RMON = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["MON"]["n_neurons"]
+        n_units_RsMI = dict_neurons["neurons"][ConfigurationRNN.SIDE_RIGHT]["sMI"]["n_neurons"]
+        n_units = W_norm.shape[0]
+
+        let_neurons_free_list = dict_neurons["lda_predicted_idx"] if flag_lda_predicted else []
+        rnn = RNNConnectome(dict_neurons, tau=tau_neuron, dt=dt, seed=seed,
+                            slow_populations=[], use_connectome_mask_U=True,           # exclude MON and sMI cells
+                            # slow_populations=[0, 1, 4, 5], use_connectome_mask_U=True,           # exclude MON and sMI cells
+                            activation=activation, clamp_weights_min=0, let_neurons_free_list=let_neurons_free_list)
 
     # Define input/output signals for training
     amplitude_input_signal_list = np.linspace(0.1, 1, n_input_signal)
@@ -123,23 +128,28 @@ if __name__ == '__main__':
                                     traces_dict["sMI"]["null"]
                                     ),
                                    axis=-1)
-        # target_signal_L /= np.max(target_signal_L)
         if amplitude != 1:
             target_signal_L += noise_filter(target_signal_L)
         target_signal_L = target_signal_L * np.sqrt(amplitude)  # scaling
         target_signal_L += min_traces_all
-        input_signal_neurons_L = np.concatenate((np.repeat(input_signal[..., np.newaxis], n_units_hemi, axis=1),
-                                                 np.zeros((len(input_signal), n_units_hemi)),
-                                                 np.zeros((len(input_signal), n_free_neurons))), axis=1)
-        initial_value_L = np.concatenate((np.array([target_signal_L[0, 0] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_L[0, 0])/5, n_units_A),
-                                          np.array([target_signal_L[0, 1] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_L[0, 1])/5, n_units_B),
-                                          np.array([target_signal_L[0, 2] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_L[0, 2])/5, n_units_C),
-                                          np.array([target_signal_L[0, 3] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_L[0, 3])/5, n_units_D),
-                                          np.array([target_signal_L[0, 4] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_L[0, 4])/5, n_units_A),
-                                          np.array([target_signal_L[0, 5] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_L[0, 5])/5, n_units_B),
-                                          np.array([target_signal_L[0, 6] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_L[0, 6])/5, n_units_C),
-                                          np.array([target_signal_L[0, 7] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_L[0, 7])/5, n_units_D),
-                                          np.array([np.mean(target_signal_L[0]) for _ in range(n_free_neurons)]) + np.random.normal(0, np.abs(np.mean(target_signal_L[0])) / 5, n_free_neurons)))
+
+        input_signal_neurons_L = np.concatenate((np.array([input_signal for _ in range(n_units_LiMI)]),
+                                                 np.array([input_signal for _ in range(n_units_LcMI)]),
+                                                 np.array([input_signal for _ in range(n_units_LMON)]),
+                                                 np.array([input_signal for _ in range(n_units_LsMI)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_RiMI)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_RcMI)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_RMON)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_RsMI)]),)).T
+        initial_value_L = np.concatenate((np.array([target_signal_L[0, 0] for _ in range(n_units_LiMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 0])/5, n_units_LiMI),
+                                          np.array([target_signal_L[0, 1] for _ in range(n_units_LcMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 1])/5, n_units_LcMI),
+                                          np.array([target_signal_L[0, 2] for _ in range(n_units_LMON)]) + np.random.normal(0, np.abs(target_signal_L[0, 2])/5, n_units_LMON),
+                                          np.array([target_signal_L[0, 3] for _ in range(n_units_LsMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 3])/5, n_units_LsMI),
+                                          np.array([target_signal_L[0, 4] for _ in range(n_units_RiMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 4])/5, n_units_RiMI),
+                                          np.array([target_signal_L[0, 5] for _ in range(n_units_RcMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 5])/5, n_units_RcMI),
+                                          np.array([target_signal_L[0, 6] for _ in range(n_units_RMON)]) + np.random.normal(0, np.abs(target_signal_L[0, 6])/5, n_units_RMON),
+                                          np.array([target_signal_L[0, 7] for _ in range(n_units_RsMI)]) + np.random.normal(0, np.abs(target_signal_L[0, 7])/5, n_units_RsMI),))
+                                          # np.array([np.mean(target_signal_L[0]) for _ in range(n_units_free)]) + np.random.normal(0, np.abs(np.mean(target_signal_L[0])) / 5, n_units_free)))
         train_list.append(TrainSignal(input_signal_neurons_L, target_signal_L, inv_softplus(initial_value_L)))
 
         target_signal_R = np.stack((traces_dict["iMI"]["null"],
@@ -152,22 +162,26 @@ if __name__ == '__main__':
                                     traces_dict["sMI"]["preferred"]
                                     ),
                                    axis=-1)
-        # target_signal_R /= np.max(target_signal_R)
         target_signal_R += noise_filter(target_signal_R)
         target_signal_R = target_signal_R * np.sqrt(amplitude)
         target_signal_R += min_traces_all
-        input_signal_neurons_R = np.concatenate((np.zeros((len(input_signal), n_units_hemi)),
-                                                 np.repeat(input_signal[..., np.newaxis], n_units_hemi, axis=1),
-                                                 np.zeros((len(input_signal), n_free_neurons))), axis=1)
-        initial_value_R = np.concatenate((np.array([target_signal_R[0, 0] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_R[0, 0])/5, n_units_A),
-                                          np.array([target_signal_R[0, 1] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_R[0, 1])/5, n_units_B),
-                                          np.array([target_signal_R[0, 2] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_R[0, 2])/5, n_units_C),
-                                          np.array([target_signal_R[0, 3] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_R[0, 3])/5, n_units_D),
-                                          np.array([target_signal_R[0, 4] for _ in range(n_units_A)]) + np.random.normal(0, np.abs(target_signal_R[0, 4])/5, n_units_A),
-                                          np.array([target_signal_R[0, 5] for _ in range(n_units_B)]) + np.random.normal(0, np.abs(target_signal_R[0, 5])/5, n_units_B),
-                                          np.array([target_signal_R[0, 6] for _ in range(n_units_C)]) + np.random.normal(0, np.abs(target_signal_R[0, 6])/5, n_units_C),
-                                          np.array([target_signal_R[0, 7] for _ in range(n_units_D)]) + np.random.normal(0, np.abs(target_signal_R[0, 7])/5, n_units_D),
-                                          np.array([np.mean(target_signal_R[0]) for _ in range(n_free_neurons)]) + np.random.normal(0, np.abs(np.mean(target_signal_R[0])) / 5, n_free_neurons)))
+        input_signal_neurons_R = np.concatenate((np.array([np.zeros_like(input_signal) for _ in range(n_units_LiMI)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_LcMI)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_LMON)]),
+                                                 np.array([np.zeros_like(input_signal) for _ in range(n_units_LsMI)]),
+                                                 np.array([input_signal for _ in range(n_units_RiMI)]),
+                                                 np.array([input_signal for _ in range(n_units_RcMI)]),
+                                                 np.array([input_signal for _ in range(n_units_RMON)]),
+                                                 np.array([input_signal for _ in range(n_units_RsMI)]),)).T
+        initial_value_R = np.concatenate((np.array([target_signal_R[0, 0] for _ in range(n_units_LiMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 0])/5, n_units_LiMI),
+                                          np.array([target_signal_R[0, 1] for _ in range(n_units_LcMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 1])/5, n_units_LcMI),
+                                          np.array([target_signal_R[0, 2] for _ in range(n_units_LMON)]) + np.random.normal(0, np.abs(target_signal_R[0, 2])/5, n_units_LMON),
+                                          np.array([target_signal_R[0, 3] for _ in range(n_units_LsMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 3])/5, n_units_LsMI),
+                                          np.array([target_signal_R[0, 4] for _ in range(n_units_RiMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 4])/5, n_units_RiMI),
+                                          np.array([target_signal_R[0, 5] for _ in range(n_units_RcMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 5])/5, n_units_RcMI),
+                                          np.array([target_signal_R[0, 6] for _ in range(n_units_RMON)]) + np.random.normal(0, np.abs(target_signal_R[0, 6])/5, n_units_RMON),
+                                          np.array([target_signal_R[0, 7] for _ in range(n_units_RsMI)]) + np.random.normal(0, np.abs(target_signal_R[0, 7])/5, n_units_RsMI),))
+                                          # np.array([np.mean(target_signal_R[0]) for _ in range(n_units_free)]) + np.random.normal(0, np.abs(np.mean(target_signal_R[0])) / 5, n_units_free)))
         train_list.append(TrainSignal(input_signal_neurons_R, target_signal_R, inv_softplus(initial_value_R)))
 
     if path_load_mask is not None:
@@ -183,15 +197,14 @@ if __name__ == '__main__':
     if save_model:
         checkpoint = {
             # Define checkpoint to save
+            "dict_neurons": dict_neurons,
             "state_dict": rnn.state_dict(),
             "custom_attrs": RNNService.extract_custom_attrs(rnn),
             "class_name": type(rnn).__name__,
         }
 
-        label_model = f"RNNFreePop_neurons{n_units}_input{n_input_signal}step_{activation}"
-        label_model_instance = f"{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
+        label_model = f"RNNConnectome_neurons{n_units}"
+        label_model_instance = label_model_instance + f"_{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
         path_save_model = path_save / label_model
         path_save_model.mkdir(parents=True, exist_ok=True)
-        torch.save(checkpoint, path_save_model / f"model_{label_model_instance}.pt")
-        # with open(path_save_model / f"model_{label_model_instance}.pkl", 'wb') as f:
-        #     pickle.dump(rnn, f)
+        torch.save(checkpoint, path_save_model / f"model{label_model_instance}.pt")

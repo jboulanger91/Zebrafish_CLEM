@@ -1,18 +1,12 @@
 import torch
 from pathlib import Path
-
-# Manually add root path for imports to improve interoperability
-import sys;
-
 from dotenv import dotenv_values
 
-sys.path.insert(0, "..")
+# Manually add root path for imports to improve interoperability
+import sys; sys.path.insert(0, "..")
 
-from model.core.RNNFreePop import RNNFreePop
-from model.core.RNNClem import RNNClem
 from model.core.RNNConnectome import RNNConnectome
-from model.core.RNNFixedConnectivity import RNNFixedConnectivity
-from analysis.load_synapse_matrix import get_W
+from utils.load_connectome import get_W
 
 def process_checkpoint_rnnfixedconnectivity(checkpoint):
     if "mode_U" not in checkpoint["custom_attrs"].keys():
@@ -51,8 +45,15 @@ def load_model(pt_path, verbose=False, skip_if_error=True):
                                      clamp_weights_min=checkpoint["custom_attrs"]["clamp_weights_min"])
     elif checkpoint["class_name"] == "RNNConnectome":
         model = RNNConnectome(checkpoint["dict_neurons"],
-                             tau=checkpoint["custom_attrs"]["dt"] / checkpoint["custom_attrs"]["alpha"],
-                             dt=checkpoint["custom_attrs"]["dt"],
+                              tau=checkpoint["custom_attrs"]["dt"] / checkpoint["custom_attrs"]["alpha"],
+                              slow_populations=checkpoint["custom_attrs"]["slow_populations"],
+                             dt=checkpoint["custom_attrs"]["dt"], pack_parameters=checkpoint["custom_attrs"]["pack_parameters"],
+                             clamp_weights_min=checkpoint["custom_attrs"]["clamp_weights_min"])
+    elif checkpoint["class_name"] == "RNNConnectomeTauPop":
+        model = RNNConnectomeTauPop(checkpoint["custom_attrs"]["dict_neurons"],
+                              tau=checkpoint["custom_attrs"]["dt"] / checkpoint["custom_attrs"]["alpha"],
+                              slow_populations=[0,1,3,4,5,7],  # checkpoint["custom_attrs"]["slow_populations"],
+                             dt=checkpoint["custom_attrs"]["dt"], pack_parameters=checkpoint["custom_attrs"]["pack_parameters"],
                              clamp_weights_min=checkpoint["custom_attrs"]["clamp_weights_min"])
     else:
         raise NotImplementedError
@@ -61,7 +62,7 @@ def load_model(pt_path, verbose=False, skip_if_error=True):
     try:
         model.load_state_dict(checkpoint["state_dict"], strict=False)
         model.eval()  # set to eval mode if running inference
-    except RuntimeError:
+    except RuntimeError as e:
         if skip_if_error:
             print(f"Error in loading model {pt_path}")
             return None
