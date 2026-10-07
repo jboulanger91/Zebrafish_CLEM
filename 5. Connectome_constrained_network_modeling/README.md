@@ -25,13 +25,14 @@ In order for all the training and figure-generating scripts to get access to the
 you will need to create a file named `.env` in the same directory as this README file.
 Open it and copy-paste this template in:
 ```angular2html
-PATH_DATA=<path_to_directory_containing_activity_traces>
-PATH_MODELS=<path_to_directory_containing_models_to_analyze>
-PATH_NOISE_ESTIMATION=<path_to_noise_estimation>  # you find a precomputed model in the the folder of this README
-PATH_SAVE=<path_where_you_want_to_store_results>
+PATH_DIR="/path/to/project_root"  # Base root directory, containing data/, models/, and results/ 
 
-PATH_DATA_NOISE=<path_to_file_with_traces_to_use_for_noise_computation>  # [OPTIONAL] only needed to compute noise estimation
-PATH_MODELS_LOADMASK=<path_to_directory_containing_models_trained_with_best_mask>  # [OPTIONAL] only needed to compare loss distributions
+# Explicit paths (OPTIONAL, used only for training)
+PATH_DATA="/path/to/project_root/data"
+PATH_SAVE="/path/to/project_root/models"
+PATH_NOISE_ESTIMATION="/path/to/project_root/data/noise_estimation/contralateral_motion_integrator_preferred_noise_estimation.pkl"
+PATH_W_CSV="/path/to/project_root/data/connectome.csv"
+LABEL="connectome"
 ```
 Then substitute all placeholder with the actual paths to the relative directories in your system.
 

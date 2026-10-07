@@ -5,21 +5,24 @@ This script generates the following figure panels in Boulanger-Weiss et al. 2026
 - Fig. 5...
 
 This script compares structural connectivity and single-neuron simulated activity dynamics
-across top-performing recurrent neural network (RNN) model checkpoints.
+across top-performing recurrent neural network (RNN) model final checkpoint.
 
 This script can be used to analyze results from full connectome constraints, including functional
 prediction via linear discriminant analysis (LDA) (connectome mode), or from an LDA-free regime (lda mode).
 This last modality aims at inspecting the role of LDA-identified neurons, when freed up of their
 functional label.
 
+Before running it, please make sure you have set up your .env with all the necessary variables:
+- PATH_DIR="/path/to/project_root"  # Root project directory containing data/, models/, and results/
+
 Core Pipeline & Workflow:
 1. Environment and Configuration:
    - Selects operating mode ("connectome" vs. "lda").
-   - Loads paths via .env for data traces, top model checkpoints, and PDF export destinations.
+   - Loads paths via .env for data traces, top model solutions, and PDF export destinations.
    - Sets up layout dimensions, margins, and canvas containers via `RNNDSStyle` and `Figure`.
 
 2. Model Ranking and Selection:
-   - Inspects saved model checkpoints (*.pt), gathers their mean squared error (`loss_mse`),
+   - Inspects saved model solutions (*.pt), gathers their mean squared error (`loss_mse`),
      and identifies the top-performing models (`n_show_models = 3`) for comparative display.
 
 3. Forward Simulation for Activity Extraction (Optional / Per-Model):

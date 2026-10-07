@@ -357,7 +357,7 @@ class RNNConnectome(nn.Module):
         self.register_buffer("dale_sign", col_sign, persistent=False)
 
         if slow_populations is None:
-            slow_populations = list(range(int(n_slow_pops)))
+            slow_populations = []  # alternative behavior is default to `list(range(int(n_slow_pops)))`
         self.slow_populations = slow_populations
         self.W_slow_module = PopulationSlow(
             population_indices=self.population_indices_all,

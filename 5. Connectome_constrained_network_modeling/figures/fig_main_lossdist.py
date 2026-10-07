@@ -8,15 +8,18 @@ This script evaluates and statistically compares the performance (training MSE l
 of recurrent neural network (RNN) dynamical models trained under different architectural,
 biological, or data perturbation conditions (e.g., intact connectome vs. LDA ablation variants).
 
+Before running it, please make sure you have set up your .env with all the necessary variables:
+- PATH_DIR="/path/to/project_root"  # Root project directory containing data/, models/, and results/
+
 Core Pipeline & Workflow:
 1. Environment and Configuration:
-   - Loads filesystem paths via .env for trained model checkpoints and output directories.
+   - Loads filesystem paths via .env for trained model solutions and output directories.
    - Defines a test suite registry mapping experimental ablation conditions (such as
      intact baseline, target ablations, or matrix ablations) to their checkpoint folders.
    - Configures figure canvas dimensions, paddings, and layout origins using `RNNDSStyle`.
 
 2. Metric Extraction & Aggregation:
-   - Iterates across each experimental condition directory and loads all matching model checkpoints.
+   - Iterates across each experimental condition directory and loads all matching model solutions.
    - Extracts the mean squared error (`loss_mse`) attribute from each model instance.
    - Clips loss values to a defined ceiling (`MAX_LOSS = 10`), discards NaN entries, and
      structures the empirical loss distributions per condition.
@@ -131,7 +134,7 @@ for i_test, test in enumerate(test_list):
     loss_list[i_test] = []
     model_path_list = []
     i_model = 0
-    # Discover and inspect all trained model checkpoints within the condition directory
+    # Discover and inspect all trained model solutions within the condition directory
     for path_model in Path(test["path"]).glob(f"model_*"):
         print(f"Evaluating model {i_model}")
         i_model += 1
@@ -149,7 +152,7 @@ for i_test, test in enumerate(test_list):
 
         loss_list[i_test].append(loss)
 
-        # Track the maximum number of checkpoints observed across cohorts
+        # Track the maximum number of model solutions observed across cohorts
         if i_model > N_MAX_MODELS:
             N_MAX_MODELS = i_model + 1
 N_TESTS = len(loss_list)

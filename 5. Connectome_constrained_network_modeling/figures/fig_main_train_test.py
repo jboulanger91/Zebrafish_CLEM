@@ -8,6 +8,9 @@ This script evaluets trained recurrent neural network (RNN) dynamical models aga
 empirical calcium imaging traces (e.g., zebrafish hindbrain oculomotor / velocity storage
 neural integrator populations).
 
+Before running it, please make sure you have set up your .env with all the necessary variables:
+- PATH_DIR="/path/to/project_root"  # Root project directory containing data/, models/, and results/
+
 Core Pipeline & Workflow:
 1. Configuration & Environment Setup:
    - Sets up label tags, feature toggle flags (loss distributions, weight matrices,
@@ -162,7 +165,7 @@ if show_loss_histograms:
 # ----------------------------------------------------------------
 # Load model instance
 # ----------------------------------------------------------------
-# Load model checkpoints matching the specified pattern and configure evaluation states
+# Load model solutions matching the specified pattern and configure evaluation states
 i_model = 0
 model_list = []
 for path_model in path_models.glob(f"model_*.pt"):

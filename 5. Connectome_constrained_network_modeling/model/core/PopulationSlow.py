@@ -23,7 +23,7 @@ Stochastic mode vectors for ANY modes_per_population (including modes_per_popula
    - This ensures distinct initial conditions across different random seeds
      or runs, preventing initialization collapse across multiple model instances.
 
-A note on the interpretation around gamma paramgers:
+A note on the interpretation around gamma parameters:
 
 Despite naively the hard floor `gamma_min` is supposedly around 0.90 in 
 `gammas() = gamma_min + (gamma_max - gamma_min) * sigmoid(eta)`, this

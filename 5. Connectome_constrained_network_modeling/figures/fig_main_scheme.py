@@ -7,6 +7,9 @@ This script generates the following figure panels in Boulanger-Weiss et al. 2026
 This script showcases the experimental training paradigm and architectural connectivity of
 recurrent neural network (RNN) models constrained by our biological connectomics data.
 
+Before running it, please make sure you have set up your .env with all the necessary variables:
+- PATH_DIR="/path/to/project_root"  # Root project directory containing data/, models/, and results/
+
 Core Pipeline & Workflow:
 1. Environment and Configuration:
    - Sets up filesystem paths via .env for data traces, noise estimations, models,
@@ -32,7 +35,7 @@ Core Pipeline & Workflow:
      recurrent connectivity weights (W), and input feedforward weights (U).
    - Annotates matrices with cell-type identity color bars and anatomical subpopulation boundaries.
    - Renders connectivity heatmaps for a reference/best-performing model, followed
-     by an iterative visualization of saved model checkpoints.
+     by an iterative visualization of saved model final checkpoint.
 
 5. Figure Export:
    - Saves the fully assembled vector figure as a PDF in the results directory.
@@ -71,7 +74,7 @@ path_model = path_dir / "data" / "connectome.csv"
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
-# Toggle iteration over all serialized model checkpoints found in path_models
+# Toggle iteration over all serialized model solutions found in path_models
 loop_over_trained_models = True
 
 # Number of stimulus amplitude scaling conditions to simulate and plot
@@ -298,7 +301,7 @@ ypos -= plot_size_matrix + padding_vertical * 1.5
 # ------------------------------------------------
 # Loop over trained models
 # ------------------------------------------------
-# Optionally iterate over all saved pickled model checkpoints to plot their connectivity layouts
+# Optionally iterate over all saved pickled model solutions to plot their connectivity layouts
 if loop_over_trained_models:
     i_model = 0
     for path_model in path_models.glob(f"model_*.pkl"):
