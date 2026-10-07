@@ -22,8 +22,7 @@ class RNNDSStyle(Style):
                  "neurons_5": ListedColormap(["#efb233", "#de68a4", "#67bed9", "#a18cbd", "#909090"])}
 
     population_name_list = ["Left iMI", "Left cMI", "Left MON", "Left sMI",
-                            "Right iMI", "Right cMI", "Right MON", "Right sMI",
-                            "Unkown"]
+                            "Right iMI", "Right cMI", "Right MON", "Right sMI"]
 
     font_size_label = 8
     font_size_text = 6
