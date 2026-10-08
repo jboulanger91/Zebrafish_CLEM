@@ -30,7 +30,7 @@ class ConfigurationRNN:
                                  "rest_end":   20}
     time_structure_simulation_test = {"rest_start": 16,
                                  "stimulus": 32,
-                                 "rest_end": 16}
+                                 "rest_end": 32}
 
     time_structure_simulation_train["time_list"] = [ts for ts in time_structure_simulation_train.values()]
     time_structure_simulation_test["time_list"]  = [ts for ts in time_structure_simulation_test.values()]

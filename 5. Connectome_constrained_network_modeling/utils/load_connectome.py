@@ -33,7 +33,7 @@ Core Pipeline & Workflow:
      or inhibitory (-1) transmission, and infers unknown neurotransmitter identities based on
      population-level E/I empirical ratios.
 
-3. Symmetry & Mask Packaging (`get_W`, `symmetry_transform`, & `update_W`):
+3. Symmetry & Mask Packaging (`get_W`, `symmetry_transform`, & `update_connectome`):
    - Optionally enforces exact bilateral hemispheric symmetry by mirroring connectivity from the
      more completely reconstructed hemisphere.
    - Packages connectivity matrices, sign matrices, structural masks (`np.sign(W)`), and input vectors
@@ -68,44 +68,42 @@ def get_idx_side_change(df,
             return i  # positional value
     return None
 
-def _drop_non_functionally_identified(df, drop_axons=True, drop_unknown_cells=True, drop_lda_predicted=False, return_axon_values=True):
-    # Detect axonal entries and aggregate incoming synapse counts to serve as input weights
+def _drop_unknown_cells(df):
+    """Filter out non-functionally imaged and/or myelinated cells."""
+    searchfor = ["myelinated | not functionally imaged", "not available"]
+    is_unknown = df.index.str.strip().str.contains(" | ".join(searchfor))
+    valid_labels = df.index[~is_unknown]
+    df = df.loc[valid_labels, valid_labels]
+    return df
+
+def _drop_lda_predicted(df):
+    """Filter out LDA-predicted cells."""
+    is_predicted = df.index.str.strip().str.contains("lda: predicted")
+    valid_labels = df.index[~is_predicted]
+    df = df.loc[valid_labels, valid_labels]
+    return df
+
+def _drop_axons(df, drop_axons=True, return_axon_values=True):
+    """Aggregate incoming axon counts and optionally drop axon rows/columns."""
     is_axon = df.index.str.strip().str.startswith("axon")
     axon_labels = df.index[is_axon]
-    axon_rostral_idx = [i for i, is_axon_rostral in enumerate(axon_labels.str.strip().str.contains("rostral")) if not is_axon_rostral]
+
+    # Calculate axon drive proxies across postsynaptic target columns
+    axon_rostral_idx = [i for i, is_rostral in enumerate(axon_labels.str.strip().str.contains("rostral")) if not is_rostral]
     axon_values = np.array(df.loc[axon_labels].sum(axis=0).to_numpy())
     axon_values[axon_rostral_idx] = 0
 
-    # Identify nodes to discard: anything whose identifier starts with "axon"
     if drop_axons:
         non_axon_labels = df.index[~is_axon]
         non_axon_idx = df.index.get_indexer(non_axon_labels)
         df = df.loc[non_axon_labels, non_axon_labels]
         axon_values = axon_values[non_axon_idx]
 
-    # Identify nodes to discard: anything whose identifier starts with "myelinated" or missing annotations
-    if drop_unknown_cells:
-        searchfor = ["myelinated | not functionally imaged", "not available"]
-        is_unknown_cell = df.index.str.strip().str.contains(" | ".join(searchfor))
-        non_unknown_cell_labels = df.index[~is_unknown_cell]
-        non_unknown_cell_idx = df.index.get_indexer(non_unknown_cell_labels)
-        df = df.loc[non_unknown_cell_labels, non_unknown_cell_labels]
-        axon_values = axon_values[non_unknown_cell_idx]
-
-    # Optionally exclude cells whose identities were inferred by linear discriminant analysis (LDA)
-    if drop_lda_predicted:
-        is_predicted_cell = df.index.str.strip().str.contains("lda: predicted")
-        non_predicted_cell_labels = df.index[~is_predicted_cell]
-        non_predicted_cell_idx = df.index.get_indexer(non_predicted_cell_labels)
-        df = df.loc[non_predicted_cell_labels, non_predicted_cell_labels]
-        axon_values = axon_values[non_predicted_cell_idx]
-
     if return_axon_values:
         return df, axon_values
-    else:
-        return df
+    return df
 
-def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, drop_lda_predicted=False, is_W_csv_datavis_ready_transposed=True):
+def load_synapse_matrix(csv_path, drop_axons=True, drop_unknown_cells=True, drop_lda_predicted=False, is_W_csv_datavis_ready_transposed=True):
     # First column becomes the index automatically because it has no header
     # name aligned with a real column count (typical "presynaptic" style CSV).
     df = pd.read_csv(csv_path, index_col=0)
@@ -118,26 +116,29 @@ def load_synapse_matrix(csv_path, drop_non_functionally_identified=True, drop_ld
         df = df.loc[common, common]
 
     # Filter out non-somatic or non-functionally identified elements
-    if drop_non_functionally_identified:
-        df_clean, axon_values = _drop_non_functionally_identified(df, drop_lda_predicted=drop_lda_predicted)
-    else:
-        axon_values = None
+    if drop_unknown_cells:
+        df = _drop_unknown_cells(df)
+    if drop_lda_predicted:
+        df = _drop_lda_predicted(df)
+
+    # Filter out axons
+    df, axon_values = _drop_axons(df, drop_axons=drop_axons)
 
     # Identify index for side change after removing axons and myelinated
-    idx_side_change = get_idx_side_change(df_clean)
+    idx_side_change = get_idx_side_change(df)
 
     # Numpy array copy of the cleaned matrix
-    matrix = df_clean.to_numpy(dtype=float).copy()
+    matrix = df.to_numpy(dtype=float).copy()
 
     # Align matrix orientation to standard presynaptic -> postsynaptic convention if not pre-transposed
     if not is_W_csv_datavis_ready_transposed:
         matrix = matrix.T
 
     # Index -> original neuron id mapping (and the reverse)
-    idx_to_id = {i: label for i, label in enumerate(df_clean.index)}
+    idx_to_id = {i: label for i, label in enumerate(df.index)}
     id_to_idx = {label: i for i, label in idx_to_id.items()}
 
-    return matrix, axon_values, idx_to_id, id_to_idx, df_clean, idx_side_change
+    return matrix, axon_values, idx_to_id, id_to_idx, df, idx_side_change
 
 def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
     # take absolute and normalize W_raw by column (postsynaptic input weight normalization)
@@ -148,7 +149,14 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
 
     # get neurons info: parse metadata strings into structured cell-type dictionaries
     dict_neurons = {ConfigurationRNN.SIDE_LEFT: {}, ConfigurationRNN.SIDE_RIGHT: {}}
+    cell_indices, axon_indices = [], []
     for i_neuron, info_neuron_str in idx_to_id.items():
+        # Skip axonal entries that lack cell functional annotations
+        if info_neuron_str.strip().startswith("axon"):
+            axon_indices.append(i_neuron)
+            continue
+        cell_indices.append(i_neuron)
+
         # parse neuron info string
         info_neuron_list = info_neuron_str.split(" | ")
         # get side: infer from label text or relative position to hemispheric transition index
@@ -180,6 +188,8 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
     W_sign = np.zeros((len(idx_to_id), len(idx_to_id)))
     for side in dict_neurons.keys():
         for pop in ConfigurationRNN.cell_list:
+            if pop not in dict_neurons[side]:
+                continue
             # compute E/I ratio from known E and I neurons, to infer neurotransmitter identity for unknown neurons
             ratio_pop_EI = len(dict_neurons[side][pop]["excitatory"]) / (len((dict_neurons[side][pop]["inhibitory"])) + len(dict_neurons[side][pop]["excitatory"]))
             n_unknown_E = ratio_pop_EI * len(dict_neurons[side][pop]["unknown"])
@@ -192,8 +202,13 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
             # neurons order is random from the dataset, so it is no problem.
             for i, idx_U in enumerate(dict_neurons[side][pop]["unknown"]):
                 W_sign[idx_U] = 1 if i<n_unknown_E else -1
+    # Preserve axonal inputs by assigning a positive drive sign (+1)
+    for idx_A in axon_indices:
+        W_sign[idx_A] = 1
 
     dict_neurons["W_sign"] = W_sign
+    dict_neurons["cell_indices"] = cell_indices
+    dict_neurons["axon_indices"] = axon_indices
 
     # compute W: combine normalized absolute weight magnitudes with presynaptic signs
     W = (W_norm * W_sign).T
@@ -201,18 +216,19 @@ def process_synapse_matrix(W_raw, idx_to_id, idx_side_change=None):
     return W, W_sign.T, dict_neurons
 
 def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True,
-          drop_non_functionally_identified=True, drop_lda_predicted=False, flag_lda_predicted=False):
+          drop_axons=True, drop_unknown_cells=True, drop_lda_predicted=False, flag_lda_predicted=False):
     # Pipeline orchestrator: load matrix, process biological signs, and apply optional hemispheric symmetry
     W_raw, U, idx_to_id, _, _, idx_side_change = load_synapse_matrix(path_W_csv,
                                                                      is_W_csv_datavis_ready_transposed=is_W_csv_datavis_ready_transposed,
-                                                                     drop_non_functionally_identified=drop_non_functionally_identified,
+                                                                     drop_axons=drop_axons,
+                                                                     drop_unknown_cells=drop_unknown_cells,
                                                                      drop_lda_predicted=drop_lda_predicted)
     W, W_sign, _dict_neurons = process_synapse_matrix(W_raw, idx_to_id, idx_side_change)
     # Apply bilateral mirroring transformation if requested
     if do_symmetry_transform:
-        W, U_sim, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
+        W, U, _dict_neurons = symmetry_transform(W, U, _dict_neurons)
     # Ensure non-zero input drive vector and normalize to unit sum
-    if np.sum(U) == 0:
+    if U is None or np.sum(U) == 0:
         U = np.ones_like(U)
     U_norm = U / np.sum(U)
 
@@ -225,37 +241,46 @@ def get_W(path_W_csv, do_symmetry_transform=False, is_W_csv_datavis_ready_transp
                     "U_norm": U_norm,
                     "U_mask": np.sign(U),
                     "idx_side_change": idx_side_change,
+                    "cell_indices": _dict_neurons["cell_indices"],
+                    "axon_indices": _dict_neurons["axon_indices"],
+                    "idx_to_id": idx_to_id,
                     "is_symmetry_transformed": do_symmetry_transform,
                     "symmetry_transform": ~do_symmetry_transform,}
+
     # Identify index partitions for native functionally identified vs. LDA-predicted cells
     if flag_lda_predicted:
         dict_neurons["lda_predicted_idx"] = [i for i in range(len(idx_to_id)) if "lda: predicted" in idx_to_id[i]]
         dict_neurons["lda_native_idx"] = [i for i in range(len(idx_to_id)) if "lda: native" in idx_to_id[i]]
+
     return W, dict_neurons
 
-def update_W(path_csv, W_new, path_save=None, drop_non_functionally_identified=True):
+def update_connectome(path_csv, connectome_new, path_save=None, drop_axons=True, drop_unknown_cells=True, drop_lda_predicted=False):
     # Read reference matrix to preserve original row and column label annotations
     df = pd.read_csv(path_csv, index_col=0)
 
-    if drop_non_functionally_identified:
-        df, _ = _drop_non_functionally_identified(df)
+    if drop_axons:
+        df, _ = _drop_axons(df)
+    if drop_unknown_cells:
+        df = _drop_unknown_cells(df)
+    if drop_lda_predicted:
+        df = _drop_lda_predicted(df)
 
     # Define row/col identifiers
     row_labels = df.index  # first-column metadata
     col_labels = df.columns  # first-row metadata (header)
 
     # Check shape of the upated W matches row/col size
-    if W_new.shape != (len(row_labels), len(col_labels)):
+    if connectome_new.shape != (len(row_labels), len(col_labels)):
         raise ValueError(
-            f"Shape mismatch: data is {W_new.shape}, "
+            f"Shape mismatch: data is {connectome_new.shape}, "
             f"expected ({len(row_labels)}, {len(col_labels)})"
         )
 
     # Create new df and save it as csv with preserved metadata index labels
-    df_out = pd.DataFrame(W_new, index=row_labels, columns=col_labels)
-    Path(path_save).parent.mkdir(parents=True, exist_ok=True)
+    df_out = pd.DataFrame(connectome_new, index=row_labels, columns=col_labels)
     if path_save is None:
         path_save = path_csv
+    Path(path_save).parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(path_save)
     return df_out
 

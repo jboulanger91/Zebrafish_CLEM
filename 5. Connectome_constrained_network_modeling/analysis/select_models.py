@@ -50,7 +50,7 @@ from utils.services.rnn_service import RNNService
 # Configuration
 # ------------------------------------------------
 # Subdirectory within models/ containing trained model instances to evaluate
-label_model_dir = "connectome_noLDA_matrix"
+label_model_dir = "connectome"
 # Number or percentage of models to select
 n_models_select = 5
 # Interpretation mode for n_models_select: "count" (fixed number) or "percentage" (fraction of total)
@@ -121,8 +121,13 @@ else:
 # Determine target index subset using either median-centered quantiles or ascending sort
 if select_models == "median":
     # Identify models within symmetric bounds around the 50th percentile
+    loss_arr = np.asarray(loss_list)
     loss_quantiles = np.quantile(loss_list, [0.5-perc_selected/2, 0.5+perc_selected/2])
-    selected_indices = np.squeeze(np.argwhere(np.logical_and(loss_quantiles[0] <= np.array(loss_list), np.array(loss_list) <= loss_quantiles[1])))
+    mask = (loss_quantiles[0] <= loss_arr) & (loss_arr <= loss_quantiles[1])
+    selected_indices = np.flatnonzero(mask)
+    # if the interval is too small, just take the median
+    if selected_indices.size < 1:
+        selected_indices = [np.argsort(loss_list)[len(loss_list)//2]]
 else:
     # Default: take the lowest loss values (best training performance)
     selected_indices = np.argsort(loss_list)[:num_selected]  # by default take the top N models

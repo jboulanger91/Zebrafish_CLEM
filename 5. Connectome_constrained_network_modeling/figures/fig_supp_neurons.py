@@ -345,8 +345,8 @@ for i_m, i_m_sorted in enumerate(top_indices):
             # Create individual time-series subplot for the current neural subpopulation
             plot_pop_n = fig.create_plot(plot_title=f"{RNNDSStyle.population_name_list[i_pop]}" if i_m == 0 else None,
                                          xpos=xpos, ypos=ypos, plot_width=plot_width*1.2, plot_height=plot_height*1.2,
-                                         xmin=0, xmax=np.max(time),  # xl="Time (s)", xticks=[0, 20, 60, 80],
-                                         ymin=-1, ymax=10, yticks=(-1, 0, 10),  # yl=f"Model {i_m}\nActivity" if i_pop == 0 else None, yticks=[0, 4, 8] if i_pop == 0 else None,
+                                         xmin=0, xmax=np.max(time),
+                                         ymin=-1, ymax=10,
                                          vspans=[[20, 60, "k", 0.1]])
             # Add vertical delta F/F scale bar to top-left subpopulation panel
             if i_pop == 0:
