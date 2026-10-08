@@ -79,7 +79,7 @@ show_activity = True
 
 remove_clamping = False
 # If set to an integer N, restricts model evaluation to the top N pre-selected checkpoint models
-show_only_n_top_models = 5 # activating this requires to first run select_models on the specific models directory
+show_only_n_top_models = None  # activating this requires to first run select_models on the specific models directory
 
 # ------------------------------------------------
 # Env and paths
@@ -92,6 +92,7 @@ path_noise_estimation = path_dir / "data" / "noise_estimation" / "contralateral_
 path_models = path_dir / "models" / label_load # directory containing model_X.pt
 if show_only_n_top_models:
     path_models = path_models / f"top_{show_only_n_top_models}"
+    label_save = f"{label_save}_top{show_only_n_top_models}"
 path_save = path_dir / "results"
 
 # ---- Simulate ----------------------------------
@@ -231,7 +232,7 @@ if show_matrices or show_connectivity_stats:
         print("Plotting connectivity matrices")
         # Render structural mask heatmap if available
         if mask_W is not None:
-            _, xpos, ypos = RNNService.plot_connectivity(mask_W, U=None, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
+            _, xpos, ypos = RNNService.plot_connectivity(mask_W, U=mask_U, neuron_identity_array=neuron_identity_array, grid_pop=grid_pop,
                                                          fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
                                                          padding=padding, value_lim=[-1, 1], plot_title=f"Mask W", cmap_pop=colormap)
 
@@ -240,8 +241,6 @@ if show_matrices or show_connectivity_stats:
                                                      fig=fig, xpos=xpos, ypos=ypos, plot_size_matrix=plot_size_matrix,
                                                      padding=padding, value_lim=[-1, 1], cmap_pop=colormap)
         xpos += plot_size_matrix
-        # xpos = xpos_start
-        # ypos -= plot_size_matrix + padding
 
     if show_connectivity_stats:
         print("Plotting connectivity stats")
@@ -351,7 +350,7 @@ if show_activity:
          "stimulus_name": "constant",
          # "filename": "avgresponses_*_constant.csv", # not used yet
          "combine_data": None,
-         "scale_target": [0.3, 1], # None or 1: don't scale the target signal found at path_traces and the input signal
+         "scale_target": [0.3, 1], # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
          "input_signal": input_signal_constant,
          "time_target_array": None,
          "dt_data": dt_data,
@@ -370,7 +369,7 @@ if show_activity:
         #  "stimulus_name": "constant",
         #  # "filename": "avgresponses_*_constant.csv", # not used yet
         #  "combine_data": None,
-        #  "scale_target": [1], # None or 1: don't scale the target signal found at path_traces and the input signal
+        #  "scale_target": [1], # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
         #  "input_signal": input_signal_constant_bilateral,
         #  "time_target_array": None,
         #  "dt_data": dt_data,
@@ -389,7 +388,7 @@ if show_activity:
          "stimulus_name": "constant",
          "filename": "responses_*_constant_*.csv",
          "combine_data": "average",
-         "scale_target": None, # None or 1: don't scale the target signal found at path_traces and the input signal
+         "scale_target": None, # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
          "input_signal": input_signal_constant,
          "time_target_array": np.arange(0, 80-dt_data_test, dt_data_test),
          "dt_data": dt_data_test,
@@ -408,7 +407,7 @@ if show_activity:
          "stimulus_name": "oscillating",
          # "filename": "responses_*_oscillating_*.csv",
          "combine_data": "average",
-         "scale_target": None, # None or 1: don't scale the target signal found at path_traces and the input signal
+         "scale_target": None, # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
          "input_signal": input_signal_sine,
          "time_target_array": np.arange(0, 80-dt_data_test, dt_data_test),
          "dt_data": dt_data_test,

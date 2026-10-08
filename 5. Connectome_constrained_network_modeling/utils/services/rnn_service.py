@@ -271,8 +271,11 @@ class RNNService:
         y_pred_list = []
         for model in model_list:
             x0 = torch.zeros(model.n_units) if x0 is None else x0
-            with torch.no_grad():
+            if torch.is_tensor(input_signal):
+                inputs = input_signal.to(torch.float32)
+            else:
                 inputs = torch.tensor(input_signal, dtype=torch.float32)
+            with torch.no_grad():
                 xs, y_pred = model.forward(x0, inputs, filter_xs=True)
                 xs_list.append(xs)
                 y_pred_list.append(y_pred)
@@ -299,10 +302,14 @@ class RNNService:
 
             # output_signal_array is processed as an array with dimensions: [R, I, T, C]
             # where R is the number of recordings for cell c at time t given stimulation i
+            if torch.is_tensor(output_signal_array):
+                output_signal_array = output_signal_array.to(torch.float32)
+            else:
+                output_signal_array = torch.tensor(output_signal_array, dtype=torch.float32)
             if len(output_signal_array.shape) == 2:
-                output_signal_array = torch.unsqueeze(torch.tensor(output_signal_array, dtype=torch.float32), 0)
+                output_signal_array = torch.unsqueeze(output_signal_array, 0)
             if len(output_signal_array.shape) == 3:
-                output_signal_array = torch.unsqueeze(torch.tensor(output_signal_array, dtype=torch.float32), 0)
+                output_signal_array = torch.unsqueeze(output_signal_array, 0)
 
             output_signal_mean = torch.nanmean(output_signal_array, axis=0)
             output_signal_std = np.nanstd(output_signal_array, axis=0)
