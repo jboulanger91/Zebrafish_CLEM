@@ -828,9 +828,8 @@ class RNNConnectome(nn.Module):
         when the drive was precomputed, or zeros-plus-input otherwise. Returns
         the final state and the stacked activities of the chunk.
 
-        Four deliberate choices here:
-
-        * the per-step slices of the drive are taken with ONE `unbind`, not with
+        A few design choices to optimize the simulation:
+        - the per-step slices of the drive are taken with ONE `unbind`, not with
           `drive_chunk[:, t, :]` inside the loop. This is the single most
           important line in the class for wall-clock time. `drive_chunk`
           requires grad (it contains U), so every `select` records a node whose
@@ -840,13 +839,9 @@ class RNNConnectome(nn.Module):
           pass, and it dominates the epoch (measured: 63 s out of a 64 s
           epoch). `unbind` replaces all of it with a single StackBackward, and
           is bit-identical in both the forward values and the gradients;
-        * the activation is computed once per step and reused: the `f(h)`
-          appended to `xs` is the same tensor the next step feeds to the matmul,
-          instead of being recomputed (which cost a second softplus forward
-          *and* backward at every step);
-        * `addmm` fuses `drive_t + f(h) @ Wt` and `addcmul` fuses the state
+        - `addmm` fuses `drive_t + f(h) @ Wt` and `addcmul` fuses the state
           update, roughly halving the number of autograd nodes per step;
-        * the activities are collected in a Python list and stacked once (one
+        - the activities are collected in a Python list and stacked once (one
           autograd node, rather than one CopySlices per step from writing into a
           preallocated tensor), and Wt is hoisted out of the loop.
         """
@@ -857,7 +852,7 @@ class RNNConnectome(nn.Module):
             drive = torch.addmm(drive_t, fh, Wt)     # drive_t + f(h) @ Wt
             h = torch.addcmul(beta * h, drive, one_minus_beta)
             h = torch.clamp(h, min=-30.0, max=30.0)  # Clamp hidden pre-activation state to prevent float overflow under transient gain spikes
-            fh = self.f(h)                           # reused by the next step
+            fh = self.f(h)                           # used in the next step
             xs_chunk.append(fh)
         return h, torch.stack(xs_chunk, dim=1)       # (N, T_chunk, n_units)
 

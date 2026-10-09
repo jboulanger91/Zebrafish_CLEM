@@ -571,10 +571,10 @@ if show_activity:
         # Advance horizontal position for the next condition panel
         xpos_here += plot_size_here * 2 + padding_here * 3
 
-    # -----------------------------------------------------------------------------
-    # Save final figure
-    # -----------------------------------------------------------------------------
-    # Ensure destination folder exists and write the assembled figure to PDF
-    path_save.mkdir(parents=True, exist_ok=True)
-    fig.save(path_save / f"figure_main_train_test{'' if label_save is None else label_save}.pdf",
-             open_file=False, tight=style.page_tight)
+# -----------------------------------------------------------------------------
+# Save final figure
+# -----------------------------------------------------------------------------
+# Ensure destination folder exists and write the assembled figure to PDF
+path_save.mkdir(parents=True, exist_ok=True)
+fig.save(path_save / f"figure_main_train_test{'' if label_save is None else label_save}.pdf",
+         open_file=False, tight=style.page_tight)

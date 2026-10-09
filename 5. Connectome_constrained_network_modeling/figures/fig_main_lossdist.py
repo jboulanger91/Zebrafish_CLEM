@@ -3,6 +3,7 @@ Overview
 --------
 This script generates the following figure panels in Boulanger-Weiss et al. 2026:
 - Fig. 5...
+- Supp. Fig. 10...
 
 This script evaluates and statistically compares the performance (training MSE loss)
 of recurrent neural network (RNN) dynamical models trained under different architectural,
@@ -63,7 +64,7 @@ path_models = path_dir / "models"
 path_save = path_dir / "results"
 
 # Suffix tag applied to the exported figure filename
-label_figure = "_lda"
+label_figure = "_all"
 # Registry of model directories and display labels representing distinct experimental/ablation cohorts
 test_list = [
     {"path": path_models / "connectome",
@@ -72,19 +73,19 @@ test_list = [
     #  "label": "No LDA in target"},
     # {"path": path_models / "connectome_noLDA_matrix",
     #  "label": "No LDA in matrix"},
-    {"path": path_models / "connectome_shuffle",
+    {"path": path_models / "U_full" / "connectome_shuffle",
      "label": "Shuffle mask"},
     {"path": path_models / "connectome_iMI_cut_50",
-     "label": "Remove 50% iMI $\leftrightarrow$ iMI"},
+     "label": r"Remove 50% iMI $\leftrightarrow$ iMI"},
     {"path": path_models / "connectome_iMI_cut_100",
-     "label": "Remove 50% iMI $\leftrightarrow$ iMI"},
-    {"path": path_models / "connectome_cut_05-0",
+     "label": r"Remove 50% iMI $\leftrightarrow$ iMI"},
+    {"path": path_models / "connectome_cut_05",
      "label": "Remove random 5%"},
-    {"path": path_models / "connectome_cut_10-0",
+    {"path": path_models / "connectome_cut_10",
      "label": "Remove random 10%"},
-    {"path": path_models / "connectome_cut_25-0",
+    {"path": path_models / "connectome_cut_25",
      "label": "Remove random 25%"},
-    {"path": path_models / "connectome_cut_50-0",
+    {"path": path_models / "connectome_cut_50",
      "label": "Remove random 50%"},
 ]
 

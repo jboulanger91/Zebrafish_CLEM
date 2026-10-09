@@ -52,9 +52,9 @@ from utils.services.rnn_service import RNNService
 # Subdirectory within models/ containing trained model instances to evaluate
 label_model_dir = "connectome"
 # Number or percentage of models to select
-n_models_select = 5
+n_models_select = 2
 # Interpretation mode for n_models_select: "count" (fixed number) or "percentage" (fraction of total)
-mode_select_top = "count"  # Options are: "percentage", "count".  It is used to interpret the value in n_models_select
+mode_select_top = "perc"  # Options are: "percentage", "count".  It is used to interpret the value in n_models_select
 # Flag controlling whether the selected model checkpoints are re-saved to disk
 save_selected_models = True
 # Selection criterion: "top" for best-performing models, "median" for typical models around the median loss
