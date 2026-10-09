@@ -101,7 +101,7 @@ class RNNConnectome(nn.Module):
             weight_decay=1e-5,
             let_neurons_free_list=[],
             fast_spectral_radius_penalty_strength=1e-2,
-            slow_antagonism_penalty_strength=5e-4,
+            antagonism_penalty_strength=5e-4,
             rho_target_fast=0.95,
             activation='softplus',
             use_connectome_mask_U=False,
@@ -373,13 +373,13 @@ class RNNConnectome(nn.Module):
         # Penalty strengths
         # =====================================================================
         self.fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
-        self.slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
+        self.antagonism_penalty_strength = antagonism_penalty_strength
         self.rho_target_fast = rho_target_fast
 
         # "effective" values are what the loss actually uses; fit() rewrites
         # them at every epoch according to the stage schedule.
         self.effective_fast_spectral_radius_penalty_strength = fast_spectral_radius_penalty_strength
-        self.effective_slow_antagonism_penalty_strength = slow_antagonism_penalty_strength
+        self.effective_antagonism_penalty_strength = antagonism_penalty_strength
 
         # Warm-start vector for the power iteration. Persisting it across epochs
         # as consecutive epochs change W only slightly, so the previous dominant
@@ -682,11 +682,11 @@ class RNNConnectome(nn.Module):
         The eigenvector is refined under no_grad (warm-started from the previous
         epoch, so a handful of steps suffices) and then held fixed while the
         returned value ||W v|| is differentiated. For a simple dominant
-        eigenvalue this is the correct gradient of the spectral radius by the
+        eigenvalue this is the gradient of the spectral radius by the
         envelope theorem, but the graph holds one matvec instead of n_iter of
         them. Same trick PyTorch's own spectral_norm uses.
 
-        Power iteration is kept below as the fallback.
+        Power iteration is used as fallback.
         """
         n_iter = self.power_iters if n_iter is None else n_iter
 
@@ -758,13 +758,7 @@ class RNNConnectome(nn.Module):
         )
         return torch.mean(torch.relu(-desired))
 
-    def _stimulus_gated_slow_antagonism_penalty(self, h, stim_side, v_L, v_R):
-        """Original signature, kept for external callers: projects then scores."""
-        proj_L = torch.einsum("ntu,u->nt", h, v_L)
-        proj_R = torch.einsum("ntu,u->nt", h, v_R)
-        return self._antagonism_from_projections(proj_L, proj_R, stim_side)
-
-    def slow_mode_directions(self):
+    def side_mode_directions(self):
         """
         Unit vectors summarising the left- and right-hemisphere slow modes.
         """
@@ -774,7 +768,7 @@ class RNNConnectome(nn.Module):
         v_R = v_R / (v_R.norm() + 1e-8)
         return v_L, v_R
 
-    def stimulus_gated_slow_antagonism_penalty(self, x_pred, stim_side, x_is_filtered=True):
+    def stimulus_gated_antagonism_penalty(self, x_pred, stim_side, x_is_filtered=True):
         """
         Antagonism penalty on the GCaMP-filtered activity.
 
@@ -784,10 +778,10 @@ class RNNConnectome(nn.Module):
         units commute, so the result matches filtering all n_units channels and
         projecting afterwards, at a cost of 2 channels instead of n_units.
         """
-        if self.effective_slow_antagonism_penalty_strength == 0:
+        if self.effective_antagonism_penalty_strength == 0:
             return 0
 
-        v_L, v_R = self.slow_mode_directions()
+        v_L, v_R = self.side_mode_directions()
 
         proj_L = torch.einsum("ntu,u->nt", x_pred, v_L)
         proj_R = torch.einsum("ntu,u->nt", x_pred, v_R)
@@ -799,7 +793,7 @@ class RNNConnectome(nn.Module):
             proj_L, proj_R = proj[..., 0], proj[..., 1]
 
         penalty = self._antagonism_from_projections(proj_L, proj_R, stim_side)
-        return self.effective_slow_antagonism_penalty_strength * penalty
+        return self.effective_antagonism_penalty_strength * penalty
 
     # ==================================================================
     # forward
@@ -1135,15 +1129,15 @@ class RNNConnectome(nn.Module):
             # ---- regulariser schedule ---------------------------------------
             if epoch < stage1_epochs:
                 self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength * 0.1
-                self.effective_slow_antagonism_penalty_strength = 0.0
+                self.effective_antagonism_penalty_strength = 0.0
                 stage = 1
             elif epoch < stage3_start:
                 self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength
-                self.effective_slow_antagonism_penalty_strength = 0.0
+                self.effective_antagonism_penalty_strength = 0.0
                 stage = 2
             else:
                 self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength
-                self.effective_slow_antagonism_penalty_strength = self.slow_antagonism_penalty_strength
+                self.effective_antagonism_penalty_strength = self.antagonism_penalty_strength
                 stage = 3
 
             self.optimizer.zero_grad(set_to_none=True)
@@ -1161,7 +1155,7 @@ class RNNConnectome(nn.Module):
             mse = (mse_per_pop * pop_weights).sum()
             loss = mse
             loss = loss + self.fast_spectral_radius_penalty()
-            loss = loss + self.stimulus_gated_slow_antagonism_penalty(
+            loss = loss + self.stimulus_gated_antagonism_penalty(
                 x_pred, stim_side, x_is_filtered=False)
 
             self.loss_mse = mse.item()
