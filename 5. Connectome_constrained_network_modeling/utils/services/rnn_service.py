@@ -2,6 +2,7 @@ import pickle
 import random
 import torch
 import numpy as np
+from networkx.linalg import spectrum
 
 from torch import nn
 from math import comb
@@ -258,11 +259,11 @@ class RNNService:
         return results, v_model, v_target
 
     @classmethod
-    def plot_response_by_cell(cls, model_list, t, input_signal, xpos, ypos, ct_list=ConfigurationRNN.cell_label_list,
-                              t_exp=None, output_signal_array=None, x0=None,
-                      fig=None, plot_title_label="", show_xaxis=True, show_yaxis=True, yrange=(0, 1), show_xs=False,
+    def plot_response_by_cell(cls, model_list, t, input_signal, xpos=0, ypos=0, ct_list=ConfigurationRNN.cell_label_list,
+                              t_exp=None, output_signal_array=None, x0=None, pulse_list=None,
+                      fig=None, plot_title_label="", yrange=(0, 1), verbose=False,
                       palette=RNNDSStyle.palette["neurons_4"], plot_size=RNNDSStyle.plot_size_big * 0.4,
-                      padding=RNNDSStyle.padding / 2, compute_tau=False,
+                      padding=RNNDSStyle.padding / 2, compute_time_rise=False, compute_tau=False, compute_spectrum=False,
                       time_structure=ConfigurationRNN.time_structure_simulation_test, compute_performance_method="pearson"):
         # Loop over model, simulate them and extract mean and SEM of activity
         if torch.is_tensor(model_list):
@@ -276,7 +277,7 @@ class RNNService:
             else:
                 inputs = torch.tensor(input_signal, dtype=torch.float32)
             with torch.no_grad():
-                xs, y_pred = model.forward(x0, inputs, filter_xs=True)
+                xs, y_pred = model.forward(x0, inputs, filter_xs=True, pulse_list=pulse_list)
                 xs_list.append(xs)
                 y_pred_list.append(y_pred)
 
@@ -316,31 +317,75 @@ class RNNService:
 
         if t_exp is None:
             t_exp = t
-        if compute_tau:
-            print(f"\n{plot_title_label}")
+        if compute_time_rise:
+            if verbose:
+                print(f"\n{plot_title_label}")
             stimulus_window_data_index_list = np.argwhere(np.logical_and(t_exp>=time_structure["rest_start"],
-                                                                    t_exp<time_structure["rest_start"] + time_structure["stimulus"]/2))
-            offest_time_pop3 = 10  # seconds
+                                                                    t_exp<time_structure["rest_start"] + time_structure["stimulus"]))
+            offest_time_pop3 = 0  # 10  # seconds
             stimulus_window_data_pop3_index_list = np.argwhere(np.logical_and(t_exp>=time_structure["rest_start"] + offest_time_pop3,
                                                                     t_exp<time_structure["rest_start"] + offest_time_pop3 + time_structure["stimulus"]/2))
             stimulus_window_model_index_list = np.argwhere(np.logical_and(t>=time_structure["rest_start"],
-                                                                    t<time_structure["rest_start"] + time_structure["stimulus"]/2))
+                                                                    t<time_structure["rest_start"] + time_structure["stimulus"]))
 
             for i_ct in range(len(ct_list)):
                 for i_input in range_input:
-                    if i_ct in [0, 1, 3, 4, 5, 7]:
-                        tau_rise = DSService.compute_time_rise(t[stimulus_window_model_index_list],
-                                                               y_pred_list[0][i_input, stimulus_window_model_index_list, i_ct])
-                        print(f"Population {i_ct}")
-                        print(f"MODEL | input {i_input} | tau_rise: {tau_rise}")
-                        if output_signal_array is not None:
-                            if i_ct in [3, 7]:
-                                window_index_list = stimulus_window_data_pop3_index_list
-                            else:
-                                window_index_list = stimulus_window_data_index_list
-                            tau_rise = DSService.compute_time_rise(t_exp[window_index_list],
-                                                                   output_signal_array[0, i_input, window_index_list, i_ct])
-                            print(f"DATA | input {i_input} | tau_rise: {tau_rise}")
+                    time_rise = DSService.compute_time_rise(t[stimulus_window_model_index_list],
+                                                           y_pred_list[0][i_input, stimulus_window_model_index_list, i_ct])
+                    if verbose:
+                        print(f"Time rise computation for population {i_ct}")
+                        print(f"MODEL | input {i_input} | time_rise: {time_rise}")
+                    if output_signal_array is not None:
+                        if i_ct in [3, 7]:
+                            window_index_list = stimulus_window_data_pop3_index_list
+                        else:
+                            window_index_list = stimulus_window_data_index_list
+                        time_rise = DSService.compute_time_rise(t_exp[window_index_list],
+                                                               output_signal_array[0, i_input, window_index_list, i_ct])
+                        if verbose:
+                            print(f"DATA | input {i_input} | time_rise: {time_rise}")
+
+        if compute_tau:
+            for i_ct in range(len(ct_list)):
+                if verbose:
+                    print(f"Taus computation for population {i_ct}")
+                for i_input in range_input:
+                    tau_rise, tau_decay, _ = DSService.estimate_tau_rise_decay_windowed_step(
+                        y_pred_list[0][i_input, :, i_ct],
+                        t[1] - t[0],
+                        t_on=time_structure["rest_start"],
+                        t_off=time_structure["rest_start"] + time_structure["stimulus"])
+                    if verbose:
+                        print(f"MODEL | population {i_ct} | input {i_input} | tau_rise: {time_rise}")
+                        print(f"MODEL | population {i_ct} | input {i_input} | tau_decay: {time_rise}")
+
+                    if output_signal_array is not None:
+                        tau_rise, tau_decay, _ = DSService.estimate_tau_rise_decay_windowed_step(
+                            output_signal_array[0, i_input, :, i_ct],
+                            t_exp[1]-t_exp[0],
+                            t_on=time_structure["rest_start"],
+                            t_off=time_structure["rest_start"] + time_structure["stimulus"])
+                        if verbose:
+                            print(f"DATA | population {i_ct} | input {i_input} | tau_rise: {time_rise}")
+                            print(f"DATA | population {i_ct} | input {i_input} | tau_decay: {time_rise}")
+
+        if compute_spectrum:
+            res_spect_all = {}
+            for i_input in range_input:
+                res_spect_all[f"input_{i_input}"] = []
+                for i_model in range(len(model_list)):
+                    res_spect = DSService.evaluate_population_timescales(y_pred_list[i_model][i_input],
+                                                                         output_signal_mean[i_input],
+                                                                         duration=time_structure["duration"],
+                                                                         freq_range=(0, 0.2), plot_spectra=False,
+                                                                         spectral_scale=0.02)
+                    res_spect_all[f"input_{i_input}"].append(res_spect)
+                if verbose:
+                    print("\nSpectral analysis")
+                    print(f"Population composite scores: {res_spect['pop_composite']}")
+                    print(f"Min composite score: {res_spect['min_composite_score']}")
+                    print(f"Harmonic composite score: {res_spect['harmonic_composite_score']}")
+                    print(f"Harmonic spectral score: {res_spect['harmonic_spectral_score']}")
 
         # plot input signals
         plot_height_input = plot_size / 10
@@ -350,7 +395,7 @@ class RNNService:
                 xpos=xpos + i_side * (plot_size + padding), ypos=ypos, plot_height=plot_height_input,
                 plot_width=plot_size,
                 xmin=0, xmax=time_structure["duration"], xticks=None,
-                ymin=yrange[0], ymax=yrange[-1], yticks=yrange if show_yaxis and side == 0 else None,
+                ymin=yrange[0], ymax=yrange[-1], yticks=yrange if side == 0 else None,
                 yl=f"Input {side}")
             for i_input in range_input:
                 alpha_here = 0.3 + (0.7 * i_input / len(range_input)) if len(range_input) > 1 else 1
@@ -396,9 +441,28 @@ class RNNService:
             ypos -= plot_size + padding / 3
             xpos = xpos_start_here
 
-        # Compute amplitude-independent performance
-        performance = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, compute_performance_method)
+        # Compute amplitude-independent performance for integration window
+        t_start, t_end = time_structure["rest_start"], time_structure["rest_start"]+10
+        # Create boolean masks for both time grids
+        mask_exp = (t_exp >= t_start) & (t_exp <= t_end)
+        mask_sim = (t >= t_start) & (t <= t_end)
+        # Ensure masks are PyTorch tensors matching each tensor's device
+        if torch.is_tensor(output_signal_mean) and not torch.is_tensor(mask_exp):
+            mask_exp = torch.as_tensor(mask_exp, device=output_signal_mean.device)
+        if torch.is_tensor(y_pred_mean) and not torch.is_tensor(mask_sim):
+            mask_sim = torch.as_tensor(mask_sim, device=y_pred_mean.device)
+        # Slice time arrays
+        t_exp_window = t_exp[mask_exp]
+        t_sim_window = t[mask_sim]
+        # Slice signal arrays along the time axis
+        # Works whether arrays are NumPy arrays or PyTorch tensors
+        output_signal_window = output_signal_mean[0, mask_exp, :].unsqueeze(0)
+        y_pred_window = y_pred_mean[0, mask_sim, :].unsqueeze(0)
+        performance = cls.compute_performance(output_signal_window, t_exp_window, y_pred_window, t_sim_window, compute_performance_method)
         print(f"Performance in reproducing data | {compute_performance_method}: {performance}")
+        # performance = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, compute_performance_method)
+        if verbose:
+            print(f"Performance in reproducing data | {compute_performance_method}: {performance}")
 
         res = {"fig": fig,
                "xpos": xpos,
@@ -407,6 +471,8 @@ class RNNService:
                "y_pred": y_pred_mean,
                "y_pred_std": y_pred_std,
                "performance": performance}
+        if compute_spectrum:
+            res["spectrum"] = res_spect_all
         return res
 
     @classmethod

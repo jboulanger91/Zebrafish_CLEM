@@ -78,7 +78,7 @@ test_list = [
     {"path": path_models / "connectome_iMI_cut_50",
      "label": r"Remove 50% iMI $\leftrightarrow$ iMI"},
     {"path": path_models / "connectome_iMI_cut_100",
-     "label": r"Remove 50% iMI $\leftrightarrow$ iMI"},
+     "label": r"Remove 100% iMI $\leftrightarrow$ iMI"},
     {"path": path_models / "connectome_cut_05",
      "label": "Remove random 5%"},
     {"path": path_models / "connectome_cut_10",
@@ -133,14 +133,12 @@ for i_test, test in enumerate(test_list):
     # Loop over all trained models
     # ------------------------------------------------
     loss_list[i_test] = []
-    model_path_list = []
     i_model = 0
     # Discover and inspect all trained model solutions within the condition directory
     for path_model in Path(test["path"]).glob(f"model_*"):
         print(f"Evaluating model {i_model}")
         i_model += 1
 
-        model_path_list.append(path_model)
         # Load model instance
         model = load_model(path_model)
 
@@ -173,11 +171,13 @@ if show_loss:
     # Run non-parametric Mann-Whitney U test comparing each condition against baseline cohort (index 0)
     for i_test, loss in enumerate(loss_list[1:]):
         res = mannwhitneyu(np.array(loss_list[0]), np.array(loss))
-        print(f"p-val Original vs {test_list[i_test+1]['label']}: {res.pvalue}")
+        print(f"p-val     | Original vs {test_list[i_test+1]['label']}: {res.pvalue}")
+        cohens_d = np.abs(np.mean(loss_list[0]) - np.mean(loss)) / np.sqrt((np.std(loss_list[0])**2 + np.std(loss)**2) / 2)
+        print(f"Cohen's d | Original vs {test_list[i_test+1]['label']}: {cohens_d}\n")
         # Annotate significant differences with an asterisk marker near top of panel
-        if res.pvalue < 0.005:
+        if res.pvalue < 0.001:
             ytext = max_value*9/10
-            plot_loss.draw_text((i_test+1), ytext, "*")
+            plot_loss.draw_text((i_test+2), ytext, "*")
 
     # Render violin distribution plots for each cohort
     plot_loss.draw_violin(loss_list, facecolor="k")

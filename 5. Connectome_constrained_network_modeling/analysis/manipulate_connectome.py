@@ -35,6 +35,7 @@ Core Pipeline & Workflow:
      - Serializes the altered structural mask to CSV via `update_connectome` with a unique timestamped filename.
 """
 
+import torch
 import numpy as np
 
 from datetime import datetime
@@ -44,7 +45,9 @@ from dotenv import dotenv_values
 # Manually add root path for imports to improve interoperability across parent modules
 import sys; sys.path.insert(0, "..")
 
+from utils.services.rnn_service import RNNService
 from utils.load_connectome import get_W, update_connectome
+from utils.load_model import load_model
 
 # ------------------------------------------------
 # Paths
@@ -59,29 +62,43 @@ env = dotenv_values(env_path)
 
 # Retrieve project root directory from environment variables and resolve IO paths
 path_dir = Path(env["PATH_DIR"])
-path_W_csv = path_dir / "data" / "connectome.csv"
-path_save = path_dir / "data" / "PathToMyFolder"
+label_path_save = "remove_cMI-cMI"
 
 # ------------------------------------------------
 # Configuration
 # ------------------------------------------------
 # Feature toggles controlling structural randomization and targeted lesion protocols
-do_shuffling = True
-do_ablation = False
+do_shuffling = False
+do_ablation = True
+manipulate_post_training = True
+
+# adjust paths on script mode
+if manipulate_post_training:
+    path_connectome = path_dir / "models" / "connectome"
+    path_save = path_dir / "models" / label_path_save
+else:
+    path_connectome = path_dir / "data" / "connectome.csv"
+    path_save = path_dir / "data" / label_path_save
 
 # Global scaling multiplier for ablation counts and number of stochastic lesion repeats
-ablate_rate = 0.1
-n_repeats = 300
+ablate_rate = 1
+n_repeats = 1
 # Registry of targeted ablation instructions specifying cell types, pathways, counts, and modes
 ablate_config_list = [
   # {"population_label": "RMON",
   #  "population_index": 6,
   #  "n_ablate": 2,
   #  "mode": "neuron"},
-  # {"population_label": "RcMI",
-  #  "population_index": 5,
-  #  "n_ablate": 2,
-  #  "mode": "neuron"},
+  {"population_label": "RcMI-LcMI",
+   "population_from": "RcMI",
+   "population_to": "LcMI",
+   "n_ablate": 999,
+   "mode": "synapse"},
+  {"population_label": "LcMI-RcMI",
+   "population_from": "LcMI",
+   "population_to": "RcMI",
+   "n_ablate": 999,
+   "mode": "synapse"},
   # {"population_label": "LiMI-LiMI",
   #  "population_from": "LiMI",
   #  "population_to": "LiMI",
@@ -92,9 +109,9 @@ ablate_config_list = [
   #  "population_to": "RiMI",
   #  "n_ablate": int(29*ablate_rate),
   #  "mode": "synapse"},
-  {"population_label": "all",
-   "ablate_rate": ablate_rate,
-   "mode": "synapse"}
+  # {"population_label": "all",
+  #  "ablate_rate": ablate_rate,
+  #  "mode": "synapse"}
 ]
 
 # ------------------------------------------------
@@ -137,20 +154,44 @@ def zero_random_nonzero_entries(arr, percentage, copy=True):
 # ------------------------------------------------
 # Loop over all repeats
 # ------------------------------------------------
-# Load reference connectivity matrix and anatomical neuron indices from the empirical CSV
-W_norm, dict_neurons = get_W(path_W_csv, drop_axons=False, drop_unknown_cells=True,
-                             do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True)
+if manipulate_post_training:
+    # Load models
+    model_list = []
+    dict_neurons_list = []
+    for path_model in path_connectome.glob(f"model_*.pt"):
+        model = load_model(path_model)
+        if model is None:
+            print(f"Model {path_model} could not be loaded. Skipping evaluation.")
+            continue
+        model.eval()
+        model_list.append(model)
+        dict_neurons_list.append(model.dict_neurons)
+    # 1 manipulation per model
+    n_repeats = len(model_list)
+else:
+    # Load reference connectivity matrix and anatomical neuron indices from the empirical CSV
+    _, dict_neurons = get_W(path_connectome, drop_axons=False, drop_unknown_cells=True,
+                                 do_symmetry_transform=False, is_W_csv_datavis_ready_transposed=True)
 
-# Extract binary connectivity mask and initialize input weight mask
-mask_W = dict_neurons["W_mask"]
-mask_W_init = mask_W.copy()
+    # Extract binary connectivity mask and initialize input weight mask
+    mask_W = dict_neurons["W_mask"]
+    mask_W_init = mask_W.copy()
 
-# Extract indices corresponding to cells
-cell_idx = np.array(dict_neurons["cell_indices"])
-recurrent_sub_idx = np.ix_(cell_idx, cell_idx)
+    # Extract indices corresponding to cells
+    cell_idx = np.array(dict_neurons["cell_indices"])
+    recurrent_sub_idx = np.ix_(cell_idx, cell_idx)
 
 # Generate independent perturbed structural masks across replicates
 for i_repeat in range(n_repeats):
+    if manipulate_post_training:
+        model = model_list[i_repeat]
+        dict_neurons = dict_neurons_list[i_repeat]
+        # Extract model topology and cell identities
+        mask_W = dict_neurons["W_mask"]
+        mask_W_init = mask_W.copy()
+        cell_idx = np.arange(model.n_units)
+        recurrent_sub_idx = np.ix_(cell_idx, cell_idx)
+
     mask_W = mask_W_init.copy()
     model_label = i_repeat
     print(f"Manipulating connectome, repeat: {model_label}")
@@ -208,8 +249,31 @@ for i_repeat in range(n_repeats):
         # Transpose back to original orientation
         mask_W = mask_W.T
 
-    # Construct unique timestamped output filename
-    model_name = f"connectivity_mask_{i_repeat:03}-{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}.csv"
+    if manipulate_post_training:
+        # Cast mask_W into a tensor
+        mask_W = torch.tensor(mask_W, dtype=model.mask_W.dtype, device=model.mask_W.device)
+        # Update the model
+        model.register_buffer("mask_W", mask_W, persistent=True)
+        model.register_buffer("mask_W_support", (mask_W != 0).to(torch.float32), persistent=False)
+        model.n_synapses = int(model.mask_W_support.sum().item())
+        dict_neurons["W_mask"] = mask_W
 
-    # Export modified connectivity mask to destination CSV file
-    update_connectome(path_W_csv, np.abs(mask_W.T), path_save=path_save / model_name, drop_axons=False)
+        # Define checkpoint
+        checkpoint = {
+            # Define checkpoint to save
+            "dict_neurons": dict_neurons,
+            "state_dict": model.state_dict(),
+            "custom_attrs": RNNService.extract_custom_attrs(model),
+            "class_name": type(model).__name__,
+        }
+
+        # Formulate directory paths and timestamped output filenames
+        label_model_instance = f"{label_path_save}-{i_repeat:03}_{datetime.today().strftime('%Y-%m-%d_%H-%M-%S')}"
+        path_save.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, path_save / f"model_{label_model_instance}.pt")
+    else:
+        # Construct unique timestamped output filename
+        model_name = f"connectivity_mask_{i_repeat:03}-{datetime.today().strftime('%Y-%m-%d-%H-%M-%S')}.csv"
+
+        # Export modified connectivity mask to destination CSV file
+        update_connectome(path_connectome, np.abs(mask_W.T), path_save=path_save / model_name, drop_axons=False)

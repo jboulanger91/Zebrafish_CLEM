@@ -4,7 +4,7 @@ Overview
 This script generates the following figure panels in Boulanger-Weiss et al. 2026:
 - Fig. 5...
 
-This script evaluets trained recurrent neural network (RNN) dynamical models against
+This script evaluates trained recurrent neural network (RNN) dynamical models against
 empirical calcium imaging traces (e.g., zebrafish hindbrain oculomotor / velocity storage
 neural integrator populations).
 
@@ -60,6 +60,7 @@ from utils.services.rnn_service import RNNService
 from utils.math.operators import inv_softplus, get_hist
 from utils.figure_helper import Figure
 from utils.load_model import load_model
+from utils.config import ConfigurationRNN
 
 # ------------------------------------------------
 # Configuration
@@ -97,8 +98,8 @@ path_save = path_dir / "results"
 
 # ---- Simulate ----------------------------------
 # Default temporal discretization (time-step size in seconds) for reference signals and simulation
-dt_data = 0.5
-dt_data_test = 0.1
+dt_data = ConfigurationRNN.dt_data
+dt_data_test = ConfigurationRNN.dt_data_test
 # Phase durations (in seconds) defining the baseline rest, active stimulus, and post-stimulus recovery epochs
 duration_rest_start = 20
 duration_stimulus = 40
@@ -334,6 +335,7 @@ if show_activity:
             input_signal = None
         return input_signal
 
+
     # ----------------------------------------------------------------
     # Define tests to show
     # ----------------------------------------------------------------
@@ -348,6 +350,7 @@ if show_activity:
          "filename_root": "avgresponses",
          "file_extension": "csv",
          "stimulus_name": "constant",
+         "pulse_MON": True,
          # "filename": "avgresponses_*_constant.csv", # not used yet
          "combine_data": None,
          "scale_target": [0.3, 1], # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
@@ -561,11 +564,23 @@ if show_activity:
 
         label = test['label']
         t_sim = np.linspace(0, duration_simulation, input_signal.shape[1])
+
+        # Define pulse stimulus (activation of MON cells only)
+        if "pulse_MON" in test.keys() and test["pulse_MON"]:
+            time_pulse = 40
+            duration_pulse = 100
+            pulse = torch.ones(n_units)
+            pulse[model.population_indices[2]] = 0  # pulse on left MON cells\
+            # pulse[model.population_indices[6]] = 1  # pulse on right MON cells
+            pulse_list = [{"idx": np.squeeze(np.argwhere(t_sim >= time_pulse)[0])+i,
+                           "pulse": pulse} for i in range(duration_pulse)]
+        else:
+            pulse_list = None
+
         # Execute RNN forward simulation and render cell-by-cell response comparison traces
         res = RNNService.plot_response_by_cell(model_list, t_sim, input_signal, xpos_here, ypos_here,
-                                               t_exp=time_target_array, output_signal_array=output_signal, x0=x0,
-                                               fig=fig, show_xaxis=True, show_yaxis=True, compute_tau=False,
-                                               plot_title_label=label, plot_size=plot_size_here,
+                                               t_exp=time_target_array, output_signal_array=output_signal, x0=x0, pulse_list=pulse_list,
+                                               fig=fig, plot_title_label=label, plot_size=plot_size_here,
                                                time_structure={"rest_start": test['duration_rest_start'], "stimulus": test['duration_stimulus'], "rest_end": test['duration_rest_end'], "duration": duration_simulation})
 
         # Advance horizontal position for the next condition panel

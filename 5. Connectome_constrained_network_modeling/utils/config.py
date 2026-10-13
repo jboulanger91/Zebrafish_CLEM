@@ -3,7 +3,8 @@ import numpy as np
 
 class ConfigurationRNN:
     dt_simulation = 0.01
-    dt_data = 0.5
+    dt_data = 0.5  # Experimental dt in training dataset
+    dt_data_test = 0.1  # Experimental dt in test dataset
     tau_neuron = 0.1
     clamp_weights_min = 1e-2
 

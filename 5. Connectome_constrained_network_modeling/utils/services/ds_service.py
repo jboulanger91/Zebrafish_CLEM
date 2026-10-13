@@ -3,7 +3,7 @@ import torch
 from matplotlib import pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, wasserstein_distance
 from scipy.signal import welch
 
 from sklearn.decomposition import PCA
@@ -296,9 +296,6 @@ class DSService():
         }
         return float(tau_rise), float(tau_decay), info
 
-    import numpy as np
-    from scipy.optimize import curve_fit  # [web:266]
-
     @staticmethod
     def _exp_rise(t, y0, A, tau):
         # y(t) = y0 + A*(1 - exp(-t/tau))
@@ -551,3 +548,261 @@ class DSService():
 
         jsd = (0.5 * _kl(p, m) + 0.5 * _kl(q, m)) / np.log(2)  # normalize to [0, 1]
         return float(np.clip(jsd, 0.0, 1.0)), freqs, p, q
+
+    @classmethod
+    def compute_normalized_psd(
+            cls,
+            trace: np.ndarray,
+            fs: float,
+            window_sec: float = None,
+            freq_range: tuple = (0.0, 1.0),
+            detrend: str = "constant",
+    ):
+        """Computes PSD, truncates it to freq_range, and re-normalizes strictly within the band."""
+        if torch.is_tensor(trace):
+            trace = trace.detach().cpu().numpy()
+        trace = np.asarray(trace, dtype=np.float64)
+
+        n_samples = len(trace)
+        if window_sec is not None:
+            nperseg = int(round(window_sec * fs))
+            nperseg = max(16, min(n_samples, nperseg))
+        else:
+            nperseg = n_samples
+
+        freqs, psd = welch(
+            trace, fs=fs, nperseg=nperseg, detrend=detrend
+        )
+
+        # 1. Truncate strictly to the window of interest [f_min, f_max]
+        f_min, f_max = freq_range
+        band_mask = (freqs >= f_min) & (freqs <= f_max)
+
+        if not np.any(band_mask):
+            # Fallback in case of degenerate range selection
+            band_mask = freqs <= f_max
+
+        freqs_band = freqs[band_mask]
+        psd_band = psd[band_mask]
+
+        # 2. Re-normalize strictly within the band so sum equals 1.0
+        psd_sum = np.sum(psd_band)
+        if psd_sum <= 0 or np.isnan(psd_sum):
+            psd_norm = np.ones_like(psd_band) / len(psd_band)
+        else:
+            psd_norm = psd_band / psd_sum
+
+        return freqs_band, psd_norm
+
+    @classmethod
+    def evaluate_population_timescales(
+            cls,
+            y_pred: np.ndarray,
+            y_true: np.ndarray,
+            dt_pred: float = None,
+            dt_true: float = None,
+            duration: float = None,
+            freq_range: tuple = (0.0, 1.0),
+            spectral_scale: float = None,
+            plot_spectra: bool = False,
+            pop_names: list = None,
+    ) -> dict:
+        """Evaluates timescale and trajectory alignment across populations.
+
+        Parameters:
+        -----------
+        y_pred : np.ndarray, shape (T_pred, N_pops)
+            RNN model predictions (e.g., shape 8000 x 8).
+        y_true : np.ndarray, shape (T_true, N_pops)
+            Experimental 2P target traces (e.g., shape 160 x 8).
+        dt_pred, dt_true : float, optional
+            Sampling intervals in seconds (e.g., dt_pred=0.01, dt_true=0.5).
+        duration : float, optional
+            Total signal duration in seconds if dt is not explicitly supplied.
+        freq_range : tuple of (float, float), default=(0.0, 1.0)
+            Physical frequency window (in Hz) to isolate and normalize.
+        spectral_scale : float, optional
+            Sensitivity scale for exp(-emd / spectral_scale). If None, defaults
+            to 10% of the frequency band width (e.g., 0.10 Hz for a 0-1 Hz
+            band),
+            sharply separating good from bad fits.
+        plot_spectra : bool, optional
+            Whether to generate an overlaid multi-panel spectra comparison plot.
+        pop_names : list of str, optional
+            Custom names for the populations (length N_pops).
+        max_freq : float, optional
+            Upper x-axis limit in Hz for the plots (defaults to target Nyquist).
+        """
+        t_steps_pred, n_pops = y_pred.shape
+        t_steps_true = y_true.shape[0]
+
+        # Resolve physical time axes and sampling rates
+        if dt_pred is not None and dt_true is not None:
+            t_pred = np.arange(t_steps_pred) * dt_pred
+            t_true = np.arange(t_steps_true) * dt_true
+            fs_pred = 1.0 / dt_pred
+            fs_true = 1.0 / dt_true
+            matched_window_sec = min(t_pred[-1], t_true[-1])
+        elif duration is not None:
+            t_pred = np.linspace(0, duration, t_steps_pred)
+            t_true = np.linspace(0, duration, t_steps_true)
+            fs_pred = (t_steps_pred - 1) / duration
+            fs_true = (t_steps_true - 1) / duration
+            matched_window_sec = duration
+        else:
+            # Default to normalized duration = 1.0 if no timing is supplied
+            t_pred = np.linspace(0, 1.0, t_steps_pred)
+            t_true = np.linspace(0, 1.0, t_steps_true)
+            fs_pred = float(t_steps_pred)
+            fs_true = float(t_steps_true)
+            matched_window_sec = 1.0
+
+        # Calibrate sensitivity to the active window width
+        band_width = max(freq_range[1] - freq_range[0], 1e-4)
+        if spectral_scale is None:
+            spectral_scale = 0.08 * band_width
+
+        # 1. Resample RNN predictions onto experimental 2P frame timestamps
+        resampler = interp1d(
+            t_pred, y_pred, axis=0, kind="linear", fill_value="extrapolate"
+        )
+        y_pred_resampled = resampler(t_true)
+
+        pearson_corrs, spectral_sims, spectral_emds, spectral_data = [], [], [], []
+        centroids_pred, centroids_true = [], []
+        for i in range(n_pops):
+            pred_resampled_i = y_pred_resampled[:, i]
+            true_i = y_true[:, i]
+            pred_raw_i = y_pred[:, i]
+
+            # 1. Pearson correlation on time-aligned grids
+            r = np.corrcoef(pred_resampled_i, true_i)[0, 1]
+            r_clipped = max(0.0, float(r)) if not np.isnan(r) else 0.0
+            pearson_corrs.append(r_clipped)
+
+            # # Spectral analysis using native sampling grids in Hz
+            # freqs_pred, psd_pred = cls.compute_normalized_psd(pred_raw_i, fs=fs_pred)
+            # freqs_true, psd_true = cls.compute_normalized_psd(true_i, fs=fs_true)
+            #
+            # # Wasserstein-1 distance across physical frequency axes
+            # emd_hz = wasserstein_distance(freqs_pred, freqs_true, psd_pred, psd_true)
+            # spectral_emds.append(float(emd_hz))
+            #
+            # # Convert frequency mismatch in Hz to similarity in [0, 1]
+            # sim = float(np.exp(-emd_hz / spectral_scale))
+            # spectral_sims.append(sim)
+
+            # 2. Band-isolated power spectra
+            fp, pp = cls.compute_normalized_psd(
+                pred_raw_i,
+                fs=fs_pred,
+                window_sec=matched_window_sec,
+                freq_range=freq_range,
+                detrend="constant",
+            )
+            ft, pt = cls.compute_normalized_psd(
+                true_i,
+                fs=fs_true,
+                window_sec=matched_window_sec,
+                freq_range=freq_range,
+                detrend="constant",
+            )
+
+            emd_hz = float(wasserstein_distance(fp, ft, pp, pt))
+            spectral_emds.append(emd_hz)
+            spectral_sims.append(float(np.exp(-emd_hz / spectral_scale)))
+
+            # Spectral centroids (center of mass in Hz)
+            c_pred = float(np.sum(fp * pp))
+            c_true = float(np.sum(ft * pt))
+            centroids_pred.append(c_pred)
+            centroids_true.append(c_true)
+
+            if plot_spectra:
+                spectral_data.append((fp, pp, ft, pt))
+
+        pearson_corrs = np.array(pearson_corrs)
+        spectral_sims = np.array(spectral_sims)
+        spectral_emds = np.array(spectral_emds)
+        centroids_pred = np.array(centroids_pred)
+        centroids_true = np.array(centroids_true)
+
+        # Composite score per population balancing trajectory and timescale
+        pop_scores = np.sqrt(pearson_corrs * spectral_sims)
+
+        # Harmonic mean across populations to prevent compensatory tradeoffs
+        eps = 1e-6
+        harmonic_composite = len(pop_scores) / np.sum(1.0 / (pop_scores + eps))
+        harmonic_spectral = len(spectral_sims) / np.sum(1.0 / (spectral_sims + eps))
+
+        # Optional plotting of spectra
+        fig = None
+        if plot_spectra:
+            n_cols = 4 if n_pops >= 4 else n_pops
+            n_rows = int(np.ceil(n_pops / n_cols))
+            fig, axes = plt.subplots(
+                n_rows,
+                n_cols,
+                figsize=(4.0 * n_cols, 3.2 * n_rows),
+                sharex=True,
+                sharey=False,
+            )
+            axes = np.array(axes).flatten()
+
+            for i in range(n_pops):
+                ax = axes[i]
+                fp, pp, ft, pt = spectral_data[i]
+                name = (
+                    pop_names[i]
+                    if pop_names and i < len(pop_names)
+                    else f"Pop {i + 1}"
+                )
+
+                ax.plot(ft, pt, color="black", lw=2.0, label="2P Data")
+                ax.fill_between(ft, pt, color="gray", alpha=0.25)
+                ax.plot(
+                    fp,
+                    pp,
+                    color="#1f77b4",
+                    lw=1.8,
+                    linestyle="--",
+                    label="Model",
+                )
+                ax.fill_between(fp, pp, color="#1f77b4", alpha=0.15)
+
+                ax.set_xlim(freq_range[0], freq_range[1])
+                ax.set_title(
+                    f"{name}\nEMD: {spectral_emds[i]:.4f} Hz | Sim: {spectral_sims[i]:.3f}\n"
+                    f"Centroid (M/D): {centroids_pred[i]:.3f} / {centroids_true[i]:.3f} Hz",
+                    fontsize=8.5,
+                )
+                ax.grid(True, linestyle=":", alpha=0.6)
+
+                if i >= (n_rows - 1) * n_cols:
+                    ax.set_xlabel("Frequency (Hz)", fontsize=8.5)
+                if i % n_cols == 0:
+                    ax.set_ylabel("Norm. PSD", fontsize=8.5)
+                if i == 0:
+                    ax.legend(frameon=False, fontsize=8)
+
+            for j in range(n_pops, len(axes)):
+                axes[j].set_visible(False)
+
+            plt.suptitle(
+                f"Physiological Band Spectrum [{freq_range[0]} - {freq_range[1]} Hz]",
+                fontsize=11,
+                y=0.99,
+            )
+            plt.tight_layout()
+            plt.show()
+
+        return {
+            "pop_pearson": pearson_corrs,
+            "pop_spectral_emd_hz": spectral_emds,
+            "pop_spectral_similarity": spectral_sims,
+            "pop_composite": pop_scores,
+            "harmonic_composite_score": float(harmonic_composite),
+            "harmonic_spectral_score": float(harmonic_spectral),
+            "min_composite_score": float(np.min(pop_scores)),
+            "figure": fig,
+        }

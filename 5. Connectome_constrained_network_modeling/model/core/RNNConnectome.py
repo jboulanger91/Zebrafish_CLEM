@@ -814,7 +814,7 @@ class RNNConnectome(nn.Module):
             f"units. Build the initial condition by scattering into idx_list.")
         return x0
 
-    def _integrate_chunk(self, h, drive_chunk, Wt, beta, one_minus_beta):
+    def _integrate_chunk(self, h, drive_chunk, Wt, beta, one_minus_beta, pulse_list=None):
         """
         Integrate one contiguous block of time steps.
 
@@ -842,7 +842,10 @@ class RNNConnectome(nn.Module):
         drive_steps = drive_chunk.unbind(1)          # T views, ONE autograd node
         xs_chunk = []
         fh = self.f(h)
-        for drive_t in drive_steps:
+        i_pulse_list = [] if pulse_list is None else [p["idx"] for p in pulse_list]
+        for i_drive_t, drive_t in enumerate(drive_steps):
+            if i_drive_t in i_pulse_list:
+                drive_t = pulse_list[i_pulse_list.index(i_drive_t)]["pulse"]
             drive = torch.addmm(drive_t, fh, Wt)     # drive_t + f(h) @ Wt
             h = torch.addcmul(beta * h, drive, one_minus_beta)
             h = torch.clamp(h, min=-30.0, max=30.0)  # Clamp hidden pre-activation state to prevent float overflow under transient gain spikes
@@ -873,7 +876,7 @@ class RNNConnectome(nn.Module):
             W_sub[chosen_indices, k] = 1.0 / k_sample
         return W_sub
 
-    def forward(self, x0, inputs, filter_xs=True, subsample_ratio=None):
+    def forward(self, x0, inputs, filter_xs=True, subsample_ratio=None, pulse_list=None):
         """
         Run the network.
 
@@ -887,6 +890,12 @@ class RNNConnectome(nn.Module):
                         over n_units channels. fit() uses this: the only
                         consumer of xs during training is the antagonism
                         penalty, which can filter its 2 projections instead.
+        pulse_list=None optionally define a list of pulses in the simulation.
+                        The objects in the list must be dict with the following
+                        structure: {
+                            "idx": int,        # time index at which to have pulse
+                            "pulse": iterable  # input drive to use as pulse (N)
+                        }
         """
         # ---- shape normalisation -------------------------------------------
         if inputs.ndim == 1:
@@ -939,7 +948,7 @@ class RNNConnectome(nn.Module):
         else:
             if drive_in is None:
                 drive_in = inputs * U.T
-            h, xs = self._integrate_chunk(h, drive_in, Wt, beta, one_minus_beta)
+            h, xs = self._integrate_chunk(h, drive_in, Wt, beta, one_minus_beta, pulse_list)
 
         self.h = h
 
