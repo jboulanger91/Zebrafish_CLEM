@@ -37,7 +37,7 @@ LABEL="connectome"
 Then substitute all placeholder with the actual paths to the relative directories in your system.
 
 N.B. Changing this root .env will affect all the scripts in the project. In case you want more granular configuration,
-consider creating .env 
+consider creating custom .env files inside specific directories in the project.
 
 ### Data
 The scripts in this project have been developed to work with the csv aggregated version of the traces, which you can 
