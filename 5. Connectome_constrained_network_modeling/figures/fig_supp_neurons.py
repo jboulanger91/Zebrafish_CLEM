@@ -1,7 +1,7 @@
 """
 Overview
 --------
-This script generates the following figure panels in Boulanger-Weiss et al. 2026:
+This script generates the following figure panels in Boulanger-Weill et al. 2026:
 - Extended Data Fig. 8a, b, i
 
 This script compares structural connectivity and single-neuron simulated activity dynamics

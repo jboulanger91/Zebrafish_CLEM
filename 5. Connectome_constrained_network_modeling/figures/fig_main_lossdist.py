@@ -1,7 +1,7 @@
 """
 Overview
 --------
-This script generates the following figure panels in Boulanger-Weiss et al. 2026:
+This script generates the following figure panels in Boulanger-Weill et al. 2026:
 - Fig. 5e
 - Extended Data Fig. 8h
 
@@ -73,7 +73,7 @@ test_list = [
     #  "label": "No LDA in target"},
     # {"path": path_models / "connectome_noLDA_matrix",
     #  "label": "No LDA in matrix"},
-    {"path": path_models / "U_full" / "connectome_shuffle",
+    {"path": path_models / "connectome_shuffle_U_full",
      "label": "Shuffle mask"},
     {"path": path_models / "connectome_iMI_cut_50",
      "label": r"Remove 50% iMI $\leftrightarrow$ iMI"},

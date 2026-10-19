@@ -1,7 +1,7 @@
 """
 Overview
 --------
-This script generates the following figure panels in Boulanger-Weiss et al. 2026:
+This script generates the following figure panels in Boulanger-Weill et al. 2026:
 - Fig. 5d, f, g, h, i, j, k, l
 - Extended Data Fig. 8d, e, f, g
 
@@ -500,7 +500,7 @@ if show_activity:
          "duration_rest_start": 16,
          "duration_stimulus": 32,
          "duration_rest_end": 32,
-         "path_traces": path_data / "test_dataset" / "cyto8s",
+         "path_traces": path_data / "test_dataset",
          "path_noise": None,
          "filename_root": "responses",
          "file_extension": "csv",
@@ -519,7 +519,7 @@ if show_activity:
          "duration_rest_start": 16,
          "duration_stimulus": 32,
          "duration_rest_end": 32,
-         "path_traces": path_data / "test_dataset" / "cyto8s",
+         "path_traces": path_data / "test_dataset",
          "path_noise": None,
          "filename_root": "responses",
          "file_extension": "csv",
@@ -538,7 +538,7 @@ if show_activity:
          "duration_rest_start": 16,
          "duration_stimulus": 32,
          "duration_rest_end": 32,
-         "path_traces": path_data / "test_dataset" / "cyto8s",
+         "path_traces": path_data / "test_dataset",
          "path_noise": None,
          "filename_root": "responses",
          "file_extension": "csv",

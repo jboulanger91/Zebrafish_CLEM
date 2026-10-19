@@ -1,7 +1,7 @@
 """
 Overview
 --------
-This script generates the following figure panels in Boulanger-Weiss et al. 2026:
+This script generates the following figure panels in Boulanger-Weill et al. 2026:
 - Fig. 5a, b
 
 This script showcases the experimental training paradigm and architectural connectivity of
