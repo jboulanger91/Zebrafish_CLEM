@@ -2,8 +2,8 @@
 Overview
 --------
 This script generates the following figure panels in Boulanger-Weiss et al. 2026:
-- Fig. 5...
-- Supp. Fig. 10...
+- Fig. 5e
+- Extended Data Fig. 8h
 
 This script evaluates and statistically compares the performance (training MSE loss)
 of recurrent neural network (RNN) dynamical models trained under different architectural,

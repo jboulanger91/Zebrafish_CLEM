@@ -441,28 +441,35 @@ class RNNService:
             ypos -= plot_size + padding / 3
             xpos = xpos_start_here
 
-        # Compute amplitude-independent performance for integration window
-        t_start, t_end = time_structure["rest_start"], time_structure["rest_start"]+10
+        # Compute performance in specified window
+        compute_corr_integration_window_only = False  # parameterized for debug purposes
+        if compute_corr_integration_window_only:
+            t_start, t_end = time_structure["rest_start"], time_structure["rest_start"]+10
+        else:
+            t_start, t_end = 0, time_structure["duration"]
         # Create boolean masks for both time grids
         mask_exp = (t_exp >= t_start) & (t_exp <= t_end)
         mask_sim = (t >= t_start) & (t <= t_end)
         # Ensure masks are PyTorch tensors matching each tensor's device
         if torch.is_tensor(output_signal_mean) and not torch.is_tensor(mask_exp):
             mask_exp = torch.as_tensor(mask_exp, device=output_signal_mean.device)
-        if torch.is_tensor(y_pred_mean) and not torch.is_tensor(mask_sim):
-            mask_sim = torch.as_tensor(mask_sim, device=y_pred_mean.device)
+        if torch.is_tensor(y_pred_array) and not torch.is_tensor(mask_sim):
+            mask_sim = torch.as_tensor(mask_sim, device=y_pred_array.device)
         # Slice time arrays
         t_exp_window = t_exp[mask_exp]
         t_sim_window = t[mask_sim]
         # Slice signal arrays along the time axis
         # Works whether arrays are NumPy arrays or PyTorch tensors
         output_signal_window = output_signal_mean[0, mask_exp, :].unsqueeze(0)
-        y_pred_window = y_pred_mean[0, mask_sim, :].unsqueeze(0)
-        performance = cls.compute_performance(output_signal_window, t_exp_window, y_pred_window, t_sim_window, compute_performance_method)
-        print(f"Performance in reproducing data | {compute_performance_method}: {performance}")
-        # performance = cls.compute_performance(output_signal_mean, t_exp, y_pred_mean, t, compute_performance_method)
+        performance_array = np.zeros(y_pred_array.shape[0])
+        for i_model in range(y_pred_array.shape[0]):
+            y_pred_window = y_pred_array[i_model, 0, mask_sim, :].unsqueeze(0)
+            performance = cls.compute_performance(output_signal_window, t_exp_window, y_pred_window, t_sim_window, compute_performance_method)
+            performance_array[i_model] = performance
+        performance = np.median(performance_array)
         if verbose:
-            print(f"Performance in reproducing data | {compute_performance_method}: {performance}")
+            q13 = np.quantile(performance_array, [0.25, 0.75])
+            print(f"Performance in reproducing data | {compute_performance_method}: median={performance} IQR={q13[1]-q13[0]}")
 
         res = {"fig": fig,
                "xpos": xpos,

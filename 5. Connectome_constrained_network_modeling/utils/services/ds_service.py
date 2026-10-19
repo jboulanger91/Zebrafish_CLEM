@@ -15,43 +15,6 @@ class DSService():
         pass
 
     @staticmethod
-    def bifurcation_diagram(rnn, input_value_array, n_steps=1000, n_initializations=20, initial_state_rule="zero", pca=None):
-        input_array = np.zeros(n_initializations * len(input_value_array))
-        h_array = np.zeros((n_initializations * len(input_value_array), rnn.network_size))
-
-        index_in_array = 0
-        for _ in range(n_initializations):
-            if initial_state_rule is None: initial_state = rnn.h  # custom input passed to the function or already generated
-            elif initial_state_rule == "zero": initial_state = np.zeros(rnn.network_size)
-            elif initial_state_rule == "random": initial_state = np.random.rand(rnn.network_size)
-            else: raise NotImplementedError
-
-            for i_input, input_value in enumerate(input_value_array):
-                h, converged, _ = rnn.simulate_until_convergence(initial_state, input_signal_in_time=input_value, max_steps=n_steps, tol=1e-8)
-                if converged:
-                    input_array[index_in_array] = input_value
-                    h_array[index_in_array] = h
-
-                index_in_array += 1
-
-        if index_in_array < len(input_array):
-            input_array = input_array[:index_in_array]
-            h_array = h_array[:index_in_array]
-
-        if pca is None:
-            pca = PCA(n_components=2)
-            pca.fit(h_array)
-        proj_state = np.squeeze(np.array([pca.transform(state.reshape(1, -1)) for state in h_array]))
-
-        plt.figure(figsize=(10, 7))
-        plt.scatter(input_array, proj_state[:, 0], c='k', alpha=0.8)
-        plt.title('Bifurcation diagram')
-        plt.xlabel('Input value')
-        plt.ylabel('State')
-        plt.xlim(np.min(input_value_array), np.max(input_value_array))
-        plt.show()
-
-    @staticmethod
     def gcamp_kernel(tau_rise, tau_decay, dt, duration=10.0):
         """
         Create a normalized double-exponential kernel for GCaMP calcium dynamics.

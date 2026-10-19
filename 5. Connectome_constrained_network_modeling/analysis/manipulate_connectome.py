@@ -62,7 +62,7 @@ env = dotenv_values(env_path)
 
 # Retrieve project root directory from environment variables and resolve IO paths
 path_dir = Path(env["PATH_DIR"])
-label_path_save = "remove_cMI-cMI"
+label_path_save = "remove_RMON_100"
 
 # ------------------------------------------------
 # Configuration
@@ -85,20 +85,20 @@ ablate_rate = 1
 n_repeats = 1
 # Registry of targeted ablation instructions specifying cell types, pathways, counts, and modes
 ablate_config_list = [
-  # {"population_label": "RMON",
-  #  "population_index": 6,
-  #  "n_ablate": 2,
-  #  "mode": "neuron"},
-  {"population_label": "RcMI-LcMI",
-   "population_from": "RcMI",
-   "population_to": "LcMI",
-   "n_ablate": 999,
-   "mode": "synapse"},
-  {"population_label": "LcMI-RcMI",
-   "population_from": "LcMI",
-   "population_to": "RcMI",
-   "n_ablate": 999,
-   "mode": "synapse"},
+  {"population_label": "RMON",
+   "population_index": 6,
+   "n_ablate": 12,
+   "mode": "neuron"},
+  # {"population_label": "RcMI-LcMI",
+  #  "population_from": "RcMI",
+  #  "population_to": "LcMI",
+  #  "n_ablate": 999,
+  #  "mode": "synapse"},
+  # {"population_label": "LcMI-RcMI",
+  #  "population_from": "LcMI",
+  #  "population_to": "RcMI",
+  #  "n_ablate": 999,
+  #  "mode": "synapse"},
   # {"population_label": "LiMI-LiMI",
   #  "population_from": "LiMI",
   #  "population_to": "LiMI",
@@ -219,8 +219,8 @@ for i_repeat in range(n_repeats):
             else:
                 # Knock out individual neurons: removes all incoming/outgoing connections and input drives
                 if ac["mode"] == "neuron":
-                    side = ac["population"][0]
-                    cell = ac["population"][1:]
+                    side = ac["population_label"][0]
+                    cell = ac["population_label"][1:]
                     ablate_index_neuron = np.random.choice(dict_neurons["neurons"][side][cell]["idx_list"],
                                                            size=ac["n_ablate"], replace=False)
                     mask_W[ablate_index_neuron, :] = 0

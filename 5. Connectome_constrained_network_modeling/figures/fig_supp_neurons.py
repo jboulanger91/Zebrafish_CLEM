@@ -2,7 +2,7 @@
 Overview
 --------
 This script generates the following figure panels in Boulanger-Weiss et al. 2026:
-- Fig. 5...
+- Extended Data Fig. 8a, b, i
 
 This script compares structural connectivity and single-neuron simulated activity dynamics
 across top-performing recurrent neural network (RNN) model final checkpoint.
@@ -68,7 +68,7 @@ from utils.math.operators import inv_softplus
 # Configurations
 # ----------------------------------------------------------------
 # Operating mode: selects either standard connectome or no-LDA target ablation cohort
-mode = "lda"  # alternatives: "connectome", "lda". It produces the related panels in supplement
+mode = "connectome"  # alternatives: "connectome", "lda". It produces the related panels in supplement
 # Toggle forward simulation and single-neuron activity trace panels
 show_activity_single_neurons = True
 # Trial index to extract and display
@@ -84,9 +84,9 @@ env = dotenv_values()
 path_dir = Path(env["PATH_DIR"])
 path_data = path_dir / "data"
 if mode == "connectome":
-    path_models = path_dir / "models" / mode / "top_5"
+    path_models = path_dir / "models" / mode / "top_6"
 elif mode == "lda":
-    path_models = path_dir / "models" / "connectome_noLDA_target" / "top_5"
+    path_models = path_dir / "models" / "connectome_noLDA_target" / "top_6"
 else:
     raise NotImplementedError
 path_save = path_dir / "results"

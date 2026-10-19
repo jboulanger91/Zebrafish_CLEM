@@ -2,7 +2,8 @@
 Overview
 --------
 This script generates the following figure panels in Boulanger-Weiss et al. 2026:
-- Fig. 5...
+- Fig. 5d, f, g, h, i, j, k, l
+- Extended Data Fig. 8d, e, f, g
 
 This script evaluates trained recurrent neural network (RNN) dynamical models against
 empirical calcium imaging traces (e.g., zebrafish hindbrain oculomotor / velocity storage
@@ -90,7 +91,7 @@ env = dotenv_values()
 path_dir = Path(env["PATH_DIR"])
 path_data = path_dir / "data" # directory containing avgresponse_X.csv
 path_noise_estimation = path_dir / "data" / "noise_estimation" / "contralateral_motion_integrator_preferred_noise_estimation.pkl"
-path_models = path_dir / "models" / label_load # directory containing model_X.pt
+path_models = path_dir / "models" / label_load  # directory containing model_X.pt
 if show_only_n_top_models:
     path_models = path_models / f"top_{show_only_n_top_models}"
     label_save = f"{label_save}_top{show_only_n_top_models}"
@@ -337,6 +338,100 @@ if show_activity:
 
 
     # ----------------------------------------------------------------
+    # Test Specification Schema & Protocol Registry
+    # ----------------------------------------------------------------
+    # Each dictionary entry in `test_list` defines a self-contained experimental
+    # or testing protocol. Below is the specification of all supported fields:
+    #
+    # Field: label
+    #   Type: str
+    #   Function: Descriptive title for the protocol panel drawn on the figure canvas.
+    #
+    # Field: duration_rest_start
+    #   Type: float | int
+    #   Function: Baseline resting epoch duration (seconds) before stimulus onset.
+    #
+    # Field: duration_stimulus
+    #   Type: float | int
+    #   Function: Active driving stimulus duration (seconds).
+    #
+    # Field: duration_rest_end
+    #   Type: float | int
+    #   Function: Post-stimulus recovery/decay epoch duration (seconds).
+    #
+    # Field: path_traces
+    #   Type: pathlib.Path
+    #   Function: Directory containing empirical reference time-series files (CSV or PKL).
+    #
+    # Field: path_noise
+    #   Type: pathlib.Path | None
+    #   Function: Path to pickled Ornstein-Uhlenbeck (OU) parameters for trace augmentation;
+    #             if None, no noise filtering/injection is applied (np.zeros_like).
+    #
+    # Field: filename_root
+    #   Type: str
+    #   Function: Prefix identifier of target recording files (e.g. "avgresponses", "responses").
+    #
+    # Field: file_extension
+    #   Type: str
+    #   Function: Target file format ("csv" or "pkl").
+    #
+    # Field: stimulus_name
+    #   Type: str
+    #   Function: Stimulus category key ("constant", "oscillating", "switching") matched in filename lookups.
+    #
+    # Field: pulse_MON (optional)
+    #   Type: bool
+    #   Function: If True, activates a transient perturbation vector clamp (`pulse_list`)
+    #             targeting MON (medial octavolateral nucleus) cells during simulation.
+    #
+    # Field: filename (optional)
+    #   Type: str
+    #   Function: Explicit wildcard search pattern for loading specific target recording files.
+    #
+    # Field: combine_data
+    #   Type: str | None
+    #   Function: Aggregation strategy across trials/columns: "average" reduces across axis 1;
+    #             None preserves individual trial trajectories or 1D arrays as-is.
+    #
+    # Field: scale_target
+    #   Type: list[float] | float | None
+    #   Function: Stimulus amplitude scaling multipliers. Drives input amplitude and scales
+    #             target output by sqrt(scale); if None, defaults to [1.0] (unscaled).
+    #
+    # Field: input_signal
+    #   Type: Callable[[float, float, float, str, float], np.ndarray]
+    #   Function: Generator function producing temporal input arrays across units
+    #             (e.g. input_signal_constant, input_signal_sine, input_signal_switch).
+    #
+    # Field: time_target_array
+    #   Type: np.ndarray | None
+    #   Function: Explicit temporal sampling array (seconds) for experimental data points;
+    #             if None, extracted directly from column 0 of empirical CSVs.
+    #
+    # Field: dt_data
+    #   Type: float
+    #   Function: Temporal sampling resolution (seconds) of empirical target traces.
+    #
+    # Field: side_list
+    #   Type: tuple[str, ...] | list[str]
+    #   Function: Orientations/sides to load: functional ("preferred", "null") or anatomical ("left", "right").
+    #
+    # Field: flip_side
+    #   Type: bool
+    #   Function: If True, swaps directional preference index offsets or flips input drive side ("L" vs. "R").
+    #
+    # Field: cell_type_list
+    #   Type: tuple[str, ...] | list[str]
+    #   Function: Target cell population labels loaded sequentially
+    #             (e.g. ("iMI", "cMI", "MON", "sMI") or 3-class ("MI", "MON", "SMI")).
+    #
+    # Field: fix_offset_response
+    #   Type: bool
+    #   Function: If True, anchors global non-negative baseline offset across tests to maintain
+    #             consistent activation ranges across all conditions.
+    # ----------------------------------------------------------------
+    # ----------------------------------------------------------------
     # Define tests to show
     # ----------------------------------------------------------------
     # Registry of experimental protocols, data source locations, signal shapes, and plotting configurations
@@ -350,7 +445,7 @@ if show_activity:
          "filename_root": "avgresponses",
          "file_extension": "csv",
          "stimulus_name": "constant",
-         "pulse_MON": True,
+         "pulse_MON": False,
          # "filename": "avgresponses_*_constant.csv", # not used yet
          "combine_data": None,
          "scale_target": [0.3, 1], # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
@@ -361,6 +456,27 @@ if show_activity:
          "flip_side": False,
          "cell_type_list": ("iMI", "cMI", "MON", "sMI"),
          "fix_offset_response": True},
+        # {"label": "Train high R",
+        #  "duration_rest_start": 20,
+        #  "duration_stimulus": 40,
+        #  "duration_rest_end": 20,
+        #  "path_traces": path_data,
+        #  "path_noise": None,
+        #  "filename_root": "avgresponses",
+        #  "file_extension": "csv",
+        #  "stimulus_name": "constant",
+        #  "pulse_MON": False,
+        #  # "filename": "avgresponses_*_constant.csv", # not used yet
+        #  "combine_data": None,
+        #  "scale_target": [0.3, 1],
+        #  # Scale the target signal found at path_traces and the input signal. Set to None for no scaling.
+        #  "input_signal": input_signal_constant,
+        #  "time_target_array": None,
+        #  "dt_data": dt_data,
+        #  "side_list": ("preferred", "null"),
+        #  "flip_side": True,
+        #  "cell_type_list": ("iMI", "cMI", "MON", "sMI"),
+        #  "fix_offset_response": True},
         # {"label": "Train high BOTH",
         #  "duration_rest_start": 20,
         #  "duration_stimulus": 40,
