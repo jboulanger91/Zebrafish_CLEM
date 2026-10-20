@@ -1201,7 +1201,7 @@ class RNNConnectomeCorr(nn.Module):
                 self.effective_antagonism_penalty_strength = 0.0
                 stage = 1
             elif epoch < stage3_start:
-                self.effective_single_cell_correlation_penalty_strength = self.single_cell_correlation_penalty_strength * 0.5
+                self.effective_single_cell_correlation_penalty_strength = self.single_cell_correlation_penalty_strength * 0.1
                 self.effective_fast_spectral_radius_penalty_strength = self.fast_spectral_radius_penalty_strength
                 self.effective_antagonism_penalty_strength = 0.0
                 stage = 2
